@@ -93,7 +93,7 @@ function isGitDirty(): boolean | null {
 }
 
 async function seedCorpus(corpus: BenchCorpus, dataDir: string) {
-  const { SquishClient } = await import('../packages/sdk/src/index.js');
+  const { SquishClient } = await import('../packages/core-sdk/src/index.js');
   const { getDb } = await import('../db/index.js');
 
   const client = new SquishClient();

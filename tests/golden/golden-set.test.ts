@@ -251,7 +251,7 @@ describe('calibration metrics (Batch 6a)', () => {
 
 describe('end-to-end smoke eval through SDK surface', () => {
   test('seeding + search retrieves the target memory via goldenId mapping', async () => {
-    const { SquishClient } = await import('../../packages/sdk/src/index.js');
+    const { SquishClient } = await import('../../packages/core-sdk/src/index.js');
     const client = new SquishClient();
 
     const uuidToGolden = new Map<string, string>();

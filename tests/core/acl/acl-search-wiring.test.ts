@@ -13,7 +13,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 let testDataDir: string;
 let savedEnv: Record<string, string | undefined>;
 
-let SquishClient: typeof import('../../../packages/sdk/src/index.js').SquishClient;
+let SquishClient: typeof import('../../../packages/core-sdk/src/index.js').SquishClient;
 let setVisibilityRule: typeof import('../../../core/loadout/loadout.js').setVisibilityRule;
 let removeVisibilityRule: typeof import('../../../core/loadout/loadout.js').removeVisibilityRule;
 let getAclLog: typeof import('../../../core/acl/acl-log.js').getAclLog;
@@ -43,7 +43,7 @@ describe('SDK search ACL wiring', () => {
     process.env.SQUISH_DATA_DIR = testDataDir;
     process.env.DATABASE_URL = '';
 
-    const sdkMod = await import('../../../packages/sdk/src/index.js');
+    const sdkMod = await import('../../../packages/core-sdk/src/index.js');
     const loadoutMod = await import('../../../core/loadout/loadout.js');
     const logMod = await import('../../../core/acl/acl-log.js');
     const dbMod = await import('../../../db/index.js');

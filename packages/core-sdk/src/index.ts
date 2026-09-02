@@ -1,5 +1,5 @@
 /**
- * @squish/sdk
+ * @squish/core-sdk
  *
  * SDK for building on squish-memory's AI memory system.
  * Provides pluggable interfaces for storage, embeddings, LLM, and events.
@@ -79,7 +79,7 @@ export { PluginRegistry, type Plugin } from './plugins.js';
 export { DefaultEventBus } from './events/event-bus.js';
 
 // ─── Core Module Re-exports ──────────────────────────────────────────────────
-// These allow CLI and MCP to import from '@squish/sdk' instead of
+// These allow CLI and MCP to import from '@squish/core-sdk' instead of
 // using deep relative paths (../../../) into core internals.
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -263,7 +263,7 @@ type SessionSourceOption = 'opencode' | 'claude-code' | 'codex' | 'gemini' | 'al
  *
  * @example
  * ```ts
- * import { SquishClient } from '@squish/sdk';
+ * import { SquishClient } from '@squish/core-sdk';
  *
  * const client = new SquishClient({
  *   dataDir: '~/.local/share/squish',
@@ -1218,13 +1218,14 @@ export class SquishClient {
           proposalId: proposal.id,
           reviewNotes: `auto-merge: similarity=${proposal.similarityScore.toFixed(3)} >= ${threshold}`,
         });
-        if (result.ok && result.data) {
+        const data = result.data;
+        if (result.ok && data?.proposalId && data.canonicalMemoryId && data.mergedMemoryIds) {
           merges.push({
-            proposalId: result.data.proposalId,
-            canonicalMemoryId: result.data.canonicalMemoryId,
-            mergedMemoryIds: result.data.mergedMemoryIds,
-            mergeHistoryId: result.data.mergeHistoryId ?? null,
-            tokensSaved: result.data.tokensSaved,
+            proposalId: data.proposalId,
+            canonicalMemoryId: data.canonicalMemoryId,
+            mergedMemoryIds: data.mergedMemoryIds,
+            mergeHistoryId: data.mergeHistoryId ?? null,
+            tokensSaved: data.tokensSaved,
           });
         }
       }
@@ -1559,6 +1560,37 @@ export interface DedupScanInput {
   memoryType?: string;
   limit?: number;
   autoCreateProposals?: boolean;
+}
+
+export interface DedupScanResult {
+  ok: boolean;
+  message: string;
+  data?: {
+    projectId: string;
+    duplicateCount: number;
+    proposalsCreated: number;
+    proposalIds: string[];
+    statistics: {
+      totalMemories: number;
+      scannedMemories: number;
+      candidatesFound: number;
+      estimatedTokensSaved: number;
+    };
+    timing: {
+      stage1Ms: number;
+      stage2Ms: number;
+      totalMs: number;
+    };
+    // Best-effort enrichment (confidenceDistribution) is added at runtime.
+    [key: string]: unknown;
+  };
+  error?: string;
+}
+
+export interface MergeProposalListInput {
+  projectId: string;
+  status?: 'pending' | 'approved' | 'rejected' | 'expired';
+  limit?: number;
 }
 
 export interface MergeProposalSummary {

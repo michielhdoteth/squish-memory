@@ -352,7 +352,7 @@ function isGitDirty(): boolean | null {
 // ─── Harness ────────────────────────────────────────────────────────────────
 
 async function seedCorpus(goldenSet: GoldenSet, dataDir: string) {
-  const { SquishClient } = await import('../../packages/sdk/src/index.js');
+  const { SquishClient } = await import('../../packages/core-sdk/src/index.js');
   const { getDb } = await import('../../db/index.js');
 
   const client = new SquishClient();

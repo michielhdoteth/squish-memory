@@ -1,5 +1,5 @@
 /**
- * @squish/sdk - Public Type Definitions
+ * @squish/core-sdk - Public Type Definitions
  *
  * Re-exports core types and defines additional SDK-specific types
  * for building memory-powered applications.

@@ -31,7 +31,7 @@ let resetDb: typeof import('../../../db/index.js').resetDb;
 let getDb: typeof import('../../../db/index.js').getDb;
 let getSchema: typeof import('../../../db/schema.js').getSchema;
 let createDatabaseClient: typeof import('../../../core/storage/database.js').createDatabaseClient;
-let sdk: typeof import('../../../packages/sdk/src/index.js');
+let sdk: typeof import('../../../packages/core-sdk/src/index.js');
 
 const PROJECT_ID = 'dedup-test-project-0000-000000000000';
 const DUP_CONTENT = 'User prefers dark mode for better readability at night';
@@ -86,7 +86,7 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
     getDb = dbMod.getDb;
     getSchema = (await import('../../../db/schema.js')).getSchema;
     createDatabaseClient = (await import('../../../core/storage/database.js')).createDatabaseClient;
-    sdk = await import('../../../packages/sdk/src/index.js');
+    sdk = await import('../../../packages/core-sdk/src/index.js');
 
     resetDb();
     dbRef = await getDb();

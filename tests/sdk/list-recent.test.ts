@@ -13,7 +13,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 let testDataDir: string;
 let savedDataDir: string | undefined;
 let savedDatabaseUrl: string | undefined;
-let client: import('@squish/sdk').SquishClient;
+let client: import('@squish/core-sdk').SquishClient;
 let getDb: typeof import('../../db/index.js').getDb;
 let resetDb: typeof import('../../db/index.js').resetDb;
 
@@ -28,7 +28,7 @@ describe('SquishClient.listRecent', () => {
     process.env.DATABASE_URL = '';
     if (!existsSync(testDataDir)) mkdirSync(testDataDir, { recursive: true });
 
-    const { SquishClient } = await import('@squish/sdk');
+    const { SquishClient } = await import('@squish/core-sdk');
     const dbMod = await import('../../db/index.js');
     client = new SquishClient();
     getDb = dbMod.getDb;

@@ -13,7 +13,7 @@ describe("background services graceful degradation", () => {
     expect(source).toContain("sdkClient.initializeScheduler");
 
     // The scheduler itself lives in the SDK layer
-    const sdkSource = await readFile(join(import.meta.dir, "..", "..", "packages", "sdk", "src", "index.ts"), "utf-8");
+    const sdkSource = await readFile(join(import.meta.dir, "..", "..", "packages", "core-sdk", "src", "index.ts"), "utf-8");
     expect(sdkSource).toContain("core/scheduler/cron-scheduler");
   });
 

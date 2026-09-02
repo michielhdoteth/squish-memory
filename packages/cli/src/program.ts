@@ -2,7 +2,7 @@ import { Command } from 'commander';
 
 import { probeSchemaHealth, fixSchemaIssues } from '../../../db/schema-health.js';
 import { config } from '../../../config.js';
-import { SquishClient } from '@squish/sdk';
+import { SquishClient } from '@squish/core-sdk';
 
 import { registerRememberCommand } from './commands/remember.js';
 import { registerRecallCommand } from './commands/recall.js';

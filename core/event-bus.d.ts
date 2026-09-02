@@ -10,16 +10,9 @@
  */
 import { DefaultEventBus } from '../packages/core-sdk/src/events/event-bus.js';
 import type { SquishEvent } from '../packages/core-sdk/src/interfaces/events.js';
-
-export const eventBus = new DefaultEventBus();
-
+export declare const eventBus: DefaultEventBus;
 /**
  * Convenience emitter that swallows errors (fire-and-forget).
  */
-export function emit(event: SquishEvent): void {
-  try {
-    eventBus.emit(event);
-  } catch {
-    // Event handlers should never crash the caller
-  }
-}
+export declare function emit(event: SquishEvent): void;
+//# sourceMappingURL=event-bus.d.ts.map

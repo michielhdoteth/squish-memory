@@ -1,7 +1,8 @@
 {
-  "name": "@squish/sdk",
+  "name": "@squish/core-sdk",
   "version": "2.1.0",
-  "description": "Squish Memory SDK - typed API for building memory-powered applications",
+  "description": "Internal facade over the squish engine (workspace-only, never published)",
+  "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -19,21 +20,12 @@
       "types": "./src/interfaces/*.ts"
     }
   },
-  "files": [
-    "src",
-    "dist",
-    "README.md"
-  ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --noEmit",
     "test": "bun test",
     "clean": "rm -rf dist"
   },
   "license": "MIT",
-  "dependencies": {},
-  "peerDependencies": {
-    "bun-types": ">=1.0.0"
-  },
   "devDependencies": {
     "bun-types": "latest",
     "typescript": "^6.0.2"

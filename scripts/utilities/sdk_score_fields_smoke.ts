@@ -8,7 +8,7 @@ process.env.DATABASE_URL = '';
 process.env.SQUISH_RERANKER_ENABLED = 'false';
 process.env.SQUISH_MMR_ENABLED = 'false';
 
-const { SquishClient } = await import('../../packages/sdk/src/index.js');
+const { SquishClient } = await import('../../packages/core-sdk/src/index.js');
 const { closeAllDbs } = await import('../../db/index.js');
 
 const client = new SquishClient();

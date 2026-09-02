@@ -1,0 +1,44 @@
+{
+  "name": "@squish/sdk",
+  "version": "2.1.0",
+  "description": "Squish Memory SDK - dependency-free TypeScript client for squish-memory over MCP streamable HTTP (local and cloud)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "clean": "rm -rf dist"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "squish",
+    "memory",
+    "ai",
+    "agents",
+    "mcp",
+    "client"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/michielhdoteth/squish-memory.git",
+    "directory": "packages/sdk"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2"
+  }
+}
