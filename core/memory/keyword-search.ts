@@ -11,7 +11,6 @@ import { deserializeTags, deserializeMetadata } from './serialization.js';
 import { normalizeTimestamp } from '../lib/utils.js';
 import { logger } from '../logger.js';
 import type { SearchDbContext } from './vector-search.js';
-
 /**
  * FTS5 keyword search using SQLite's built-in FTS5.
  * Squish already has memories_fts table - this connects it to hybrid search.
@@ -30,12 +29,12 @@ export async function keywordSearch(
     const FTS5_RESERVED = new Set(['AND', 'OR', 'NOT', 'NEAR', 'COLUMN', 'RANK', 'CONTENT', 'ID', 'ROWID']);
 
     // Sanitize query for FTS5: remove special chars, keep meaningful words
-    const ftsQuery = (input.query || '')
+    const terms = (input.query || '')
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
-      .filter(w => w.length > 2 && !FTS5_RESERVED.has(w.toUpperCase()))
-      .map(w => `"${w}"`)
-      .join(' OR ');
+      .filter(w => w.length > 2 && !FTS5_RESERVED.has(w.toUpperCase()));
+
+    const ftsQuery = terms.map(t => `"${t}"`).join(' OR ');
 
     if (!ftsQuery) return [];
 

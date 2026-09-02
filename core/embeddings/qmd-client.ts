@@ -15,9 +15,8 @@
  * - qmd_multi_get: Retrieve multiple documents
  * - qmd_status: Index health and collection info
  */
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { Client } from "@modelcontextprotocol/client";
 import { spawn } from 'child_process';
 import { logger } from '../logger';
 

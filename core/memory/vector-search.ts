@@ -85,6 +85,14 @@ function rowToSearchResult(row: any, similarity: number): SearchResult {
   const rawCreated = typeof row.createdAt === 'string' && /^\d+$/.test(row.createdAt)
     ? Number(row.createdAt)
     : row.createdAt;
+
+  // Decode and attach embedding for downstream consumers (MMR diversity).
+  // Hidden property: not part of the SearchResult type but used by hybrid-search.
+  const decodedEmb = decodeCandidateEmbedding(row);
+  const embeddingArray = decodedEmb
+    ? (decodedEmb instanceof Float32Array ? Array.from(decodedEmb) : decodedEmb)
+    : null;
+
   return {
     id: row.id,
     content: row.content || '',
@@ -100,7 +108,8 @@ function rowToSearchResult(row: any, similarity: number): SearchResult {
       ? row.createdAt.toISOString()
       : (normalizeTimestamp(rawCreated) ?? String(row.createdAt || '')),
     tags: row.tags || [],
-  };
+    _embedding: embeddingArray,
+  } as SearchResult & { _embedding: number[] | null };
 }
 
 /**

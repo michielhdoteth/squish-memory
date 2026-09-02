@@ -34,6 +34,16 @@ const ENTITY_PATTERNS = {
   
   // Version numbers: v1.0, version 2.3.1
   versions: /\b[vV]?(?:ersion\s+)?\d+\.\d+(?:\.\d+)?\b/g,
+
+  // Person names with context words (said, mentioned, told, worked, managed, led)
+  // Matches: "Michiel said", "John mentioned", "Sarah told me", "Alex worked on", "Maria managed the", "Tom led the"
+  personName: /\b(?:[A-Z][a-z]{1,20})\s+(?:said|mentioned|told|worked|managed|led|is|was|are|were|has|had|did|does|thinks|believes|wants|needs|asked|told|replied|responded|suggested|recommended|decided|agreed|disagreed|wrote|created|built|designed|implemented|developed|reviewed|tested|deployed|fixed|resolved|improved|updated|added|removed|deleted|modified|changed|migrated|refactored|optimized|debugged|analyzed|evaluated|planned|organized|coordinated|scheduled|arranged|prepared|submitted|delivered|shipped|released|published|launched|announced|presented|demonstrated|showed|explained|described|clarified|confirmed|verified|validated|approved|rejected|deferred|postponed|cancelled|completed|finished|started|began|continued|paused|resumed|stopped|halted|abandoned)\b/g,
+  
+  // Company names with suffixes (Inc, LLC, Corp, Ltd, Co, Group, Labs, Technologies, Systems, Solutions)
+  companyName: /\b[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\s+(?:Inc\.?|LLC|Corp\.?|Ltd\.?|Co\.?|Group|Labs|Technologies|Systems|Solutions|Enterprises|Partners|Associates|Consulting|Holdings)\b/g,
+  
+  // Project names in quotes (single or double): "Project Alpha", 'Thunderbolt', "Atlas"
+  quotedProject: /["']([A-Z][A-Za-z0-9\s\-_.]{1,50})["']/g,
 };
 
 /**
@@ -45,6 +55,9 @@ const ENTITY_PATTERNS = {
  * - File paths (src/components/Button.tsx)
  * - Function calls (getUserData())
  * - Common tools/frameworks (React, Vue, etc.)
+ * - Person names with context words (Michiel said, John worked)
+ * - Company names with suffixes (Acme Inc, Google LLC)
+ * - Quoted project names ("Project Atlas")
  * 
  * @param query - The search query
  * @returns Array of extracted entity names
@@ -92,6 +105,30 @@ export function extractQueryEntities(query: string): string[] {
   const versionMatches = query.matchAll(ENTITY_PATTERNS.versions);
   for (const match of versionMatches) {
     entities.add(match[0]);
+  }
+  
+  // Extract person names with context words
+  const personMatches = query.matchAll(ENTITY_PATTERNS.personName);
+  for (const match of personMatches) {
+    // match[0] is the full "Name verb" - extract just the name
+    const name = match[0].split(/\s+/)[0];
+    if (name.length >= 2) {
+      entities.add(name);
+    }
+  }
+  
+  // Extract company names with suffixes
+  const companyMatches = query.matchAll(ENTITY_PATTERNS.companyName);
+  for (const match of companyMatches) {
+    entities.add(match[0]);
+  }
+  
+  // Extract quoted project names (captured group is the name inside quotes)
+  const quotedMatches = query.matchAll(ENTITY_PATTERNS.quotedProject);
+  for (const match of quotedMatches) {
+    if (match[1]) {
+      entities.add(match[1].trim());
+    }
   }
   
   return Array.from(entities);

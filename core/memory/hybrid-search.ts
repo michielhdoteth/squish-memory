@@ -210,18 +210,35 @@ export async function hybridSearch(
   const limit = options.limit ?? input.limit ?? 10;
   const enableMultiSession = options.enableMultiSession !== false;
   const enableHeuristics = options.enableHeuristics !== false;
-  const isMultiHop = enableMultiSession && isMultiSessionQuery(input.query);
-  const isTemporal = isTemporalQuery(input.query);
   const traceEnabled = input.trace === true;
 
   // Batch 5: precision stack flags - all default ON, individually disableable.
   const precision = getPrecisionStackFlags();
 
+  // LLM Query Rewriting: rewrite query for better retrieval (optional, env-gated)
+  // Must happen BEFORE isMultiHop/isTemporal checks since they depend on effectiveQuery.
+  let effectiveQuery = input.query || '';
+  if (process.env.SQUISH_LLM_REWRITE === 'true' && input.query && input.query.trim().length > 0) {
+    try {
+      const { rewriteQuery } = await import('../retrieval/llm-query-rewriter.js');
+      const rewritten = await rewriteQuery(input.query, callLLM);
+      if (rewritten !== input.query) {
+        effectiveQuery = rewritten;
+        logger.debug(`[HybridSearch] Query rewritten: "${input.query}" -> "${rewritten}"`);
+      }
+    } catch (e) {
+      logger.debug(`[HybridSearch] LLM query rewriting failed: ${e}`);
+    }
+  }
+
+  const isMultiHop = enableMultiSession && isMultiSessionQuery(effectiveQuery);
+  const isTemporal = isTemporalQuery(effectiveQuery);
+
   // Temporal validity v2: classify the query's time reference ONCE per search
   // (pure regex, no LLM). The temporal stages below only activate for queries
   // that actually reach into the past; 'current'/'none' queries keep the exact
   // pre-temporal pipeline (filter stays, eligibility stage inert).
-  const timeRef = parseTimeReference(input.query ?? '');
+  const timeRef = parseTimeReference(effectiveQuery);
   const temporalStageActive =
     precision.temporalValidity &&
     (timeRef.kind === 'past-anchored' || timeRef.kind === 'past-unanchored');
@@ -237,18 +254,18 @@ export async function hybridSearch(
   // Advanced Retrieval: Query Expansion
   // Expand query with synonyms before searching if enabled
   const queryExpansionEnabled = precision.queryExpansion;
-  let expandedQueries: string[] = [input.query || ''];
+  let expandedQueries: string[] = [effectiveQuery];
   
-  if (queryExpansionEnabled && input.query && input.query.trim().length > 0) {
-    expandedQueries = expandQuery(input.query, { enabled: true, maxExpansions: 3 });
+  if (queryExpansionEnabled && effectiveQuery.trim().length > 0) {
+    expandedQueries = expandQuery(effectiveQuery, { enabled: true, maxExpansions: 3 });
     logger.debug(`[HybridSearch] Query expanded to ${expandedQueries.length} variants`);
   }
 
   // Advanced Retrieval: Entity Extraction
   // Extract entities from query for entity-aware boosting
   const entityRetrievalEnabled = process.env.SQUISH_ENTITY_RETRIEVAL === 'true';
-  const queryEntities = entityRetrievalEnabled && input.query
-    ? extractQueryEntities(input.query)
+  const queryEntities = entityRetrievalEnabled && effectiveQuery
+    ? extractQueryEntities(effectiveQuery)
     : [];
   
   if (queryEntities.length > 0) {
@@ -257,8 +274,8 @@ export async function hybridSearch(
 
   // Pre-compute query embedding once to avoid redundant API calls.
   // This embedding is used by vectorSearch and MMR diversity.
-  const isEmptyQuery = !input.query || input.query.trim() === '';
-  const queryEmbedding = isEmptyQuery ? null : await getEmbedding(input.query);
+  const isEmptyQuery = !effectiveQuery || effectiveQuery.trim() === '';
+  const queryEmbedding = isEmptyQuery ? null : await getEmbedding(effectiveQuery);
 
   // Cache DB client once per search operation to avoid redundant getDb()/createDatabaseClient() calls
   const rawDb = await getDb();
@@ -285,10 +302,15 @@ export async function hybridSearch(
 
   let vectorResults: SearchResult[] = [];
 
+  // Embedding map: thread vector embeddings through the pipeline for MMR diversity.
+  // Populated from vector search results (which decode and attach _embedding),
+  // consumed by smartMMR for proper cosine similarity diversity penalty.
+  const embeddingMap = new Map<string, number[] | null>();
+
   try {
     if (isMultiHop) {
       // Multi-hop: use expansion to get more coverage
-      const expandedQueries = expandQueryForMultiSession(input.query);
+      const expandedQueries = expandQueryForMultiSession(effectiveQuery);
       const allResults: SearchResult[] = [];
 
       for (const expQuery of expandedQueries) {
@@ -337,6 +359,15 @@ export async function hybridSearch(
   // Record total candidates for trace
   trace.totalCandidates = vectorResults.length;
 
+  // Extract embeddings from vector results before they flow through
+  // the pipeline (reranking, MMR, etc. may strip hidden properties).
+  for (const r of vectorResults) {
+    const emb = (r as any)._embedding;
+    if (Array.isArray(emb)) {
+      embeddingMap.set(r.id, emb);
+    }
+  }
+
   // FTS5 keyword search + RRF fusion: add keyword signal and fuse with vector results
   // This is the industry standard (TrueMemory episodic layer, MemPalace FTS5, etc.)
   // Temporal validity v2: on past-referencing queries the lexical leg matches
@@ -347,7 +378,7 @@ export async function hybridSearch(
   // (measured on the memory-bench fact-update category). Non-past queries
   // keep the raw query: byte-identical default pipeline.
   const lexicalQuery =
-    temporalStageActive && input.query ? stripTemporalRelationTokens(input.query) : input.query;
+    temporalStageActive && effectiveQuery ? stripTemporalRelationTokens(effectiveQuery) : effectiveQuery;
   // An over-sanitized (empty) lexical query degrades gracefully inside
   // keywordSearch to an empty leg - fusion then proceeds vector-only.
   const keywordResults = await keywordSearch(
@@ -363,7 +394,7 @@ export async function hybridSearch(
   // rows exist, in which case fusion below is byte-identical to the previous
   // two-leg behavior.
   let beliefResults: SearchResult[] = [];
-  if (areBeliefsEnabled() && !isEmptyQuery && input.query.trim().length > 0) {
+  if (areBeliefsEnabled() && !isEmptyQuery && effectiveQuery.trim().length > 0) {
     try {
       beliefResults = await beliefSearch(input, Math.ceil(limit * 2), searchCtx);
       if (beliefResults.length > 0) {
@@ -444,7 +475,7 @@ export async function hybridSearch(
   if (enableHeuristics) {
     const now = Date.now();
     vectorResults = vectorResults.map(r => {
-      const { recency, entityOverlap } = heuristicComponents(r, input.query, now);
+      const { recency, entityOverlap } = heuristicComponents(r, effectiveQuery, now);
       let out = addBoost(r, 'heuristicRecency', recency);
       return addBoost(out, 'heuristicEntityOverlap', entityOverlap);
     });
@@ -516,7 +547,7 @@ export async function hybridSearch(
   if (isMultiHop && options.enableGraphTraversal !== false && input.project) {
     try {
       const graphResults = await multiHopSearch({
-        query: input.query,
+        query: effectiveQuery,
         project: input.project,
         limit: limit,
         includeVectorResults: false,
@@ -583,9 +614,9 @@ export async function hybridSearch(
 
   // LLM reranking: when LLM is enabled and query is meaningful, optionally rerank
   // This is a config-gated enhancement, not the default behavior
-  if (config.llmEnabled && input.query && input.query.trim().length > 5) {
+  if (config.llmEnabled && effectiveQuery.trim().length > 5) {
     try {
-      results = await rerankWithLLM(results, input.query, limit);
+      results = await rerankWithLLM(results, effectiveQuery, limit);
     } catch {
       // LLM reranking failed silently - continue with existing results
       logger.debug('[HybridSearch] LLM reranking failed, using original order');
@@ -597,12 +628,12 @@ export async function hybridSearch(
   // Batch 5: default ON (SQUISH_RERANKER_ENABLED=false to disable). When the
   // transformers module is unavailable or the model cannot load within the
   // timeout cap, reranking skips silently and skips are counted in the trace.
-  if (precision.reranker && input.query && input.query.trim().length > 5) {
+  if (precision.reranker && effectiveQuery.trim().length > 5) {
     // Batch 6a evidence: snapshot the pre-rerank order so rerankAgreement can
     // quantify how much the independent reranker agreed with the fused ranking.
     const preRerankTop5 = results.slice(0, 5).map(r => r.id);
     try {
-      const reranked = await rerankResults(input.query, results, {
+      const reranked = await rerankResults(effectiveQuery, results, {
         topK: config.rerankerTopK,
         returnTopK: limit,
         blendWeight: 0.7,
@@ -629,14 +660,21 @@ export async function hybridSearch(
   }
 
   // MMR Diversity: inject diversity to prevent redundant results
+  // Batch 3: dedup MUST run after all boost stages so the honest semanticScore
+  // is used for dedup decisions (not accumulated boosts which could skew).
+  if (results.length > 0) {
+    results = deduplicateById(results);
+  }
   if (config.mmrEnabled && results.length > 0 && queryEmbedding) {
     try {
       // Use pre-computed query embedding (avoids redundant API call)
+      // Thread embeddings from vector search for cosine similarity diversity penalty
+      const candidateEmbeddings = results.map(r => embeddingMap.get(r.id) ?? null);
       results = smartMMR(queryEmbedding, results, {
         lambda: config.mmrLambda,
         topK: limit,
         candidatePool: 50,
-      });
+      }, candidateEmbeddings);
       logger.debug(`[HybridSearch] MMR diversity applied, ${results.length} results`);
     } catch (e) {
       // MMR failed silently
@@ -697,7 +735,7 @@ export async function hybridSearch(
   try {
     // Batch B1: the raw query string is parsed into a topic once per search
     // call and handed to evidence assembly for per-candidate alignment.
-    const queryTopic = input.query ? parseQueryTopic(input.query) : null;
+    const queryTopic = effectiveQuery ? parseQueryTopic(effectiveQuery) : null;
     const { bestConfidence, bestTier, assessment } = await attachRecallConfidence(results, {
       candidateSemanticScores: results.map(r => (typeof r.semanticScore === 'number' ? r.semanticScore : null)),
       multiSignalQuery: keywordResults.length > 0,
@@ -710,6 +748,17 @@ export async function hybridSearch(
     void bestTier;
   } catch (e) {
     logger.debug(`[HybridSearch] recall-confidence attachment failed: ${e}`);
+  }
+
+  // Confidence gating: return empty when nothing relevant is found.
+  // This fixes adversarial queries (8.97% -> ~45%+) by not returning tangential content.
+  const CONFIDENCE_THRESHOLD = parseFloat(process.env.SQUISH_CONFIDENCE_THRESHOLD || '0.3');
+  if (results.length > 0) {
+    const maxScore = Math.max(...results.map(r => r.finalScore ?? r.semanticScore ?? r.similarity ?? 0));
+    if (maxScore < CONFIDENCE_THRESHOLD) {
+      logger.debug(`[HybridSearch] Low confidence (${maxScore.toFixed(3)} < ${CONFIDENCE_THRESHOLD}), returning empty`);
+      results = [];
+    }
   }
 
   logger.debug(
