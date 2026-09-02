@@ -452,7 +452,7 @@ export function computeVarianceExplained(eigenvalues: number[]): number[] {
 export function transposeMatrix(matrix: number[][]): number[][] {
   if (matrix.length === 0) return [];
   const rows = matrix.length;
-  const cols = matrix[0].length;
+  const cols = matrix[0]?.length ?? 0;
   const result: number[][] = Array.from({ length: cols }, () => new Array(rows).fill(0));
   for (let i = 0; i < rows; i++) {
     for (let j = 0; j < cols; j++) {

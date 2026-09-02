@@ -544,8 +544,14 @@ async function runMemoryMigration(options: {
   if (!fs.existsSync(targetDbPath)) {
     if (options.migrateGlobal) {
       fs.mkdirSync(target, { recursive: true });
-      const { bootstrapDatabase } = await import('../../../../db/bootstrap.js');
-      await bootstrapDatabase(target);
+      const { ensureSqliteSchema } = await import('../../../../db/bootstrap.js');
+      const { default: Database } = await import('better-sqlite3');
+      const sqlite = new Database(targetDbPath);
+      try {
+        await ensureSqliteSchema(sqlite);
+      } finally {
+        sqlite.close();
+      }
       console.log(`Created global ~/.squish/ directory`);
     } else {
       console.error(`Error: Target is not a .squish directory (no squish.db found): ${target}`);

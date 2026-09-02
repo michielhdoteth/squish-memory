@@ -258,30 +258,19 @@ async function runRelated(
     const { getSessionChunks } = await import(
       '../../../../core/sessions/store.js'
     );
-    const { getOpenCodeSession } = await import(
-      '../../../../core/sessions/opencode-store.js'
-    );
-    const chunks = await getSessionChunks(id, {
-      source: source === 'squish' ? 'squish' : 'all',
+    const group = await getSessionChunks(id, {
+      source,
       opencode_db_path: opts.dbPath,
     });
-    if (chunks.length > 0) {
-      repoPath = chunks[0].repo_path || repoPath;
-      sourceSession = {
-        session_id: chunks[0].session_id,
-        title: chunks[0].session_title,
-        project: chunks[0].project,
-        repo_path: chunks[0].repo_path,
-        branch: chunks[0].branch,
-        agent: chunks[0].agent,
-        status: 'completed',
-        started_at: chunks[0].timestamp,
-        ended_at: chunks[0].timestamp,
-        chunk_count: chunks.length,
-      };
+    if (group) {
+      sourceSession = group;
+      repoPath = group.repo_path || repoPath;
     } else {
       // Try opencode directly
-      const oc = getOpenCodeSession(id, opts.dbPath);
+      const { getOpenCodeSession } = await import(
+        '../../../../core/sessions/opencode-store.js'
+      );
+      const oc = getOpenCodeSession(id, opts.dbPath ? { dbPath: opts.dbPath } : undefined);
       if (oc) {
         sourceSession = oc;
         repoPath = oc.repo_path || repoPath;

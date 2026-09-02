@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Database } from 'better-sqlite3';
 import { getDataDir } from '../config.js';
 import { ensureSqliteSchema } from './bootstrap.js';
 import { maybeMergeLegacyClientDbs } from './merge-client-dbs.js';
@@ -115,7 +116,9 @@ async function createBunSqliteDb(dbPath: string) {
   sqlite.exec('PRAGMA busy_timeout = 5000');
 
   if (!fs.existsSync(dbPath) || sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().length === 0) {
-    await ensureSqliteSchema(sqlite);
+    // bun:sqlite and better-sqlite3 expose the same exec/prepare surface that
+    // ensureSqliteSchema uses; the adapter-level types just disagree.
+    await ensureSqliteSchema(sqlite as unknown as Database);
   }
 
   logger.info('SQLite initialized with bun:sqlite');

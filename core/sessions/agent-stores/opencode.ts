@@ -34,7 +34,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { Database } from 'bun:sqlite';
+
+// bun:sqlite is bun-only. Load the constructor lazily so this module stays
+// importable under node/tsx; every open site catches and degrades to null.
+type Database = any;
+let DatabaseCtor: any = null;
+try {
+  // @ts-ignore - bun:sqlite module not found in types but works at runtime
+  DatabaseCtor = (await import('bun:sqlite')).default;
+} catch {
+  DatabaseCtor = null;
+}
 
 import { logger } from '../../logger.js';
 import type { Chunk, ChunkResult, SessionGroup } from '../types.js';
@@ -108,7 +118,7 @@ function getDb(opts: OpenCodeStoreOptions = {}): Database | null {
       try { cached.db.close(); } catch { /* ignore */ }
       cached = null;
     }
-    const db = new (Database as any)(dbPath, readonly ? { readonly: true } : undefined);
+    const db = new (DatabaseCtor as any)(dbPath, readonly ? { readonly: true } : undefined);
     cached = { db, dbPath, readonly, mtimeMs };
     return db;
   } catch (err) {
@@ -726,8 +736,8 @@ export function ensureSidecarFts(opts: OpenCodeStoreOptions = {}): string | null
   let srcDb: Database;
   let destDb: Database;
   try {
-    srcDb = new (Database as any)(src, { readonly: true });
-    destDb = new Database(dest);
+    srcDb = new (DatabaseCtor as any)(src, { readonly: true });
+    destDb = new DatabaseCtor(dest);
   } catch (err) {
     logger.debug(`[opencode-store] ensureSidecarFts open error: ${err}`);
     return null;
@@ -811,7 +821,7 @@ export function searchOpenCodeSessionsFts(
 
   let destDb: Database;
   try {
-    destDb = new (Database as any)(sidecar, { readonly: true });
+    destDb = new (DatabaseCtor as any)(sidecar, { readonly: true });
   } catch {
     return searchOpenCodeSessions(input, opts);
   }
