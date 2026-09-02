@@ -2,14 +2,13 @@
 
 // Load .env file for config
 import 'dotenv/config';
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { McpServer } from "@modelcontextprotocol/server";
 import express from "express";
-// Use zod/v3 for MCP SDK compatibility - the SDK's toJsonSchemaCompat uses
-// z4mini.toJSONSchema which crashes with Zod v4 classic schemas (schema._zod.def mismatch)
-import { z } from "zod/v3";
+// Zod v4 classic schemas satisfy the v2 SDK's Standard Schema contract
+// (v2 requires zod >=4.2; the v1 zod/v3 compat subpath is no longer supported)
+import { z } from "zod";
 import { config, detectProjectScope } from "../../../config.js";
 import {
   isSchemaDriftError,
@@ -20,7 +19,7 @@ import {
   buildHealthState,
   buildStatsState,
   buildInspectState,
-} from "@squish/sdk";
+} from "@squish/core-sdk";
 // buildContextState and resolveProjectScope need raw core return types
 // (SDK wrappers return different shapes — TrustState vs ContextReportInput/TrustProjectScope)
 import {
@@ -42,7 +41,7 @@ import {
 } from "./consolidation-utils.js";
 // SDK client — replaces direct core imports for recall, search, remember, forget,
 // listProjects, associations, scheduler, and graph operations
-import { SquishClient, type SearchResult, type RecallAssessment, type ProjectRecord } from "@squish/sdk";
+import { SquishClient, type SearchResult, type RecallAssessment, type ProjectRecord } from "@squish/core-sdk";
 import { assessRecall } from "../../../core/scoring/recall-confidence.js";
 // Tool-call tracing (in-memory ring buffer) + additive capability tools
 import { traceToolCall, getTraceSummary } from "./tracing.js";
@@ -73,7 +72,7 @@ const SERVER_INSTRUCTIONS = `Squish is your persistent memory across all session
 Use squish_remember to store facts, decisions, preferences, and lessons worth keeping. Use squish_recall before starting work to surface prior context; search by topic, not by date. Use squish_sessions to review past sessions, and squish_skill or squish_extract when accumulated memories contain reusable procedures. Use squish_forget carefully: single deletes are immediate; bulk deletes are dry-run only until you pass confirm=true. Store proactively when you learn something durable; recall proactively when context would change your answer.`;
 
 // Reference to the HTTP server (when running in http mode) so shutdown can close it
-let httpServerRef: { close: (cb?: () => void) => void } | null = null;
+let httpServerRef: import('node:http').Server | null = null;
 
 // Create shared SDK client — wraps core storage/embeddings for clean API access
 const sdkClient = new SquishClient();
@@ -115,7 +114,7 @@ function safeRegisterTool(
   handler: any
 ): boolean {
   try {
-    server.registerTool(name, definition, async (input: any) => {
+    server.registerTool(name, definition, async (input: any): Promise<any> => {
       const probe = await probeSchemaHealth();
       if (probe.status !== "ok") {
         return schemaProbeErrorResult(probe);
@@ -206,13 +205,13 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
     {
       description: "Store any memory, learning, or ingest media files. System auto-detects type and routes appropriately. For text: provide content. For files: provide filePath. Supports images, audio, video, and documents (27+ file types).",
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         content: z.string().optional().describe("What to remember - can be a fact, decision, lesson, observation, or note"),
         filePath: z.string().optional().describe("Path to media file to ingest (image/audio/video/document)"),
         description: z.string().optional().describe("Description or context for media files"),
         type: z.enum(["observation", "fact", "decision", "context", "preference", "note"]).optional().describe("Memory type - auto-detected if not provided"),
         tags: z.array(z.string()).optional().describe("Optional tags for organization"),
-      }
+      })
     },
     async ({ content, filePath, description, tags = [], type }: {
       content?: string;
@@ -367,11 +366,11 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
         "'qualified' (best match plausible but not certain, verify before relying on it), or " +
         "'no_reliable_memory' (no result clears the reliability floor - treat as no memory found and consider storing new knowledge).",
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().describe("Query text or memory ID to recall"),
         limit: z.number().min(1).max(100).default(5).describe("Maximum results for query recall"),
         project: z.string().optional().describe("Project path filter"),
-      }
+      })
     },
     async ({ query, limit = 5, project }: { query: string; limit?: number; project?: string }) => {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query);
@@ -418,18 +417,18 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
     }
   )) toolCount++;
 
-  // squish_forget - Delete a memory by ID, or bulk delete with filters
+  // squish_forget - Delete a memory by ID, or bulk delete with search
   if (safeRegisterTool(
     server,
     "squish_forget",
     {
       description: "Delete a memory by ID, or bulk delete with search query",
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         memoryId: z.string().optional().describe("Memory ID to delete (single)"),
         search: z.string().optional().describe("Search query to match specific memories for bulk delete"),
         confirm: z.boolean().optional().describe("Must be true to execute a destructive bulk delete (required after a dry run)"),
-      }
+      })
     },
     async ({ memoryId, search, confirm }: { memoryId?: string; search?: string; confirm?: boolean }) => {
       const resolvedProject = resolveProjectPath();
@@ -480,12 +479,12 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
     {
       description: "Manage memory associations: find related memories or add a link between two memories",
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         action: z.enum(["find", "add"]).describe("Action: find related memories or add a link"),
         memoryId: z.string().optional().describe("Memory ID (required for find action)"),
         fromId: z.string().optional().describe("Source memory ID (required for add action)"),
         toId: z.string().optional().describe("Target memory ID (required for add action)"),
-      }
+      })
     },
     async ({ action, memoryId, fromId, toId }: { action: "find" | "add"; memoryId?: string; fromId?: string; toId?: string }) => {
       if (action === "find") {
@@ -530,12 +529,12 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
     {
       description: "Get project context or list registered projects. Use action 'session-start' to compose the canonical session-bootstrap context block (core memory + beliefs + working set + pinned + recent decisions) under a hard ~2000-token ceiling.",
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
-      inputSchema: {
+      inputSchema: z.object({
         project: z.string().optional().describe("Project path"),
         limit: z.number().min(1).max(50).default(10).describe("Maximum memories to return"),
         listProjects: z.boolean().optional().describe("List registered projects instead of loading context"),
         action: z.enum(["session-start"]).optional().describe("Compose the canonical session-start bootstrap block (token-capped, priority-ordered)")
-      }
+      })
     },
     async ({ project, limit = 10, listProjects = false, action }: { project?: string; limit?: number; listProjects?: boolean; action?: "session-start" }) => {
       const resolvedProject = resolveProjectPath(project);
@@ -600,7 +599,7 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
     {
       description: "Get memory statistics and system health. Use action to control watcher or run LLM consolidation.",
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-      inputSchema: {
+      inputSchema: z.object({
         project: z.string().optional().describe("Project path filter (global if omitted)"),
         action: z.enum(["status", "start_watcher", "stop_watcher", "consolidate", "traces", "engines"]).optional().describe(
           "status (default): return stats + health + watcher status + consolidation config. " +
@@ -610,7 +609,7 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
           "traces: tool-call trace summary (durations, errors, recent calls). " +
           "engines: ACL read-gate decision log summary and recent would-filter entries."
         ),
-      }
+      })
     },
     async ({ project, action = "status" }: { project?: string; action?: string }) => {
       const resolvedProject = resolveProjectPath(project);
@@ -681,9 +680,9 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
     {
       description: "Explain why a memory was retained, where it was routed, and whether raw fallback exists",
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
-      inputSchema: {
+      inputSchema: z.object({
         memoryId: z.string().uuid().describe("Memory ID to inspect")
-      }
+      })
     },
     async ({ memoryId }: { memoryId: string }) => {
       const inspection = await buildInspectState(memoryId);
@@ -702,7 +701,7 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
     {
       description: "Manage reusable skills (SOPs). Actions: list, get, create, update, delete, search, versions, assign, unassign, record_usage. Skills are versioned workflows with triggers, steps, and validation rules.",
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         action: z.enum(["list", "get", "create", "update", "delete", "search", "versions", "assign", "unassign", "record_usage"]).describe("Action to perform"),
         skillId: z.string().optional().describe("Skill ID (required for get, update, delete, versions, assign, unassign, record_usage)"),
         name: z.string().optional().describe("Skill name (required for create, optional for update)"),
@@ -715,14 +714,14 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
           description: z.string(),
           tool: z.string().optional(),
         })).optional().describe("Ordered execution steps"),
-        triggerConditions: z.record(z.unknown()).optional().describe("When this skill should be used"),
+        triggerConditions: z.record(z.string(), z.unknown()).optional().describe("When this skill should be used"),
         tags: z.array(z.string()).optional().describe("Tags for organization"),
         agentId: z.string().optional().describe("Agent to assign skill to (for assign action)"),
         query: z.string().optional().describe("Search query (for search action)"),
         status: z.string().optional().describe("Filter by status"),
         success: z.boolean().optional().describe("Whether usage was successful (for record_usage)"),
         changeSummary: z.string().optional().describe("Summary of changes (for update)"),
-      }
+      })
     },
     async (input: any) => {
       const { createSkill, getSkillById, listSkills, updateSkill, deleteSkill, searchSkills, getSkillVersions, assignSkill, unassignSkill, recordSkillUsage } = await import('../../../core/skills/skills.js');
@@ -816,7 +815,7 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
     {
       description: "Manage agent loadouts (bind memory assets to agents) and visibility rules (ACL). Actions: add_loadout, remove_loadout, get_loadout, set_visibility, check_visibility, get_rules.",
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         action: z.enum(["add_loadout", "remove_loadout", "get_loadout", "set_visibility", "remove_visibility", "check_visibility", "get_rules"]).describe("Action to perform"),
         agentId: z.string().optional().describe("Agent ID (required for loadout operations)"),
         assetType: z.enum(["memory", "skill", "belief", "strategy", "learning"]).optional().describe("Asset type"),
@@ -829,7 +828,7 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
         permission: z.enum(["read", "write", "admin"]).optional().describe("Permission level"),
         userId: z.string().optional().describe("User ID for visibility check"),
         teamIds: z.array(z.string()).optional().describe("Team IDs for visibility check"),
-      }
+      })
     },
     async (input: any) => {
       const { addLoadout, removeLoadout, getAgentLoadout, setVisibilityRule, removeVisibilityRule, getVisibilityRules, checkVisibility } = await import('../../../core/loadout/loadout.js');
@@ -901,11 +900,11 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
     {
       description: "Auto-extract reusable skills (SOPs) from accumulated memories using LLM analysis. Actions: run (batch extraction), status (last run info).",
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         action: z.enum(["run", "status"]).describe("Action to perform"),
         hoursBack: z.number().optional().describe("How many hours back to look for memories (default: 24)"),
         projectId: z.string().optional().describe("Project ID to extract from"),
-      }
+      })
     },
     async (input: any) => {
       try {
@@ -986,12 +985,12 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
         "confidence signals retrieval and recall-confidence read; contradiction " +
         "marks beliefs disputed / memories outdated so they rank lower.",
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         targetType: z.enum(["memory", "belief", "strategy"]).describe("Which store the id belongs to"),
         id: z.string().describe("Target record ID (from a recall result)"),
         signal: z.enum(["confirm", "contradict", "used"]).describe("Feedback signal"),
         project: z.string().optional().describe("Project path (defaults to detected workspace; feedback is rejected when the target belongs to a different project)"),
-      }
+      })
     },
     async ({ targetType, id, signal, project }: { targetType: "memory" | "belief" | "strategy"; id: string; signal: "confirm" | "contradict" | "used"; project?: string }) => {
       const { applyFeedback } = await import('../../../core/memory/reinforcement.js');
@@ -1073,7 +1072,7 @@ async function runHttp(server: McpServer, port: number): Promise<void> {
   app.use(express.json());
 
   // Store transports by session ID
-  const transports = new Map<string, StreamableHTTPServerTransport>();
+  const transports = new Map<string, NodeStreamableHTTPServerTransport>();
 
   // Clean up stale sessions every 5 minutes
   const cleanupInterval = setInterval(() => {
@@ -1154,7 +1153,7 @@ async function runHttp(server: McpServer, port: number): Promise<void> {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     const body = req.body;
 
-    let transport: StreamableHTTPServerTransport | undefined;
+    let transport: NodeStreamableHTTPServerTransport | undefined;
     let serverToUse: McpServer | undefined;
 
     // Check if we have an existing transport for this session
@@ -1179,7 +1178,7 @@ async function runHttp(server: McpServer, port: number): Promise<void> {
       serverToUse = newServer;
 
       // Create new transport with JSON response mode
-      transport = new StreamableHTTPServerTransport({
+      transport = new NodeStreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
         enableJsonResponse: true,
         onsessioninitialized: (newSessionId: string) => {

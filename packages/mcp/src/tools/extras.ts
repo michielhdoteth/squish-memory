@@ -1,10 +1,10 @@
+import type { McpServer } from "@modelcontextprotocol/server";
+
 // Additive MCP tools exposing existing SDK capabilities:
 // places, sessions, tier management, maintenance.
-// Handlers are thin wrappers — all logic lives in @squish/sdk / core.
-
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod/v3";
-import type { SquishClient } from "@squish/sdk";
+// Handlers are thin wrappers — all logic lives in @squish/core-sdk / core.
+import { z } from "zod";
+import type { SquishClient } from "@squish/core-sdk";
 
 export interface ToolCtx {
   register: (server: McpServer, name: string, definition: any, handler: any) => boolean;
@@ -19,7 +19,7 @@ function jsonResult(payload: unknown, version?: string) {
   return {
     content: [{
       type: "text",
-      text: JSON.stringify(version ? { ...payload, version } : payload, null, 2),
+      text: JSON.stringify(version ? { ...(payload as Record<string, unknown>), version } : payload, null, 2),
     }],
   };
 }
@@ -34,12 +34,12 @@ export function registerPlacesTools(ctx: ToolCtx): number {
     {
       description: "Memory places (spatial organization). Actions: list (all places for project), get (memories at a place by ID or type).",
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
-      inputSchema: {
+      inputSchema: z.object({
         action: z.enum(["list", "get"]).describe("Action to perform"),
         placeId: z.string().optional().describe("Place ID or place type (required for get action; types: inbox, ref, wip, sandbox, board, sparks, archive)"),
         limit: z.number().min(1).max(100).default(50).describe("Max memories to return for get action"),
         project: z.string().optional().describe("Project path filter"),
-      }
+      })
     },
     async ({ action, placeId, limit = 50, project }: { action: "list" | "get"; placeId?: string; limit?: number; project?: string }) => {
       const resolvedProject = resolveProjectPath(project);
@@ -79,7 +79,7 @@ export function registerSessionsTools(ctx: ToolCtx): number {
     {
       description: "Agent session history across harnesses. Actions: list (recent sessions), show (chunks of a session), search (search chunk content), related (sessions related to current project directory). Use source to scope results to one harness; every result is tagged with its harness origin.",
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
-      inputSchema: {
+      inputSchema: z.object({
         action: z.enum(["list", "show", "search", "related"]).describe("Action to perform"),
         sessionId: z.string().optional().describe("Session ID (required for show action)"),
         query: z.string().optional().describe("Search query (required for search action)"),
@@ -88,7 +88,7 @@ export function registerSessionsTools(ctx: ToolCtx): number {
         source: z.enum(["all", "opencode", "claude-code", "claude", "codex", "gemini"]).optional().describe("Harness filter for list/show/search/related (default all; 'claude' aliases 'claude-code')"),
         limit: z.number().min(1).max(100).default(20).describe("Maximum results"),
         project: z.string().optional().describe("Project path filter"),
-      }
+      })
     },
     async (input: {
       action: "list" | "show" | "search" | "related";
@@ -176,11 +176,11 @@ export function registerTierTools(ctx: ToolCtx): number {
     {
       description: "Memory tier management. Actions: pin (protect a memory from decay), unpin, promote (move a memory to the sturdy tier), stats (tier distribution).",
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         action: z.enum(["pin", "unpin", "promote", "stats"]).describe("Action to perform"),
         memoryId: z.string().optional().describe("Memory ID (required for pin, unpin, promote)"),
         project: z.string().optional().describe("Project path filter (for stats)"),
-      }
+      })
     },
     async ({ action, memoryId, project }: { action: "pin" | "unpin" | "promote" | "stats"; memoryId?: string; project?: string }) => {
       const resolvedProject = resolveProjectPath(project);
@@ -228,12 +228,12 @@ export function registerMaintenanceTools(ctx: ToolCtx): number {
     {
       description: "Database maintenance. Actions: run (full maintenance: consolidation, decay, cleanup), fix-schema (repair schema drift issues). Gated behind SQUISH_ENABLE_MAINTENANCE_TOOLS=true.",
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         action: z.enum(["run", "fix-schema"]).describe("Action to perform"),
         dryRun: z.boolean().default(false).describe("Preview maintenance without applying changes"),
         ageDays: z.number().min(1).optional().describe("Age threshold in days for cleanup steps"),
         project: z.string().optional().describe("Project path filter"),
-      }
+      })
     },
     async ({ action, dryRun = false, ageDays, project }: { action: "run" | "fix-schema"; dryRun?: boolean; ageDays?: number; project?: string }) => {
       const resolvedProject = resolveProjectPath(project);

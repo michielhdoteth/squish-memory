@@ -4,7 +4,7 @@
   "author": "4m-labs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/michielhdoteth/squish.git"
+    "url": "https://github.com/michielhdoteth/squish-memory.git"
   },
   "mcpName": "io.github.michielhdoteth/squish",
   "main": "config.ts",
@@ -24,8 +24,11 @@
     "picocolors": "^1.0.0",
     "redis": "^6.1.0",
     "sql.js": "^1.14.1",
+    "stemmer": "^2.0.1",
     "tsx": "^4.21.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -44,7 +47,7 @@
     "squish-mcp": "bin/squish-mcp.mjs"
   },
   "bugs": {
-    "url": "https://github.com/michielhdoteth/squish/issues"
+    "url": "https://github.com/michielhdoteth/squish-memory/issues"
   },
   "description": "AI memory system for coding agents. Local-first MCP runtime with connectors (Google Drive, GitHub, Slack, Notion), knowledge graphs, decay scoring, and multi-tier deployment. Free locally, paid Cloud for sync and teams.",
   "engines": {

@@ -1,5 +1,5 @@
 // squish_dedup - duplicate detection & merge workflow.
-// Thin wrapper: all logic lives in @squish/sdk / core/algorithms handlers.
+// Thin wrapper: all logic lives in @squish/core-sdk / core/algorithms handlers.
 //
 // Safety model:
 // - scan/list/preview are read-only (scan creates proposals but never merges)
@@ -8,14 +8,14 @@
 // - every executed merge writes a memory_merge_history row (undo log) so
 //   reverse can restore source memories from the stored snapshot
 
-import { z } from "zod/v3";
+import { z } from "zod";
 import type { ToolCtx } from "./extras.js";
 
 function jsonResult(payload: unknown, version?: string) {
   return {
     content: [{
       type: "text",
-      text: JSON.stringify(version ? { ...payload, version } : payload, null, 2),
+      text: JSON.stringify(version ? { ...(payload as Record<string, unknown>), version } : payload, null, 2),
     }],
   };
 }
@@ -34,7 +34,7 @@ export function registerDedupTools(ctx: ToolCtx): number {
         "reverse (undo an executed merge via its history ID), auto (merge all pending proposals above confidence threshold; " +
         "requires SQUISH_DEDUP_AUTO=true, capped per invocation). Approved merges keep merged-from IDs + snapshot so reverse always works.",
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         action: z.enum(["scan", "list", "preview", "approve", "reject", "reverse", "auto"]).describe("Action to perform"),
         proposalId: z.string().optional().describe("Proposal ID (required for preview, approve, reject)"),
         mergeHistoryId: z.string().optional().describe("Merge history ID (required for reverse; returned by approve/auto)"),
@@ -44,7 +44,7 @@ export function registerDedupTools(ctx: ToolCtx): number {
         reviewNotes: z.string().optional().describe("Optional review notes recorded with approve/reject"),
         reason: z.string().optional().describe("Optional reason recorded with reverse"),
         project: z.string().optional().describe("Project path filter (for scan/list)"),
-      }
+      })
     },
     async (input: {
       action: "scan" | "list" | "preview" | "approve" | "reject" | "reverse" | "auto";

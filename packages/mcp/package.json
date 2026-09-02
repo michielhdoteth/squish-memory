@@ -15,9 +15,10 @@
     "mcp:http": "tsx src/index.ts --http"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
-    "@squish/sdk": "workspace:*",
-    "zod": "^3.24.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@squish/core-sdk": "workspace:*",
+    "zod": "^4.3.6",
     "express": "^5.2.1"
   },
   "devDependencies": {
