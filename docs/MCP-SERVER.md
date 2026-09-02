@@ -1,48 +1,56 @@
-# Squish MCP Server
+# Squish Memory Infrastructure — MCP Server
 
-Universal memory layer for AI agents via Model Context Protocol (MCP).
+Universal memory layer for AI agents via Model Context Protocol (MCP). Local-first, works with any MCP-compatible client.
 
-## Features
+## What it is
 
-- **15 MCP Tools**: remember, recall, forget, link, context, stats, inspect, skill, loadout, extract, feedback, places, sessions, tier, dedup (plus a 16th gated tool: squish_maintenance)
-- **Local Embeddings**: TF-IDF based, 768-dim vectors
-- **QMD Integration**: Local markdown search with BM25 + vector
-- **Hybrid Search**: Semantic + recency + importance scoring
-- **SQLite Storage**: Free, local, no API calls
-- **Multimodal Ingestion**: 27+ file types across images, audio, video, and documents
-- **LLM Consolidation**: Cross-connection finding via LLM-powered knowledge analysis
+The Squish MCP server is how agents talk to Squish's memory runtime. It exposes 15 tools by default, with a 16th (squish_maintenance) gated behind `SQUISH_ENABLE_MAINTENANCE_TOOLS=true`. The server runs locally via stdio (default) or Streamable HTTP. Under the hood it uses the same runtime as the CLI and SDK — SQLite or PostgreSQL storage, local TF-IDF embeddings, hybrid retrieval, belief engine, decay, and knowledge graph.
 
-## Quick Start
+## Quick start
 
 ### STDIO Mode (Default)
 
 ```bash
-# Start Squish MCP server
 squish-mcp
 ```
 
 ### HTTP Mode
 
 ```bash
-# Start with custom port
-squish-mcp --http --port 9000
-
-# Or via environment
-SQUISH_MCP_MODE=http SQUISH_MCP_PORT=9000 squish-mcp
+squish-mcp --http --port 8767
 ```
 
-Server runs on `http://localhost:8767` by default.
+Or via environment:
+
+```bash
+SQUISH_MCP_MODE=http SQUISH_MCP_PORT=8767 squish-mcp
+```
+
+Server runs on `http://localhost:8767` by default in HTTP mode.
+
+### Health check
+
+```bash
+squish-mcp --health
+```
+
+Expected output:
+
+```
+[MCP] Running health check...
+[MCP] Health check passed. Server initialized with 16 tools.
+```
 
 ### Endpoints (HTTP Mode)
 
-- **Health**: `GET /health` - Server status
-- **MCP**: `POST /mcp` - Streamable HTTP endpoint for MCP calls
+- **Health**: `GET /health` — Server status, backend health, tool count
+- **MCP**: `POST /mcp` — Streamable HTTP endpoint for MCP calls
 
 ## Tools
 
-### 1. `squish_remember`
+### 1. squish_remember
 
-Store any memory or learning. Auto-detects type and routes appropriately. Supports multimodal ingestion via file path.
+Store any memory, learning, or ingest media files. System auto-detects type and routes appropriately. Supports multimodal ingestion via file path.
 
 ```json
 {
@@ -68,22 +76,18 @@ Multimodal ingestion (image, audio, video, document):
 }
 ```
 
-Parameters:
-- `content` (optional): Text content to store as a memory. Provide either `content` or `filePath`.
-- `filePath` (optional): Absolute path to a media file (image, audio, video, document) to ingest. When provided, the multimodal pipeline extracts content and creates a memory. Provide either `content` or `filePath`.
-- `type` (optional): Memory type hint (auto-detected if omitted)
-- `tags` (optional): Array of tags for organization
-- `description` (optional): Description or context for file ingestion
+**Parameters:**
+- `content` (optional): Text content to store. Provide either `content` or `filePath`.
+- `filePath` (optional): Absolute path to a media file to ingest. Provide either `content` or `filePath`.
+- `type` (optional): Memory type hint — `observation`, `fact`, `decision`, `context`, `preference`, `note`. Auto-detected if omitted.
+- `tags` (optional): Array of tags for organization.
+- `description` (optional): Description or context for file ingestion.
 
-Auto-detection:
-- Detects learning patterns (success, failure, fix, insight)
-- Detects TODO patterns
-- Routes to memory, learning, or note storage automatically
-- When `filePath` is provided, detects MIME type and routes to the appropriate extractor (27+ supported file types)
+Auto-detection: the tool classifies content into memory, learning (success/failure/fix/insight), or note based on patterns in the text.
 
-### 2. `squish_recall`
+### 2. squish_recall
 
-Recall memories by query, or retrieve a specific memory by ID.
+Recall memories by query, or retrieve a specific memory by ID. Returns a top-level `recallAssessment` with a calibrated verdict.
 
 ```json
 {
@@ -107,7 +111,17 @@ Retrieve by ID:
 }
 ```
 
-### 3. `squish_forget`
+**Recall assessment verdicts:**
+- `confident` — best match >= 0.90, rely on it
+- `qualified` — best match plausible but not certain, verify before relying on it
+- `no_reliable_memory` — no result clears the reliability floor, treat as no memory found
+
+**Parameters:**
+- `query` (required): Query text or memory ID to recall.
+- `limit` (optional, default 5): Maximum results for query recall.
+- `project` (optional): Project path filter.
+
+### 3. squish_forget
 
 Delete a memory by ID, or bulk delete with search filters.
 
@@ -120,19 +134,26 @@ Delete a memory by ID, or bulk delete with search filters.
 }
 ```
 
-Bulk delete by search:
+Bulk delete by search (dry-run by default):
+
 ```json
 {
   "name": "squish_forget",
   "arguments": {
-    "search": "old debug notes"
+    "search": "old debug notes",
+    "confirm": true
   }
 }
 ```
 
-### 4. `squish_link`
+**Parameters:**
+- `memoryId` (optional): Memory ID to delete (single, immediate).
+- `search` (optional): Search query to match specific memories for bulk delete.
+- `confirm` (optional): Must be `true` to execute a destructive bulk delete. Without it, the operation is a dry run.
 
-Manage memory associations: find related memories or add links between them.
+### 4. squish_link
+
+Manage memory associations: find related memories or add a link between two memories.
 
 ```json
 {
@@ -145,26 +166,39 @@ Manage memory associations: find related memories or add links between them.
 ```
 
 Actions:
-- `find`: Get related memories (graph traversal)
-- `add`: Create association between two memories
+- `find` — Get related memories (graph traversal)
+- `add` — Create association between two memories
 
-### 5. `squish_context`
+**Parameters:**
+- `action` (required): `find` or `add`
+- `memoryId` (required for `find`): Memory ID to find relations for
+- `fromId` (required for `add`): Source memory ID
+- `toId` (required for `add`): Target memory ID
 
-Get project context or list registered projects.
+### 5. squish_context
+
+Get project context or list registered projects. Use action `session-start` to compose the canonical session-bootstrap context block (token-capped, priority-ordered).
 
 ```json
 {
   "name": "squish_context",
   "arguments": {
     "project": "/path/to/project",
-    "limit": 10
+    "limit": 10,
+    "action": "session-start"
   }
 }
 ```
 
-### 6. `squish_stats`
+**Parameters:**
+- `project` (optional): Project path.
+- `limit` (optional, default 10): Maximum memories to return.
+- `listProjects` (optional): List registered projects instead of loading context.
+- `action` (optional): `"session-start"` — compose the canonical session-start bootstrap block.
 
-Get memory statistics, system health, and control the file watcher and consolidation engine.
+### 6. squish_stats
+
+Get memory statistics and system health. Use action to control watcher or run LLM consolidation.
 
 ```json
 {
@@ -176,15 +210,19 @@ Get memory statistics, system health, and control the file watcher and consolida
 }
 ```
 
-Parameters:
-- `project` (optional): Project path filter
-- `action` (optional, default: `"status"`): One of:
-  - `"status"` -- Returns memory counts, health status, watcher state, consolidation config, embedding availability, and version info
-  - `"start_watcher"` -- Starts the file watcher for multimodal ingestion from the inbox directory
-  - `"stop_watcher"` -- Stops the file watcher
-  - `"consolidate"` -- Runs LLM cross-connection finding between memory clusters
+**Actions:**
+- `status` (default) — Return stats + health + watcher status + consolidation config + QMD availability + version
+- `start_watcher` — Start file watcher for multimodal ingestion
+- `stop_watcher` — Stop file watcher
+- `consolidate` — Run LLM cross-connection finding between memories
+- `traces` — Tool-call trace summary (durations, errors, recent calls)
+- `engines` — ACL read-gate decision log summary and recent would-filter entries
 
-### 7. `squish_inspect`
+**Parameters:**
+- `project` (optional): Project path filter (global if omitted).
+- `action` (optional, default `"status"`): One of the actions above.
+
+### 7. squish_inspect
 
 Explain why a memory was retained, where it was routed, and whether raw fallback exists.
 
@@ -197,6 +235,239 @@ Explain why a memory was retained, where it was routed, and whether raw fallback
 }
 ```
 
+**Parameters:**
+- `memoryId` (required): Memory ID to inspect (UUID format).
+
+### 8. squish_skill
+
+Manage reusable skills (SOPs). Skills are versioned workflows with triggers, steps, and validation rules.
+
+Actions: `list`, `get`, `create`, `update`, `delete`, `search`, `versions`, `assign`, `unassign`, `record_usage`.
+
+```json
+{
+  "name": "squish_skill",
+  "arguments": {
+    "action": "create",
+    "name": "Database Migration SOP",
+    "skillType": "workflow",
+    "steps": [
+      { "step": 1, "action": "backup", "description": "Take full backup before migration" },
+      { "step": 2, "action": "run-migration", "description": "Execute migration script" }
+    ],
+    "tags": ["database", "operations"]
+  }
+}
+```
+
+**Parameters:**
+- `action` (required): One of the actions above.
+- `skillId` (optional): Skill ID (required for get, update, delete, versions, assign, unassign, record_usage).
+- `name` (optional): Skill name (required for create).
+- `description` (optional): Skill description.
+- `skillType` (optional): `workflow`, `troubleshooting`, `checklist`, `template`, `playbook`.
+- `visibility` (optional): `private`, `team`, `restricted`.
+- `steps` (optional): Ordered execution steps.
+- `triggerConditions` (optional): When this skill should be used.
+- `tags` (optional): Tags for organization.
+- `agentId` (optional): Agent to assign skill to (for assign/unassign).
+- `query` (optional): Search query (for search).
+- `status` (optional): Filter by status.
+- `success` (optional): Whether usage was successful (for record_usage).
+- `changeSummary` (optional): Summary of changes (for update).
+
+### 9. squish_loadout
+
+Manage agent loadouts (bind memory assets to agents) and visibility rules (ACL).
+
+Actions: `add_loadout`, `remove_loadout`, `get_loadout`, `set_visibility`, `remove_visibility`, `check_visibility`, `get_rules`.
+
+```json
+{
+  "name": "squish_loadout",
+  "arguments": {
+    "action": "add_loadout",
+    "agentId": "agent-1",
+    "assetType": "memory",
+    "assetId": "memory-uuid",
+    "priority": 10,
+    "injectionMode": "prepend"
+  }
+}
+```
+
+**Parameters:**
+- `action` (required): One of the actions above.
+- `agentId` (optional): Agent ID (required for loadout operations).
+- `assetType` (optional): `memory`, `skill`, `belief`, `strategy`, `learning`.
+- `assetId` (optional): Asset ID.
+- `priority` (optional): Priority (higher = loaded first).
+- `injectionMode` (optional): `append`, `prepend`, `replace`.
+- `ruleType` (optional): `owner`, `team`, `user`, `role`, `everyone`.
+- `granteeType` (optional): `user`, `team`, `everyone`.
+- `granteeId` (optional): Grantee ID.
+- `permission` (optional): `read`, `write`, `admin`.
+- `userId` (optional): User ID for visibility check.
+- `teamIds` (optional): Team IDs for visibility check.
+
+### 10. squish_extract
+
+Auto-extract reusable skills (SOPs) from accumulated memories using LLM analysis.
+
+Actions: `run`, `status`.
+
+```json
+{
+  "name": "squish_extract",
+  "arguments": {
+    "action": "run",
+    "hoursBack": 24,
+    "projectId": "project-uuid"
+  }
+}
+```
+
+**Parameters:**
+- `action` (required): `run` or `status`.
+- `hoursBack` (optional, default 24): How many hours back to look for memories.
+- `projectId` (optional): Project ID to extract from.
+
+### 11. squish_feedback
+
+Reinforce or weaken a recalled item. Push confirm/used/contradict signals back into memory, beliefs, or strategies.
+
+```json
+{
+  "name": "squish_feedback",
+  "arguments": {
+    "targetType": "memory",
+    "id": "memory-uuid",
+    "signal": "confirm",
+    "project": "/path/to/project"
+  }
+}
+```
+
+**Parameters:**
+- `targetType` (required): `memory`, `belief`, or `strategy`.
+- `id` (required): Target record ID (from a recall result).
+- `signal` (required): `confirm`, `contradict`, or `used`.
+- `project` (optional): Project path (feedback is rejected when the target belongs to a different project).
+
+### 12. squish_places
+
+Memory places (spatial organization). Actions: `list` (all places for project), `get` (memories at a place by ID or type).
+
+Place types: `inbox`, `ref`, `wip`, `sandbox`, `board`, `sparks`, `archive`.
+
+```json
+{
+  "name": "squish_places",
+  "arguments": {
+    "action": "list",
+    "project": "/path/to/project"
+  }
+}
+```
+
+**Parameters:**
+- `action` (required): `list` or `get`.
+- `placeId` (optional, required for `get`): Place ID or place type.
+- `limit` (optional, default 50): Max memories to return for `get`.
+- `project` (optional): Project path filter.
+
+### 13. squish_sessions
+
+Agent session history across harnesses. Actions: `list` (recent sessions), `show` (chunks of a session), `search` (search chunk content), `related` (sessions related to current project directory).
+
+```json
+{
+  "name": "squish_sessions",
+  "arguments": {
+    "action": "list",
+    "limit": 10,
+    "source": "claude-code"
+  }
+}
+```
+
+**Parameters:**
+- `action` (required): `list`, `show`, `search`, or `related`.
+- `sessionId` (optional): Session ID (for show).
+- `limit` (optional): Max results.
+- `query` (optional): Search query (for search).
+- `source` (optional): `opencode`, `claude-code`, `codex`, `gemini`, `all`. Every result is tagged with its harness origin.
+
+### 14. squish_tier
+
+Memory tier management. Promote, demote, and list memories by tier.
+
+```json
+{
+  "name": "squish_tier",
+  "arguments": {
+    "action": "list",
+    "tier": "sturdy",
+    "limit": 20
+  }
+}
+```
+
+**Parameters:**
+- `action` (required): Tier management action.
+- `tier` (optional): Filter by tier.
+- `limit` (optional): Max results.
+
+### 15. squish_dedup
+
+Duplicate detection and merge workflow for memories.
+
+Actions: `scan` (detect duplicates, create proposals — no merges), `list` (pending merge proposals), `preview` (before/after of one proposal), `approve` / `reject` (act on one proposal), `reverse` (undo an executed merge via its history ID), `auto` (merge all pending proposals above confidence threshold; requires `SQUISH_DEDUP_AUTO=true`, capped per invocation).
+
+```json
+{
+  "name": "squish_dedup",
+  "arguments": {
+    "action": "scan",
+    "threshold": 0.95,
+    "project": "/path/to/project"
+  }
+}
+```
+
+**Parameters:**
+- `action` (required): One of the actions above.
+- `proposalId` (optional): Proposal ID (required for preview, approve, reject).
+- `mergeHistoryId` (optional): Merge history ID (required for reverse).
+- `threshold` (optional, default 0.95): Minimum similarity score to act on.
+- `limit` (optional, default 20): Max results for list.
+- `cap` (optional, default 25): Max merges per auto invocation.
+- `reviewNotes` (optional): Optional review notes recorded with approve/reject.
+- `reason` (optional): Optional reason recorded with reverse.
+- `project` (optional): Project path filter (for scan/list).
+
+### 16. squish_maintenance (gated)
+
+Gated behind `SQUISH_ENABLE_MAINTENANCE_TOOLS=true`. Run maintenance operations (dedup, stale, consolidate, inbox) in one call.
+
+```json
+{
+  "name": "squish_maintenance",
+  "arguments": {
+    "steps": ["dedup", "stale"],
+    "dryRun": true,
+    "project": "/path/to/project"
+  }
+}
+```
+
+**Parameters:**
+- `steps` (optional): Specific maintenance steps to run — `dedup`, `stale`, `consolidate`, `inbox`.
+- `dryRun` (optional): Dry run without making changes.
+- `project` (optional): Project path to scope the operation.
+- `age` (optional): Age threshold in days.
+- `llmEnabled` (optional): Whether to use LLM for enhanced steps.
+
 ## Configuration
 
 ### Environment Variables
@@ -205,115 +476,151 @@ Explain why a memory was retained, where it was routed, and whether raw fallback
 # MCP Server
 SQUISH_MCP_PORT=8767                  # MCP server port (default: 8767)
 SQUISH_MCP_MODE=stdio                 # Mode: stdio or http (default: stdio)
+SQUISH_MCP_HTTP=true                  # Alternative: enable HTTP mode
 
 # Storage
-SQUISH_DATA_DIR=/path/to/data          # Data directory (default: .squish/)
-SQUISH_DB_TYPE=sqlite               # Database: sqlite or postgres
+SQUISH_DATA_DIR=/path/to/data         # Data directory (default: ~/.squish)
+SQUISH_DB_TYPE=sqlite                # Database: sqlite or postgres
 
 # Embeddings
-SQUISH_EMBEDDINGS_PROVIDER=local    # Provider: local|openai|ollama|lmstudio|transformers|google|auto
-SQUISH_MULTIMODAL_EMBEDDINGS_ENABLED=false  # Enable Google Multimodal
-
-# Google Cloud Multimodal (optional)
-GOOGLE_CLOUD_PROJECT=my-project
-GOOGLE_CLOUD_LOCATION=us-central1
-GOOGLE_CLOUD_API_KEY=xxx              # Or use service account
-
-# QMD Integration
-SQUISH_QMD_ENABLED=true             # Enable QMD search
-SQUISH_QMD_COLLECTIONS=/path/to/colls # QMD collections path
-SQUISH_QMD_FALLBACK=hybrid          # Fallback mode: qmd-only|cloud-first|hybrid|local-only
+SQUISH_EMBEDDINGS_PROVIDER=local     # Provider: local|openai|ollama|google|auto
+SQUISH_LOCAL_BUNDLED_MODEL=bundled   # Set 'off' to pin deterministic TF-IDF (CI, offline evals)
 
 # Multimodal Ingestion
-SQUISH_MULTIMODAL_ENABLED=true       # Enable multimodal ingestion (default: true)
-SQUISH_MULTIMODAL_INBOX_DIR=./inbox  # Inbox directory for file watcher (default: ./inbox)
-SQUISH_MULTIMODAL_POLL_INTERVAL_MS=5000  # File watcher poll interval in ms (default: 5000)
-SQUISH_MULTIMODAL_MAX_FILE_SIZE_BYTES=104857600  # Max file size in bytes (default: 100MB)
+SQUISH_MULTIMODAL_ENABLED=true        # Enable multimodal ingestion (default: true)
+SQUISH_MULTIMODAL_INBOX_DIR=./inbox   # Inbox directory for file watcher
+SQUISH_MULTIMODAL_POLL_INTERVAL_MS=5000  # File watcher poll interval
+SQUISH_MULTIMODAL_MAX_FILE_SIZE_BYTES=104857600  # Max file size (default: 100MB)
 
-# LLM Consolidation
-SQUISH_LLM_CONSOLIDATION_ENABLED=false  # Enable LLM cross-connection finding (default: false)
-SQUISH_LLM_CONSOLIDATION_BATCH_SIZE=50  # Batch size for consolidation analysis (default: 50)
-SQUISH_LLM_CONSOLIDATION_MIN_AGE_DAYS=7  # Minimum memory age in days before consolidation (default: 7)
-SQUISH_LLM_CONSOLIDATION_MIN_CONNECTIONS=2  # Minimum existing connections before consolidation (default: 2)
-SQUISH_LLM_API_KEY=xxx                # LLM API key for consolidation (falls back to OPENAI_API_KEY)
-SQUISH_LLM_PROVIDER=openai            # LLM provider: openai|anthropic|gemini (default: openai)
+# LLM Consolidation (optional)
+SQUISH_LLM_CONSOLIDATION_ENABLED=false  # Enable LLM cross-connection finding
+SQUISH_LLM_CONSOLIDATION_BATCH_SIZE=50
+SQUISH_LLM_CONSOLIDATION_MIN_AGE_DAYS=7
+SQUISH_LLM_CONSOLIDATION_MIN_CONNECTIONS=2
+
+# Dedup
+SQUISH_DEDUP_AUTO=false              # When true, nightly dedup may auto-execute high-threshold merges
+
+# Maintenance Tools
+SQUISH_ENABLE_MAINTENANCE_TOOLS=false  # Set true to expose squish_maintenance (16th tool)
+
+# Vector Scan
+SQUISH_VECTOR_SCAN=recency           # Candidate selection: full (complete recall) or recency (newest window)
+
+# Recall Behavior
+SQUISH_SEARCH_BELIEFS=true           # Include belief records in hybrid retrieval
+SQUISH_ABSTAIN_BELOW=unset           # Recall-confidence floor; below it recall returns no_reliable_memory verdict
+
+# Scoring
+SQUISH_SCORING_V2=true               # Serve v2 composite ranking
+SQUISH_SCORING_SHADOW=false          # When true, log v2 alongside v1 without serving
 ```
 
 ### Embedding Providers
 
 1. **local** (default): TF-IDF based embeddings, 768-dim, no API calls
-2. **openai**: Requires `SQUISH_OPENAI_API_KEY` and `SQUISH_OPENAI_EMBEDDING_MODEL`
-3. **ollama**: Requires `SQUISH_OLLAMA_URL` and `SQUISH_OLLAMA_EMBEDDING_MODEL`
-4. **lmstudio**: Requires `SQUISH_LM_STUDIO_URL` and `SQUISH_LM_STUDIO_EMBEDDING_MODEL`
-5. **transformers**: Requires `SQUISH_LOCAL_MODEL`
-6. **google**: Requires Google credentials/project and `SQUISH_GOOGLE_EMBEDDING_MODEL`
-7. **auto**: Tries configured providers and falls back to local TF-IDF
+2. **openai**: Requires `SQUISH_OPENAI_API_KEY`
+3. **ollama**: Requires `SQUISH_OLLAMA_URL`
+4. **google**: Requires Google credentials/project
+5. **auto**: Tries configured providers and falls back to local TF-IDF
 
-## Architecture
+### Agent configuration
 
-```
-┌─────────────────────────────────────────────┐
-│         MCP Client (OpenCode, etc.)         │
-└────────────────┬────────────────────────────┘
-                 │ MCP Protocol
-                 ▼
-┌─────────────────────────────────────────────┐
-│         Squish MCP Server (port 8767)        │
-│  ┌──────────────────────────────────────┐   │
-│  │  7 Tools: remember, recall, forget,  │   │
-│  │  link, context, stats, inspect       │   │
-│  └──────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────┐   │
-│  │  Embeddings: Local, QMD, Multimodal  │   │
-│  └──────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────┐   │
-│  │  Multimodal Pipeline (27+ types)     │   │
-│  └──────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────┐   │
-│  │  LLM Consolidation Engine            │   │
-│  └──────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────┐   │
-│  │  Storage: SQLite / PostgreSQL        │   │
-│  └──────────────────────────────────────┘   │
-└─────────────────────────────────────────────┘
+#### Claude Code
+
+Squish detects Claude Code and adds plugin hooks automatically. No MCP config needed — the plugin wrapper handles it.
+
+To verify:
+```bash
+squish context    # See what your agent remembers
+squish status --stats  # Check memory health
 ```
 
-## Development
+#### Codex CLI
+
+Add to your Codex MCP config:
+
+```json
+{
+  "mcpServers": {
+    "squish": {
+      "command": "squish-mcp",
+      "args": ["--http", "--port", "8767"]
+    }
+  }
+}
+```
+
+#### Cursor / Windsurf / Cline
+
+Add the same MCP server block to your editor's MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "squish": {
+      "command": "squish-mcp",
+      "args": ["--http", "--port", "8767"],
+      "env": {
+        "SQUISH_DB_PATH": "./squish-data"
+      }
+    }
+  }
+}
+```
+
+#### OpenCode
 
 ```bash
-# Clone
-git clone https://github.com/4m-labs/squish.git
-cd squish
-
-# Install
-npm install
-# or: yarn install
-# or: bun install
-
-# Run MCP server
-squish-mcp
-
-# Or in HTTP mode
-squish-mcp --http
-
-# Health check
-squish-mcp --health
+squish install --all
 ```
 
-## Security Note
+OpenCode gets both MCP tools and auto-capture hooks.
+
+#### Any MCP Client
+
+```json
+{
+  "mcpServers": {
+    "squish": {
+      "command": "squish-mcp",
+      "args": ["--http", "--port", "8767"],
+      "env": {
+        "SQUISH_MCP_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+HTTP mode requires `SQUISH_MCP_API_KEY` to be set.
+
+## Transport modes
+
+### STDIO (default)
+
+The server reads JSON-RPC from stdin and writes to stderr. This is the mode used by Claude Code, Codex, Cursor, and most MCP clients when running as a subprocess.
+
+### Streamable HTTP
+
+The server exposes a `/mcp` endpoint using the Streamable HTTP transport. Useful for remote MCP clients or when you want to run the server as a standalone service.
+
+Health endpoint: `GET /health`
+
+## Security note
 
 The following operations are NOT available via MCP:
-- Setting encryption passphrase (`squish_set_passphrase`)
-- Rotating encryption key (`squish_rotate_key`)
+- Setting encryption passphrase
+- Rotating encryption key
 
 These must be done manually via the `.env` file in the data directory.
 
-## License
+## Version
 
-MIT © 4M Labs
+The MCP server reports version `2.0.0` in health checks and tool responses.
 
 ## Links
 
-- [GitHub](https://github.com/4m-labs/squish)
-- [QMD](https://github.com/tobi/qmd)
-- [MCP Specification](https://modelcontextprotocol.io)
+- [GitHub](https://github.com/michielhdoteth/squish)
+- [npm](https://www.npmjs.com/package/squish-memory)
+- [SDK Documentation](https://github.com/michielhdoteth/squish/blob/master/packages/sdk/README.md)

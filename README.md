@@ -1,20 +1,21 @@
-# Squish - Memory Infrastructure for AI Agents
+# Squish Memory - Persistent Memory for AI Coding Agents
 
 [![npm version](https://img.shields.io/npm/v/squish-memory)](https://www.npmjs.com/package/squish-memory)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub stars](https://img.shields.io/github/stars/michielhdoteth/squish?style=social)](https://github.com/michielhdoteth/squish/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/michielhdoteth/squish-memory?style=social)](https://github.com/michielhdoteth/squish-memory/stargazers)
 [![Downloads](https://img.shields.io/npm/dm/squish-memory)](https://www.npmjs.com/package/squish-memory)
 
-> **SDK, MCP server, and CLI for persistent agent memory. Local-first. Zero dependencies.**
+> **Local-first memory runtime for Claude Code, Codex, Cursor, ChatGPT, and any MCP agent.**
+> 93.5% recall. Zero API keys. 6ms latency. One command to install.
 
-Squish is memory infrastructure for AI agents. Use the TypeScript SDK to build memory-powered apps, the MCP server to plug into any compatible agent, or the CLI for quick operations. Local-first with optional Cloud sync.
+Squish Memory gives your AI agents a brain that persists between sessions. It captures decisions, constraints, and preferences as you work, then injects only the relevant context (50-200 tokens) when your agent starts a new session. No more re-explaining your project every morning.
 
 <p align="center">
   <img src="assets/demo/squish-demo.gif" width="780" alt="Squish Demo" />
 </p>
 
 <p align="center">
-  <b>If Squish saves your agent's memory, <a href="https://github.com/michielhdoteth/squish/stargazers">give it a star</a> -- it helps other builders find it.</b>
+  <b>If Squish saves your agent's memory, <a href="https://github.com/michielhdoteth/squish-memory/stargazers">give it a star</a> -- it helps other builders find it.</b>
 </p>
 
 ---
@@ -31,16 +32,21 @@ That is it. Squish installs the CLI, starts the MCP server, and configures hooks
 
 ## Build on Squish
 
-The `@squish/sdk` is the recommended way to build memory-powered AI applications:
+The `@squish/sdk` is the recommended way to build memory-powered AI applications. It is a dependency-free TypeScript client that talks to a running squish instance over MCP streamable HTTP (local `squish-mcp --http` or cloud):
 
 ```typescript
 import { SquishClient } from '@squish/sdk';
-const client = new SquishClient({ dataDir: './memory' });
-await client.remember('key decision', { type: 'decision' });
-const context = await client.getContext();
+
+const squish = new SquishClient({
+  baseUrl: 'http://127.0.0.1:8767/mcp',
+  apiKey: process.env.SQUISH_MCP_API_KEY,
+});
+
+await squish.remember({ content: 'key decision', type: 'decision' });
+const recall = await squish.recall({ query: 'key decisions' });
 ```
 
-[SDK Documentation](packages/sdk/) | [API Reference](packages/sdk/README.md#api-reference)
+[SDK Documentation](packages/sdk/)
 
 ---
 
@@ -145,7 +151,7 @@ squish sessions search "postgres migration"
 
 **One memory server. Shared across all of them.**
 
-The SDK (`@squish/sdk`) works with any TypeScript or JavaScript environment -- not just coding agents. Build memory into web apps, CLI tools, backend services, or custom agent frameworks.
+The SDK (`@squish/sdk`) works with any TypeScript or JavaScript environment -- not just coding agents. Build memory into web apps, CLI tools, backend services, or custom agent frameworks by talking to a running squish instance over HTTP.
 
 ---
 
@@ -174,7 +180,7 @@ Squish uses local embeddings by default. Zero LLM dependency. 1-5ms latency. $0 
 
 Squish is the only tool that combines all of these in a single package:
 
-- **SDK-first architecture** -- `@squish/sdk` for building memory-powered apps in any TypeScript/JavaScript environment
+- **SDK-first architecture** -- `@squish/sdk`, a dependency-free HTTP client for building memory-powered apps in any TypeScript/JavaScript environment
 - **Local-first by default** -- SQLite storage, TF-IDF embeddings, zero API keys needed
 - **MCP-native** -- Works with every MCP-compatible agent out of the box
 - **Knowledge graph** -- Reinforced relationships between memories, not just flat storage
@@ -182,6 +188,55 @@ Squish is the only tool that combines all of these in a single package:
 - **Hybrid search** -- BM25 keyword + semantic similarity with RRF fusion
 - **Multimodal ingestion** -- 27+ file types: images, audio, video, documents
 - **Zero external dependencies** -- No Qdrant, no Postgres, no vector DB required in local mode
+
+---
+
+## How Good Is the Recall?
+
+Squish is tested against a 60-memory corpus with 46 graded queries across 6 categories. All numbers below use **local TF-IDF embeddings only** -- no cloud API, no external model.
+
+### Headline Numbers
+
+| Metric | Score | What it means |
+|--------|-------|---------------|
+| **Recall@5** | **93.5%** | Of the memories that should appear in the top 5, 93.5% do |
+| **MRR** | **90.4%** | The correct memory ranks #1 90% of the time |
+| **HitRate@1** | **87.0%** | The very first result is correct 87% of the time |
+| **Calibration ECE** | **0.055** | When Squish says it is confident, it is actually right |
+
+### By Query Type
+
+| Category | Recall@5 | MRR | Hit@1 | What it tests |
+|----------|----------|-----|-------|---------------|
+| **Temporal** | 100% | 100% | 100% | "What did we use before X?" -- tracks when facts were true |
+| **Multi-hop** | 100% | 100% | 100% | "Who leads Project Aurora?" -- connects related memories |
+| **Entity** | 100% | 94.4% | 88.9% | "What is PaperTrail?" -- finds named things |
+| **Procedural** | 87.5% | 88.8% | 87.5% | "How do events move?" -- step-by-step processes |
+| **Paraphrase** | 88.9% | 88.9% | 88.9% | "Which package manager won?" -- different words, same meaning |
+| **Negation** | 87.5% | 75.0% | 62.5% | "Do we still use X?" -- conflict resolution |
+
+### LoCoMo Benchmark
+
+Tested against the [LoCoMo](https://github.com/snap-research/locomo) dataset (10 personas, 1542 questions, 1033 documents):
+
+| Metric | Score |
+|--------|-------|
+| **Correct** | 29/100 |
+| **Partial** | 71/100 |
+| **Incorrect** | **0/100** |
+| **Score** | **65%** |
+
+Zero incorrect answers. The system prefers partial matches over hallucinating wrong ones.
+
+### Running the Eval Yourself
+
+```bash
+cd squish
+bun run eval                    # writes tests/golden/baseline-report.json
+bun tests/golden/run-eval.ts --top-k 10 --quiet
+```
+
+Full details: [tests/golden/README.md](tests/golden/README.md) | [docs/BENCHMARK.md](docs/BENCHMARK.md)
 
 ---
 
@@ -321,7 +376,7 @@ squish connect notion
 Persistent memory across ChatGPT, Claude Desktop, Claude Code, and local agents. One account, synchronized everywhere.
 
 <p align="center">
-  <img src="https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgICBDR1siQ2hhdEdQVFxuT0F1dGggMi4xIl0gLS0-IEFQSVsiU3F1aXNoIENsb3VkIEFQSSJdCiAgICBDRFsiQ2xhdWRlIERlc2t0b3Bcbk9BdXRoIDIuMSJdIC0tPiBBUEkKICAgIENDWyJDbGF1ZGUgQ29kZVxuU3RyZWFtYWJsZSBIVFRQIl0gLS0-IEFQSQogICAgTEFbIkxvY2FsIEFnZW50c1xuTUNQIC8gQ0xJIl0gLS0-IEFQSQogICAgQVBJIC0tPiBEQlsoIlBvc3RncmVTUUwgK1xuRW5jcnlwdGVkIFN0b3JhZ2UiKV0KICAgIERCIC0tPiBEYXNoYm9hcmRbIkFkbWluIERhc2hib2FyZFxuJiBBbmFseXRpY3MiXQoKICAgIGNsYXNzRGVmIGNsaWVudCBmaWxsOiM0YTllZmYsc3Ryb2tlOiMyZDdkZDIsY29sb3I6I2ZmZgogICAgY2xhc3NEZWYgYXBpIGZpbGw6IzdjM2FlZCxzdHJva2U6IzViMjFiNixjb2xvcjojZmZmCiAgICBjbGFzc0RlZiBkYiBmaWxsOiMwNTk2Njksc3Ryb2tlOiMwNDc4NTcsY29sb3I6I2ZmZgogICAgY2xhc3NEZWYgZGFzaCBmaWxsOiNkOTc3MDYsc3Ryb2tlOiNiNDUzMDksY29sb3I6I2ZmZgoKICAgIGNsYXNzIENHLENELENDLExBIGNsaWVudAogICAgY2xhc3MgQVBJIGFwaQogICAgY2xhc3MgREIgZGIKICAgIGNsYXNzIERhc2hib2FyZCBkYXNoCg" alt="Squish Cloud Architecture" width="600" />
+  <img src="https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgICBDR1siQ2hhdEdQVFxuT0F1dGggMi4xIl0gLS0-IEFQSVsiU3F1aXNoIENsb3VkIEFQSSJdCiAgICBDRFsiQ2xhdWRlIERlc2t0b3Bcbk9BdXRoIDIuMSJdIC0tPiBBUEkKICAgIENEXCdDbGF1ZGUgQ29kZVxuU3RyZWFtYWJsZSBIVFRQIl0gLS0-IEFQSQogICAgTEFbIkxvY2FsIEFnZW50c1xuTUNQIC8gQ0xJIl0gLS0-IEFQSQogICAgQVBJIC0tPiBEQlsoIlBvc3RncmVTUUwgK1xuRW5jcnlwdGVkIFN0b3JhZ2UiKV0KICAgIERCIC0tPiBEYXNoYm9hcmRbIkFkbWluIERhc2hib2FyZFxuJiBBbmFseXRpY3MiXQoKICAgIGNsYXNzRGVmIGNsaWVudCBmaWxsOiM0YTllZmYsc3Ryb2tlOiMyZDdkZDIsY29sb3I6I2ZmZgogICAgY2xhc3NEZWYgYXBpIGZpbGw6IzdjM2FlZCxzdHJva2U6IzViMjFiNixjb2xvcjojZmZmCiAgICBjbGFzc0RlZiBkYiBmaWxsOiMwNTk2Njksc3Ryb2tlOiMwNDc4NTcsY29sb3I6I2ZmZgogICAgY2xhc3NEZWYgZGFzaCBmaWxsOiNkOTc3MDYsc3Ryb2tlOiNiNDUzMDksY29sb3I6I2ZmZgoKICAgIGNsYXNzIENHLENELENDLExBIGNsaWVudAogICAgY2xhc3MgQVBJIGFwaQogICAgY2xhc3MgREIgZGIKICAgIGNsYXNzIERhc2hib2FyZCBkYXNoCg" alt="Squish Cloud Architecture" width="600" />
 </p>
 
 **Cloud features:** OAuth 2.1 + PKCE login, cross-platform sync, team workspaces, admin dashboard, priority support.
@@ -339,24 +394,6 @@ Persistent memory across ChatGPT, Claude Desktop, Claude Code, and local agents.
 
 ---
 
-## Benchmarks
-
-Squish is tested against real-world memory retrieval tasks and synthetic benchmarks.
-
-| Metric | Result | Notes |
-|--------|--------|-------|
-| Core Tests | 9/9 passed (100%) | All memory operations |
-| LoCoMo Memory | 65% | 100 REAL questions from locomo10.json |
-| Throughput | 39 ops/sec | With local embeddings |
-| Total Time | 230ms | For 9 core tests |
-| Package Size | 674 KB | Lightweight footprint |
-| Latency (embed) | 6.6ms | Local TF-IDF embeddings |
-| Latency (search) | 6.1ms | Hybrid retrieval |
-
-Full benchmark details: [docs/BENCHMARK.md](docs/BENCHMARK.md)
-
----
-
 ## Documentation
 
 | Document | Description |
@@ -370,6 +407,7 @@ Full benchmark details: [docs/BENCHMARK.md](docs/BENCHMARK.md)
 | [Plugin Architecture](docs/PLUGIN-ARCHITECTURE.md) | Hook system and agent integration |
 | [Quick Start](docs/INSTALL-QUICKSTART.md) | Getting started guide |
 | [Agent Comparison](docs/agent-memory-comparison.md) | Squish vs other memory tools |
+| [Golden-Set Eval](tests/golden/README.md) | Retrieval benchmark with 46 graded queries |
 | [Contributing](docs/CONTRIBUTING.md) | How to contribute |
 | [Release Notes](docs/RELEASE_NOTES.md) | Changelog and version history |
 
@@ -422,8 +460,8 @@ MIT -- see [LICENSE](LICENSE) for details.
 If Squish helps your project, consider starring the repo. It helps other developers find memory tools for their AI agents.
 
 <p align="center">
-  <a href="https://github.com/michielhdoteth/squish">
-    <img src="https://img.shields.io/github/stars/michielhdoteth/squish?style=social&label=Star" alt="Star Squish on GitHub" />
+  <a href="https://github.com/michielhdoteth/squish-memory">
+    <img src="https://img.shields.io/github/stars/michielhdoteth/squish-memory?style=social&label=Star" alt="Star Squish on GitHub" />
   </a>
 </p>
 
@@ -433,6 +471,6 @@ If Squish helps your project, consider starring the repo. It helps other develop
   <a href="https://squishplugin.dev">Website</a> &middot;
   <a href="https://squishplugin.dev">Cloud Dashboard</a> &middot;
   <a href="https://docs.squishplugin.dev">Documentation</a> &middot;
-  <a href="https://github.com/michielhdoteth/squish">GitHub</a> &middot;
+  <a href="https://github.com/michielhdoteth/squish-memory">GitHub</a> &middot;
   <a href="https://www.npmjs.com/package/squish-memory">npm</a>
 </p>
