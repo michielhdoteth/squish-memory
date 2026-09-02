@@ -9,6 +9,13 @@ import type { SearchResult, SearchInput } from './memories.js';
 import { type SquishRetrievalConfig, type RetrievalScoringConfig } from '../retrieval/config.js';
 import type { SearchDbContext } from './vector-search.js';
 /**
+ * Itemized heuristic components (Batch 3): recency decay + query-word overlap.
+ */
+export declare function heuristicComponents(result: SearchResult, query: string, now: number): {
+    recency: number;
+    entityOverlap: number;
+};
+/**
  * Score with recency + similarity + entity boost (NO LLM required)
  */
 export declare function scoreWithHeuristics(result: SearchResult, query: string, now: number): number;
@@ -31,6 +38,7 @@ export declare function getMemoriesByIndexedTags(tags: string[], limit: number, 
  * Get IDs of superseded memories to filter from results
  */
 export declare function getSupersededMemoryIds(projectId?: string, ctx?: SearchDbContext): Promise<Set<string>>;
+export declare function getSupersessionInvalidationMap(projectId?: string, ctx?: SearchDbContext): Promise<Map<string, string | number | null>>;
 /**
  * Apply place-aware scoring using indexed memory_places queries.
  * Replaces the old applyPlaceFilterAndBoost for v1.5.0.
@@ -59,7 +67,10 @@ export declare function applySessionBoost(results: SearchResult[], sessionId: st
  */
 export declare function applyTemporalBoost(results: SearchResult[]): SearchResult[];
 /**
- * Expand results with directly associated memories
+ * Expand results with directly associated memories.
+ * Related memories that are expired/archived (or consolidated sources,
+ * unless opts.includeConsolidatedSources) are not pulled in - association
+ * expansion must not resurrect rows the SQL legs already exclude.
  */
 export declare function expandWithAssociations(results: SearchResult[], limit: number, opts?: {
     includeConsolidatedSources?: boolean;

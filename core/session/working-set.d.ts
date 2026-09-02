@@ -13,7 +13,12 @@ export interface SessionWorkingSet {
     recentAttempts: string[];
     projectPath?: string;
     sessionId: string;
-    /** 'memory-write' marks the remember-write pseudo-session (M-2). */
+    /**
+     * Batch 7 review (M-2): marks synthetic sessions that are not real
+     * harness conversations. 'memory-write' rows aggregate remember-write
+     * activity under the `memory-write:<project>` pseudo-session key; real
+     * harness-parsed sessions carry no kind and win wake-up selection.
+     */
     kind?: string;
     signalStats: {
         captured: number;
@@ -49,6 +54,10 @@ export declare function compactSessionWorkingSet(sessionId: string, projectPath?
 }>;
 export declare function getProjectSignalStats(projectPath: string): Promise<any>;
 export declare function getLatestProjectWorkingSetSummary(projectPath: string): Promise<string>;
+/**
+ * Minimal chunk shape the signal extractor needs. Structurally compatible
+ * with core/sessions Chunk so adapters can pass parsed chunks directly.
+ */
 export interface ParsedSessionChunkSignal {
     type?: string;
     content?: string;
@@ -59,6 +68,11 @@ export declare function deriveSignalsFromChunks(chunks: ParsedSessionChunkSignal
     commands: string[];
     hypotheses: string[];
 };
+/**
+ * Record working-set signals from a freshly parsed harness session
+ * (Batch 7 ingestion path). Files touched, commands run, and hypotheses
+ * mentioned become wake-up-summary activity. Best-effort: never throws.
+ */
 export declare function recordParsedSessionSignals(input: {
     sessionId: string;
     projectPath?: string;

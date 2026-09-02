@@ -33,13 +33,15 @@ export declare function getMMRConfig(): MMRConfig;
  * @param queryEmbedding - Query vector
  * @param results - Search results with embeddings
  * @param options - MMR options
+ * @param candidateEmbeddings - Optional pre-computed embeddings array (indexed by position in results).
+ *   When provided, cosine similarity is used instead of content-based Jaccard fallback.
  * @returns Diversified results
  */
 export declare function applyMMR(queryEmbedding: number[] | null, results: SearchResult[], options?: {
     lambda?: number;
     topK?: number;
     candidatePool?: number;
-}): SearchResult[];
+}, candidateEmbeddings?: (number[] | null)[]): SearchResult[];
 /**
  * Apply MMR using content similarity (fallback when no embeddings)
  * Uses simple Jaccard similarity on word sets
@@ -50,13 +52,15 @@ export declare function applyMMRByContent(results: SearchResult[], options?: {
     candidatePool?: number;
 }): SearchResult[];
 /**
- * Smart MMR: tries embedding-based first, falls back to content-based
+ * Smart MMR: tries embedding-based first, falls back to content-based.
+ * When candidateEmbeddings is provided, cosine similarity is used for
+ * the diversity penalty instead of Jaccard content overlap.
  */
 export declare function smartMMR(queryEmbedding: number[] | null, results: SearchResult[], options?: {
     lambda?: number;
     topK?: number;
     candidatePool?: number;
-}): SearchResult[];
+}, candidateEmbeddings?: (number[] | null)[]): SearchResult[];
 /**
  * Check health of MMR
  */

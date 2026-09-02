@@ -16,4 +16,12 @@ export declare function keywordSearch(input: SearchInput, limit: number, ctx?: S
  * This is the industry standard approach (Mem0, TrueMemory, etc.).
  */
 export declare function rrfFusion(vectorResults: SearchResult[], keywordResults: SearchResult[], limit: number, k?: number): SearchResult[];
+/**
+ * Batch 6b: N-leg RRF. Fuses any number of ranked legs (vector, keyword,
+ * beliefs...) with identical math to rrfFusion - per-leg rank contributions
+ * sum by id and are max-normalized afterwards. Single-leg input returns that
+ * leg unchanged except for score normalization, matching legacy behavior of
+ * not fusing at all when only one leg produced results (callers guard).
+ */
+export declare function rrfFusionMulti(legs: SearchResult[][], limit: number, k?: number): SearchResult[];
 //# sourceMappingURL=keyword-search.d.ts.map

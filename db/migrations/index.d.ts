@@ -21,4 +21,5 @@ export { runIndexMigrations } from './indexes.js';
 export { runFtsMigrations } from './fts.js';
 export { runMaintenanceMigrations } from './maintenance.js';
 export { runEntitiesMigrations } from './entities.js';
+export { runTeamsMigrations } from './teams.js';
 //# sourceMappingURL=index.d.ts.map

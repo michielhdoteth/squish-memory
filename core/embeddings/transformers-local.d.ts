@@ -15,14 +15,23 @@ export interface TransformersLocalConfig {
     device: 'cpu' | 'webgpu';
     dtype: 'q8' | 'q4' | 'f16' | 'f32';
 }
+/** Activate a model for pipelines created without SQUISH_LOCAL_MODEL set. */
+export declare function setActiveModel(model: string): void;
 /**
  * Check if pipeline is loaded
  */
 export declare function isReady(): boolean;
 /**
- * Get embedding dimension for current model
+ * Get embedding dimension for current model.
+ *
+ * Resolution order:
+ * 1. Dimension observed from the last successful inference (authoritative)
+ * 2. Known static dim for the configured model
+ * 3. 0 when the model is unknown and has not run yet
  */
 export declare function getEmbeddingDimension(): number;
+/** Identifier stamped into embedding_model on writes, e.g. "transformers:Xenova/all-MiniLM-L6-v2:q8". */
+export declare function getModelId(): string;
 /**
  * Generate embedding for a single text input
  * Uses mean pooling + L2 normalization
@@ -54,6 +63,7 @@ export declare function warmup(): Promise<boolean>;
 declare const _default: {
     isReady: typeof isReady;
     getEmbeddingDimension: typeof getEmbeddingDimension;
+    getModelId: typeof getModelId;
     getEmbedding: typeof getEmbedding;
     getBatchEmbeddings: typeof getBatchEmbeddings;
     checkHealth: typeof checkHealth;

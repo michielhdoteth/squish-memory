@@ -2,6 +2,10 @@
  * Contradiction Resolver
  * Detects and auto-resolves contradictions when writing new memories
  * Implements supersession logic for outdated information
+ *
+ * Single contradiction engine: 7 heuristic scenarios propose supersessions,
+ * then an optional proposition-aware LLM validator vetoes confident false
+ * positives (graceful degradation to heuristics when LLM is unavailable).
  */
 export interface ContradictionResult {
     hasContradiction: boolean;
@@ -19,6 +23,10 @@ export interface ContradictionCheck {
     excludeId?: string;
     newMemoryCreatedAt?: string;
 }
+/**
+ * Check if two contents share an opposite keyword pair (exported for tests).
+ */
+export declare function hasOppositeKeywords(a: string, b: string): boolean;
 /**
  * Detect contradictions between new memory and existing memories
  */

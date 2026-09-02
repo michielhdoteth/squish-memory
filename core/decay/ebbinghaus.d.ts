@@ -16,6 +16,12 @@
  * Reference: Squish v2.0 Architecture Design, Section 7 - Decay Function
  */
 /**
+ * Shared NULL/invalid decay_rate fallback, aligned across the decay engine and
+ * the ranking-side retention mirror (Batch 6b fix): both use the engine's
+ * value, tau = 1 day.
+ */
+export declare const DEFAULT_TAU_DAYS = 1;
+/**
  * Parameters for Ebbinghaus decay calculation
  */
 export interface DecayParams {
@@ -62,10 +68,29 @@ export declare function ebbinghausScore(currentScore: number, params: DecayParam
  * - self-model: β=0.01 (very slow)
  * - introspective: β=0.02 (slow)
  *
+ * Batch 6b: the REAL write-path type vocabulary (observation/fact/decision/
+ * context/preference/note/task) is mapped onto Ebbinghaus tier classes
+ * (fleeting/working/long-term/sturdy equivalents) instead of falling through
+ * to the old one-size default β=0.3, which decayed everything far too fast.
+ *
  * @param memoryType - Type of memory
  * @returns Decay parameters with appropriate beta value
  */
 export declare function getDefaultDecayParams(memoryType: string): DecayParams;
+/**
+ * Map the real memory-type vocabulary onto Ebbinghaus decay-tier betas
+ * (Batch 6b). Documented mapping:
+ *
+ *   fleeting-equivalent  observation, note          β = 0.10 (fast decay)
+ *   working-equivalent   task, context, session     β = 0.05
+ *   long-term-equivalent fact                        β = 0.02
+ *   sturdy-equivalent    decision, preference       β = 0.01 (near-stable)
+ *
+ * Sector names (episodic/semantic/procedural/...) keep their original values.
+ * Unknown types default to the working-equivalent β=0.05 rather than the old
+ * blanket 0.3 so unclassified rows no longer evaporate.
+ */
+export declare function betaForMemoryType(memoryType?: string | null): number;
 /**
  * Calculate retention using hours instead of days (alternative version)
  *

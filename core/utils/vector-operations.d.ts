@@ -8,6 +8,20 @@
  * All functions handle edge cases gracefully and are optimized for performance.
  */
 /**
+ * Typed error thrown when two vectors of incompatible dimensionality are
+ * compared. Batch 4 policy: similarity helpers NEVER silently return 0 on a
+ * dimension mismatch — a mismatched comparison is a corpus-consistency bug
+ * (mixed embedding models), and faking a 0 similarity silently corrupts
+ * rankings. Callers that expect mixed corpora (vector search over rows
+ * written by an older embedding model) must catch this error, count the
+ * skip, and continue.
+ */
+export declare class DimensionMismatchError extends Error {
+    readonly dimA: number;
+    readonly dimB: number;
+    constructor(dimA: number, dimB: number);
+}
+/**
  * Calculates the cosine similarity between two vectors.
  *
  * Cosine similarity measures the cosine of the angle between two vectors,
@@ -19,12 +33,13 @@
  *
  * Edge case handling:
  * - Returns 0 if either vector is null/undefined
- * - Returns 0 if vectors have different lengths
+ * - THROWS DimensionMismatchError if vectors have different lengths
  * - Returns 0 if either vector has zero magnitude (norm = 0)
  *
  * @param a - First vector as array of numbers
  * @param b - Second vector as array of numbers
  * @returns Cosine similarity value in range [-1, 1], or 0 for invalid inputs
+ * @throws {DimensionMismatchError} when vector dimensions differ
  *
  * @example
  * ```typescript
@@ -38,7 +53,7 @@
  * - Space complexity: O(1) - uses only accumulator variables
  * - Optimized with single-pass computation of dot product and norms
  */
-export declare function cosineSimilarity(a: number[] | null | undefined, b: number[] | null | undefined): number;
+export declare function cosineSimilarity(a: number[] | Float32Array | null | undefined, b: number[] | Float32Array | null | undefined): number;
 /**
  * Calculates the Euclidean distance between two vectors.
  *
@@ -57,11 +72,15 @@ export declare function normalizeVector(vec: number[] | null | undefined): numbe
 /**
  * Computes the dot product of two vectors.
  *
+ * For L2-normalized vectors (the Batch 4 storage invariant), the dot product
+ * equals cosine similarity, which lets hot scan paths skip norm computation.
+ *
  * @param a - First vector
  * @param b - Second vector
- * @returns Dot product, or 0 if vectors are invalid or different lengths
+ * @returns Dot product, or 0 if vectors are invalid
+ * @throws {DimensionMismatchError} when vector dimensions differ
  */
-export declare function dotProduct(a: number[] | null | undefined, b: number[] | null | undefined): number;
+export declare function dotProduct(a: number[] | Float32Array | null | undefined, b: number[] | Float32Array | null | undefined): number;
 /**
  * Calculates the magnitude (L2 norm) of a vector.
  *
@@ -104,6 +123,13 @@ export declare function covarianceMatrix(vectors: number[][]): number[][];
  */
 export declare function computeEigenvalues(matrix: number[][]): number[];
 /**
+ * Computes all eigenvalues of a symmetric matrix using the cyclic Jacobi
+ * rotation method. Numerically robust (no deflation drift) and deterministic.
+ * Suitable for the small-to-medium matrices used by geometry-aware
+ * consolidation (Gram/covariance of clusters).
+ */
+export declare function jacobiEigenvalues(matrix: number[][], maxSweeps?: number): number[];
+/**
  * Computes the trace of a matrix (sum of diagonal elements).
  *
  * @param matrix - Input matrix
@@ -111,7 +137,9 @@ export declare function computeEigenvalues(matrix: number[][]): number[];
  */
 export declare function matrixTrace(matrix: number[][]): number;
 /**
- * Power iteration to find the dominant eigenvalue of a matrix.
+ * Power iteration to find the dominant eigenvalue (and eigenvector) of a
+ * symmetric matrix. Uses a deterministic seeded start so results are
+ * reproducible across runs.
  */
 export declare function powerIteration(matrix: number[][], maxIter?: number, tol?: number): number;
 /**

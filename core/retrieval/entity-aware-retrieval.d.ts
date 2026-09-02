@@ -18,6 +18,9 @@ export interface EntityConfig {
  * - File paths (src/components/Button.tsx)
  * - Function calls (getUserData())
  * - Common tools/frameworks (React, Vue, etc.)
+ * - Person names with context words (Michiel said, John worked)
+ * - Company names with suffixes (Acme Inc, Google LLC)
+ * - Quoted project names ("Project Atlas")
  *
  * @param query - The search query
  * @returns Array of extracted entity names
