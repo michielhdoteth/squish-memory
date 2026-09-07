@@ -49,7 +49,7 @@
   "bugs": {
     "url": "https://github.com/michielhdoteth/squish-memory/issues"
   },
-  "description": "AI memory system for coding agents. Local-first MCP runtime with connectors (Google Drive, GitHub, Slack, Notion), knowledge graphs, decay scoring, and multi-tier deployment. Free locally, paid Cloud for sync and teams.",
+  "description": "Local-first memory runtime for AI coding agents. MCP server, SDK, and CLI with hybrid search, knowledge graphs, decay scoring, and multi-tier storage.",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -100,11 +100,6 @@
     "mcp",
     "memory",
     "knowledge-graph",
-    "connectors",
-    "google-drive",
-    "github",
-    "slack",
-    "notion",
     "local-first",
     "sqlite",
     "postgres",

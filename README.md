@@ -349,25 +349,15 @@ Every flag ships with a safe default; nothing here is required for local use. Se
 
 ---
 
-## Connectors
+## Roadmap
 
-Squish connects to your existing tools and ingests context automatically:
+Near-term work is focused on agent-driven memory hygiene:
 
-| Connector | What It Ingests |
-|-----------|----------------|
-| Google Drive | Documents, sheets, slides, and files |
-| GitHub | Issues, PRs, discussions, code context, and repo metadata |
-| Slack | Messages, threads, channel context, and decisions |
-| Notion | Pages, databases, docs, and wikis |
+- edit proposals + corrections loop with undo snapshots and reinforcement feedback
+- staleness reports grouped by attribution with suggested actions
+- SDK v2 surfaces for MCP-first workflows
 
-Connectors are available on Cloud tiers. Install with:
-
-```bash
-squish connect google-drive
-squish connect github
-squish connect slack
-squish connect notion
-```
+Planned connector work moves to Cloud tiers.
 
 ---
 
@@ -391,6 +381,8 @@ Persistent memory across ChatGPT, Claude Desktop, Claude Code, and local agents.
 | **Cloud Team** | $99/mo | Unlimited seats, all connectors, 200K requests/mo, RBAC, audit logs |
 
 [Sign up at squishplugin.dev](https://squishplugin.dev) -- 30 seconds, no credit card needed.
+
+Differentiators: places/skills/wiki-style memory, team sync, and edit-proposal workflow with undo snapshots.
 
 ---
 

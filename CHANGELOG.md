@@ -1,5 +1,14 @@
 # Squish Changelog
 
+## Unreleased
+
+- `squish_edits` — edit proposal workflow with propose/list/preview/approve/reject/correct actions and undo snapshots.
+- Corrections loop — approval/correction paths feed reinforcement feedback (`confirm`) and store `memory_snapshots` as `correction`.
+- Staleness report — read-only grouped report with at-risk items and suggested actions.
+- SDK v2 migration — `@squish/sdk` HTTP surface, `@squish/core-sdk` internal facade, zod v4 authoring.
+- `packages/mcp` upgraded to `@modelcontextprotocol/client` / `@modelcontextprotocol/server` v2 with Node 20+ transports.
+- Node engine enforced at `>=20` across root and packages.
+
 ## v2.1.0 — 2026-09-02
 
 ### What's new
