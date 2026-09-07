@@ -4,12 +4,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const SERVER_VERSION = "2.0.0";
+const SERVER_VERSION = "2.1.0";
 const SERVER_NAME = "squish-memory";
 // Runtime default (SQUISH_ENABLE_MAINTENANCE_TOOLS unset): 11 core inline
 // tools + places/sessions/tier/dedup. squish_maintenance is env-gated.
 // Static source-parse tests count 16 (they see the gated tool).
-const EXPECTED_TOOL_COUNT = 15;
+const EXPECTED_TOOL_COUNT = 17;
 
 const EXPECTED_TOOLS = [
   "squish_remember",

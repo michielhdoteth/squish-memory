@@ -128,7 +128,7 @@ describe("MCP HTTP server e2e", () => {
       const body = await res.json();
       expect(body).toHaveProperty("status");
       expect(body).toHaveProperty("server", "squish-memory");
-      expect(body).toHaveProperty("version", "2.0.0");
+      expect(body).toHaveProperty("version", "2.1.0");
       expect(["ok", "degraded", "broken"]).toContain(body.status);
     },
     15_000,
@@ -173,7 +173,7 @@ describe("MCP HTTP server e2e", () => {
       expect(body).toHaveProperty("result");
       expect(body.result).toHaveProperty("serverInfo");
       expect(body.result.serverInfo).toHaveProperty("name", "squish-memory");
-      expect(body.result.serverInfo).toHaveProperty("version", "2.0.0");
+      expect(body.result.serverInfo).toHaveProperty("version", "2.1.0");
       expect(body.result).toHaveProperty("capabilities");
     },
     15_000,
@@ -233,7 +233,7 @@ describe("MCP HTTP server e2e", () => {
       expect(body).toHaveProperty("result");
       expect(body.result).toHaveProperty("tools");
       expect(Array.isArray(body.result.tools)).toBe(true);
-      expect(body.result.tools.length).toBe(15);
+      expect(body.result.tools.length).toBe(17);
     },
     15_000,
   );

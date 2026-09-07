@@ -102,7 +102,7 @@ describe("MCP schema validation", () => {
     const source = readSource();
     const tools = extractTools(source);
 
-    expect(tools.length).toBe(16);
+    expect(tools.length).toBe(17);
 
     const validPropertyTypes = new Set([
       "string", "number", "boolean", "object", "array", "integer",
@@ -139,7 +139,7 @@ describe("MCP schema validation", () => {
     const source = readSource();
     const tools = extractTools(source);
 
-    expect(tools.length).toBe(16);
+    expect(tools.length).toBe(17);
 
     for (const tool of tools) {
       expect(tool.description.length).toBeGreaterThan(0);
@@ -248,7 +248,7 @@ describe("MCP schema validation", () => {
     const source = readSource();
     const tools = extractTools(source);
 
-    expect(tools.length).toBe(16);
+    expect(tools.length).toBe(17);
 
     for (const tool of tools) {
       const schemaObj = evalZodSchema(tool.inputSchemaZod);

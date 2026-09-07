@@ -254,3 +254,49 @@ export function registerMaintenanceTools(ctx: ToolCtx): number {
 
   return count;
 }
+
+export function registerStalenessReportTools(ctx: ToolCtx): number {
+  const { register, server, sdkClient, resolveProjectPath, SERVER_VERSION } = ctx;
+  let count = 0;
+
+  if (register(
+    server,
+    "squish_stale_report",
+    {
+      description: "Read-only staleness report. Actions: build (return grouped at-risk memories with suggested actions). Never deletes or mutates memories.",
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      inputSchema: z.object({
+        action: z.enum(["build"]).describe("Report action"),
+        projectId: z.string().optional().describe("Project ID filter"),
+        olderThanDays: z.number().min(1).default(30).describe("Minimum age in days to include"),
+        minImportance: z.number().min(0).max(1).default(0).describe("Minimum importance threshold"),
+        limit: z.number().min(1).max(1000).default(200).describe("Max items returned"),
+      }),
+    },
+    async ({ action, projectId, olderThanDays = 30, minImportance = 0, limit = 200 }: { action: "build"; projectId?: string; olderThanDays?: number; minImportance?: number; limit?: number }) => {
+      if (action !== "build") {
+        return errorResponse("invalid_action", `Unknown action: ${action}`);
+      }
+
+      try {
+        const resolvedProject = resolveProjectPath(projectId);
+        const projectIdResolved = resolvedProject
+          ? await sdkClient.listProjects().then((projects) => projects.find((p) => p.path === resolvedProject)?.id)
+          : undefined;
+
+        const { buildStalenessReport } = await import('../../../core/memory/staleness-report.js');
+        const report = await buildStalenessReport({
+          projectId: projectIdResolved,
+          olderThanDays,
+          minImportance,
+          limit,
+        });
+        return jsonResult(report, SERVER_VERSION);
+      } catch (error: any) {
+        return errorResponse("staleness_report_failed", error?.message ?? "failed to build staleness report");
+      }
+    }
+  )) count++;
+
+  return count;
+}

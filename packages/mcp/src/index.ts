@@ -53,6 +53,8 @@ import {
   registerMaintenanceTools,
 } from "./tools/extras.js";
 import { registerDedupTools } from "./tools/dedup.js";
+import { registerEditsTools } from "./tools/edits.js";
+import { registerStalenessReportTools } from "./tools/extras.js";
 
 // CRITICAL: Redirect console.log to stderr AFTER all imports
 
@@ -63,7 +65,7 @@ console.log = console.error;
 console.info = console.error;
 
 const SERVER_NAME = "squish-memory";
-const SERVER_VERSION = "2.0.0";
+const SERVER_VERSION = "2.1.0";
 
 // Shown to agents at connection time (MCP initialize response).
 // Harness-agnostic: this server is universal pluggable memory.
@@ -158,6 +160,14 @@ function schemaProbeErrorResult(probe: SchemaProbeResult) {
     }],
     isError: true,
   };
+}
+
+function toInputJsonSchema(schema: unknown) {
+  try {
+    return z.toJSONSchema(schema as any);
+  } catch {
+    return schema;
+  }
 }
 
 function errorResponse(code: string, message: string, detail?: string, remediation?: string) {
@@ -1019,6 +1029,8 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
   toolCount += registerTierTools(extrasCtx);
   toolCount += registerMaintenanceTools(extrasCtx);
   toolCount += registerDedupTools(extrasCtx);
+  toolCount += registerEditsTools(extrasCtx);
+  toolCount += registerStalenessReportTools(extrasCtx);
 
   console.error(`[MCP] Tool registration complete. Registered ${toolCount} tools.`);
 
