@@ -36,14 +36,17 @@ export async function detectConflicts(memoryId: string, proposedContent: string)
     }
   }
 
-  // Check for semantic contradictions with other memories
+  // Check for semantic contradictions with other memories. SQLite has no
+  // ILIKE; use LIKE on a truncated, escaped needle so the heuristic stays
+  // deterministic and dialect-safe.
+  const needle = proposedContent.replace(/[%_\\]/g, (c) => `\\${c}`).slice(0, 120);
   const similarMemories = await db.select()
     .from(memories)
     .where(
       and(
         eq(memories.projectId, currentMemory[0].projectId),
-        sql`memories.id != ${memoryId}`,
-        sql`memories.content ILIKE ${proposedContent}`
+        sql`${memories.id} != ${memoryId}`,
+        sql`${memories.content} LIKE ${'%' + needle + '%'} ESCAPE '\\'`
       )
     )
     .limit(5);

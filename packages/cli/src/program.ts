@@ -14,9 +14,11 @@ import { registerDoctorCommand } from './commands/doctor.js';
 import { registerInstallCommand, registerUninstallCommand } from './commands/install.js';
 import { registerPinCommand } from './commands/pin.js';
 import { registerSessionsCommand } from './commands/sessions.js';
+import { registerEditsCommand } from './commands/edits.js';
 import { registerCloudCommand } from './commands/cloud.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerContextCommand } from './commands/context.js';
+import { registerStaleReportCommand } from './commands/stale-report.js';
 
 /** Shared SDK client available to all command handlers. */
 export const client = new SquishClient();
@@ -88,9 +90,11 @@ export function createProgram(): Command {
   registerUninstallCommand(program);
   registerPinCommand(program);
   registerSessionsCommand(program);
+  registerEditsCommand(program);
   registerCloudCommand(program);
   registerStatusCommand(program);
   registerContextCommand(program);
+  registerStaleReportCommand(program);
 
   return program;
 }

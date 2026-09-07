@@ -291,3 +291,59 @@ export interface MaintenanceInput {
   ageDays?: number;
   project?: string;
 }
+
+export type EditAction =
+  | 'createEditProposal'
+  | 'listEditProposals'
+  | 'previewEditProposal'
+  | 'approveEditProposal'
+  | 'rejectEditProposal'
+  | 'correctMemory';
+
+export interface EditInput {
+  action: EditAction;
+  memoryId?: string;
+  proposalId?: string;
+  proposedContent?: string;
+  reason?: string;
+  reviewNotes?: string;
+  content?: string;
+  status?: 'pending' | 'approved' | 'rejected' | 'expired';
+  limit?: number;
+}
+
+export interface EditProposalInput {
+  memoryId: string;
+  proposedContent: string;
+  reason: string;
+}
+
+export interface EditProposalPreview {
+  before: string;
+  after: string;
+  diff: string;
+}
+
+export interface ListEditProposalsResult {
+  count: number;
+  proposals: any[];
+}
+
+export interface StalenessReportOptions {
+  projectId?: string;
+  olderThanDays?: number;
+  minImportance?: number;
+  limit?: number;
+}
+
+export interface GroupReport {
+  group: string;
+  count: number;
+  items: Array<{ memoryId: string; suggestedAction: 'review' | 'update' | 'forget' | 'pin' }>;
+  digest: string;
+}
+
+export interface StalenessReport {
+  generatedAt: string;
+  groups: GroupReport[];
+}

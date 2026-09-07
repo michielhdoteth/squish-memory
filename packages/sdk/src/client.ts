@@ -233,14 +233,48 @@ export class SquishClient {
   }
 
   /**
-   * Database maintenance. Only available when the server was started with
-   * SQUISH_ENABLE_MAINTENANCE_TOOLS=true (squish_maintenance).
-   */
-  async maintenance(input: MaintenanceInput): Promise<ToolResult> {
-    return this.call<ToolResult>('squish_maintenance', { ...input });
-  }
+   /** Database maintenance. Only available when the server was started with
+    * SQUISH_ENABLE_MAINTENANCE_TOOLS=true (squish_maintenance).
+    */
+   async maintenance(input: MaintenanceInput): Promise<ToolResult> {
+     return this.call<ToolResult>('squish_maintenance', { ...input });
+   }
 
-  // ─── Session lifecycle ────────────────────────────────────────────────────
+   /** Edit proposals and corrections. */
+   async edit(input: EditInput): Promise<ToolResult> {
+     return this.call<ToolResult>('squish_edits', { ...input });
+   }
+
+   async createEditProposal(input: EditProposalInput): Promise<ToolResult> {
+     return this.edit({ action: 'createEditProposal', ...input });
+   }
+
+   async listEditProposals(input?: { memoryId?: string; status?: string; limit?: number }): Promise<ListEditProposalsResult> {
+     return this.edit({ action: 'listEditProposals', ...input });
+   }
+
+   async previewEditProposal(proposalId: string): Promise<EditProposalPreview> {
+     return this.edit({ action: 'previewEditProposal', proposalId });
+   }
+
+   async approveEditProposal(proposalId: string, reviewNotes?: string): Promise<ToolResult> {
+     return this.edit({ action: 'approveEditProposal', proposalId, reviewNotes });
+   }
+
+   async rejectEditProposal(proposalId: string, reviewNotes?: string): Promise<ToolResult> {
+     return this.edit({ action: 'rejectEditProposal', proposalId, reviewNotes });
+   }
+
+   async correctMemory(memoryId: string, content: string, reason: string): Promise<ToolResult> {
+     return this.edit({ action: 'correctMemory', memoryId, content, reason });
+   }
+
+   /** Staleness report. */
+   async stalenessReport(input: StalenessReportOptions = {}): Promise<StalenessReport> {
+     return this.call<StalenessReport>('squish_stale_report', input);
+   }
+
+   // ─── Session lifecycle ────────────────────────────────────────────────────
 
   /** Establish the MCP session exactly once, even under concurrency. */
   private async ensureSession(): Promise<void> {
