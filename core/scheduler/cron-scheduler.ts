@@ -97,6 +97,22 @@ const temporalCleanupHandler = async (context: JobExecutionContext) => {
 };
 registerJobHandler('temporal_cleanup', temporalCleanupHandler);
 
+// Expire pending edit proposals left unreviewed past their TTL so staged
+// diffs don't linger forever against drifting content.
+const proposalExpiryHandler = async (context: JobExecutionContext) => {
+  const { expireStaleEditProposals } = await import('../memory/edit-workflow.js');
+  const jobConfig = context.config as { days?: number; enabled?: boolean };
+  if (jobConfig.enabled === false) {
+    return { recordsProcessed: 0, summary: { skipped: true, reason: 'proposal expiry disabled' } };
+  }
+  const expired = await expireStaleEditProposals(jobConfig.days ?? 14);
+  return {
+    recordsProcessed: expired,
+    summary: { expiredProposals: expired, ttlDays: jobConfig.days ?? 14 },
+  };
+};
+registerJobHandler('proposal_expiry', proposalExpiryHandler);
+
 // Auto-clean handler - deletes stale memories automatically
 const autoCleanHandler = async (context: JobExecutionContext) => {
   const { getStaleMemories, deleteMemoryPermanently } = await import('../memory/stale-cleaner.js');
@@ -622,6 +638,17 @@ async function ensureDefaultJobs(db: any): Promise<void> {
         enabled: true,
         threshold: 0.95,
         cap: 25,
+      },
+    },
+    // Expire edit proposals pending longer than their TTL
+    {
+      jobName: 'proposal_expiry',
+      jobType: 'daily' as JobType,
+      cronExpression: '45 4 * * *', // Daily at 4:45 AM (after temporal_cleanup)
+      enabled: true,
+      jobConfig: {
+        enabled: true,
+        days: 14,
       },
     },
     // Phase 6: Weekly consolidation

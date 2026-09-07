@@ -722,7 +722,7 @@ export const sessionSummaries = sqliteTable('session_summaries', {
 export const memorySnapshots = sqliteTable('memory_snapshots', {
   id: text('id').primaryKey().$default(() => crypto.randomUUID()),
   memoryId: text('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
-  snapshotType: text('snapshot_type').notNull().$type<'before_update' | 'after_update' | 'periodic'>(),
+  snapshotType: text('snapshot_type').notNull().$type<'before_update' | 'after_update' | 'periodic' | 'correction'>(),
   content: text('content').notNull(),
   metadata: text('metadata').$type<Record<string, unknown>>(),
   diff: text('diff').$type<Record<string, unknown>>(),
