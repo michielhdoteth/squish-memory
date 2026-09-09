@@ -1,0 +1,20 @@
+name: squish-memory
+version: 0.1.0
+description: Local-first Hermes plugin for Squish memory via MCP-over-HTTP. Falls back to cloud only when local runtime is unavailable.
+requires_env:
+  - SQUISH_API_KEY
+homepage: https://squishplugin.dev
+license: MIT
+provides_tools:
+  - squish_remember
+  - squish_recall
+  - squish_context
+  - squish_search
+  - squish_stats
+  - squish_health
+  - squish_connectors
+  - squish_ingest
+  - squish_ingestion_status
+  - squish_connector_types
+provides_hooks:
+  - post_tool_call
