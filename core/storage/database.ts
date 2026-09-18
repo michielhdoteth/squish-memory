@@ -47,6 +47,12 @@ export async function runInTransaction<T>(
   db: any,
   fn: (tx: any) => Promise<T>
 ): Promise<T> {
+  // Guard: this function is SQLite-only
+  const clientType = (db as any)?.$clientType;
+  if (clientType && clientType !== 'sqlite') {
+    throw new Error('runInTransaction is SQLite-only. Use db.transaction() for PostgreSQL.');
+  }
+
   const client = (db as any)?.$client ?? db;
 
   await rawExec(client, 'BEGIN');

@@ -155,6 +155,14 @@ export async function updateAllDecayScores(projectId?: string): Promise<DecayEng
 
   try {
     const { raw } = await getDbClient();
+
+    // Skip decay for non-SQLite backends (decay is SQLite-specific)
+    const clientType = (raw as any)?.$clientType;
+    if (clientType && clientType !== 'sqlite') {
+      logger.debug('Decay scoring skipped - not using SQLite backend');
+      return { updated: 0, processed: 0, errors: [] };
+    }
+
     const sqlite = (raw as any)?.$client;
 
     if (!sqlite) {

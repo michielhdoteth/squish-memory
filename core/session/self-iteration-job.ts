@@ -322,7 +322,7 @@ async function processConversation(
     for (const fact of extractedFacts) {
       try {
         if (await hasSimilarSelfIterationMemory(fact, projectPath)) {
-          logger.debug(`[SelfIteration] Suppressed duplicate memory: ${fact.type} - ${fact.content.substring(0, 50)}...`);
+          logger.debug(`[SelfIteration] Suppressed duplicate memory`, { type: fact.type, contentLength: fact.content.length });
           continue;
         }
 
@@ -339,7 +339,7 @@ async function processConversation(
           source: 'self-iteration',
         });
         memoriesCreated++;
-        logger.info(`[SelfIteration] Extracted memory: ${fact.type} - ${fact.content.substring(0, 50)}...`);
+        logger.info(`[SelfIteration] Extracted memory`, { type: fact.type, contentLength: fact.content.length });
       } catch (error) {
         logger.error(`[SelfIteration] Failed to store memory:`, error);
       }
