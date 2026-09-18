@@ -24,21 +24,4 @@ export declare function evaluateCluster(clusterId: string): Promise<Consolidatio
  * @returns True if the cluster is safe to consolidate
  */
 export declare function shouldConsolidate(clusterId: string): Promise<boolean>;
-/**
- * Should this cluster be split into sub-clusters?
- * A cluster should be split when it's diverse (unsafe to compress)
- * and has enough members to form meaningful sub-clusters.
- *
- * @param clusterId - ID of the cluster to check
- * @returns True if the cluster should be split
- */
-export declare function shouldSplit(clusterId: string): Promise<boolean>;
-/**
- * Recommends how many representatives to preserve for a cluster.
- *
- * @param clusterId - ID of the cluster
- * @returns Number of representatives to preserve
- */
-export declare function recommendRepresentatives(clusterId: string): Promise<number>;
-export { compressionSafetyTest as runSafetyTest } from './geometry.js';
 //# sourceMappingURL=consolidation-check.d.ts.map

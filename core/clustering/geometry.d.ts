@@ -173,13 +173,4 @@ export declare function compressionSafetyTest(dBar: number, dEff: number, thetaP
     recommendedRepresentatives: number;
     reason: string;
 };
-/**
- * Returns the cluster spread measure using mean pairwise cosine distance.
- *
- * This is an alias for computePairwiseMeanCosineDistance.
- *
- * @param vectors - Array of embedding vectors in the cluster
- * @returns Cluster spread measure (d_bar)
- */
-export declare function clusterSpread(vectors: number[][]): number;
 //# sourceMappingURL=geometry.d.ts.map

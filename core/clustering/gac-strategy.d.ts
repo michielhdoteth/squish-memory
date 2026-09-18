@@ -69,18 +69,6 @@ export interface GACConfig {
     taskType?: 'classification' | 'clustering' | 'retrieval' | 'sts';
 }
 /**
- * Returns a task-adaptive theta_prime threshold.
- *
- * Different downstream tasks have different tolerance for semantic drift:
- * - classification/clustering: more lenient (0.75) since approximate grouping is acceptable
- * - retrieval/sts: stricter (0.85) since precision matters for search and similarity
- * - default: 0.80
- *
- * @param taskType - The downstream task type
- * @returns Task-adaptive theta_prime threshold
- */
-export declare function getTaskAdaptiveTheta(taskType?: GACConfig['taskType']): number;
-/**
  * Main entry point for GAC strategy selection.
  *
  * Given a set of memories in a cluster, computes the geometric properties

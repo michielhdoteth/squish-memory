@@ -13,7 +13,6 @@ import { CompressionSafetyResult } from '../../../core/clustering/consolidation-
 import {
   evaluateCluster,
   shouldConsolidate,
-  shouldSplit,
 } from '../../../core/clustering/consolidation-check.js';
 
 describe('findOrCreateCluster', () => {

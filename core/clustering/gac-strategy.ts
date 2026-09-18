@@ -91,30 +91,6 @@ export interface GACConfig {
 }
 
 /**
- * Returns a task-adaptive theta_prime threshold.
- *
- * Different downstream tasks have different tolerance for semantic drift:
- * - classification/clustering: more lenient (0.75) since approximate grouping is acceptable
- * - retrieval/sts: stricter (0.85) since precision matters for search and similarity
- * - default: 0.80
- *
- * @param taskType - The downstream task type
- * @returns Task-adaptive theta_prime threshold
- */
-export function getTaskAdaptiveTheta(taskType?: GACConfig['taskType']): number {
-  switch (taskType) {
-    case 'classification':
-    case 'clustering':
-      return 0.75;
-    case 'retrieval':
-    case 'sts':
-      return 0.85;
-    default:
-      return 0.80;
-  }
-}
-
-/**
  * Extracts the embedding vector from a memory object.
  * Tries `embedding` first, then `embedding_json`.
  *

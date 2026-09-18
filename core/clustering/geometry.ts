@@ -319,15 +319,3 @@ export function compressionSafetyTest(
 
   return { safe, recommendedRepresentatives, reason };
 }
-
-/**
- * Returns the cluster spread measure using mean pairwise cosine distance.
- *
- * This is an alias for computePairwiseMeanCosineDistance.
- *
- * @param vectors - Array of embedding vectors in the cluster
- * @returns Cluster spread measure (d_bar)
- */
-export function clusterSpread(vectors: number[][]): number {
-  return computePairwiseMeanCosineDistance(vectors);
-}

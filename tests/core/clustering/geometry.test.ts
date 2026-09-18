@@ -4,7 +4,6 @@ import {
   computeMeanCosineDistance,
   estimateEffectiveDimension,
   compressionSafetyTest,
-  clusterSpread,
 } from '../../../core/clustering/geometry.js';
 
 describe('computeCentroid', () => {
@@ -195,35 +194,5 @@ describe('compressionSafetyTest', () => {
     // Thus d_bar=0.15 < spreadSafe=0.225 means safe.
     const result = compressionSafetyTest(0.15, 1.0, thetaPrime);
     expect(result.safe).toBe(true);
-  });
-});
-
-describe('clusterSpread', () => {
-  test('returns 0 for identical vectors', () => {
-    const vectors = [
-      [1, 0, 0],
-      [1, 0, 0],
-      [1, 0, 0],
-    ];
-    expect(clusterSpread(vectors)).toBeCloseTo(0, 10);
-  });
-
-  test('returns positive for varied vectors', () => {
-    const vectors = [
-      [1, 0, 0],
-      [0, 1, 0],
-    ];
-    expect(clusterSpread(vectors)).toBeGreaterThan(0);
-  });
-
-  test('matches computeMeanCosineDistance', () => {
-    const vectors = [
-      [1, 2, 3],
-      [4, 5, 6],
-      [7, 8, 9],
-    ];
-    const centroid = computeCentroid(vectors);
-    const dBar = computeMeanCosineDistance(vectors, centroid);
-    expect(clusterSpread(vectors)).toBeCloseTo(dBar, 10);
   });
 });
