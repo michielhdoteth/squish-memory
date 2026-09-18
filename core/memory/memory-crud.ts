@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { requireProject } from '../../core/projects.js';
 import { logger } from '../logger.js';
 import { normalizeTimestamp } from '../lib/utils.js';
@@ -16,6 +16,67 @@ import { decrypt } from '../security/encrypt.js';
 import { getDbClient } from '../lib/db-client.js';
 import { deserializeTags, deserializeMetadata } from '../../core/memory/serialization.js';
 import type { MemoryRecord } from './memory-types.js';
+
+// ---------------------------------------------------------------------------
+// Lazy score initialization for legacy memories with NULL scores
+// ---------------------------------------------------------------------------
+
+/**
+ * Initialize importance_score and relevance_score for a memory that was written
+ * before the scoring system existed (or whose scores were never set).
+ *
+ * Called lazily on first read so the 305+ legacy NULL-score memories get proper
+ * scores without a one-time migration. Only writes if scores are actually NULL.
+ */
+export async function ensureMemoryScores(row: any): Promise<void> {
+  if (row.importance_score != null && row.relevance_score != null) return;
+
+  try {
+    const { db, schema } = await getDbClient();
+    const sqlite = (db as any)?.$client;
+    if (!sqlite) return;
+
+    const now = Math.floor(Date.now() / 1000);
+
+    // Compute importance from type + recency + access signals
+    const TYPE_WEIGHTS: Record<string, number> = {
+      decision: 85, preference: 80, fact: 65, context: 55,
+      observation: 45, note: 40, conversation: 30,
+    };
+    const typeWeight = TYPE_WEIGHTS[row.type] ?? 50;
+
+    const ageDays = row.created_at
+      ? Math.max(0, (Date.now() / 1000 - row.created_at) / 86400)
+      : 0;
+    const recencyWeight = Math.max(0, 100 - ageDays * 0.5);
+
+    const totalAccess = (row.access_count ?? 0) + (row.usage_count ?? 0);
+    const usageWeight = Math.min(100, totalAccess * 5);
+
+    const importanceScore = Math.round(
+      typeWeight * 0.4 + recencyWeight * 0.3 + usageWeight * 0.2 + 50 * 0.1
+    );
+
+    // Relevance starts at 50 (decay engine will adjust from here)
+    const relevanceScore = row.relevance_score ?? 50;
+
+    sqlite.prepare(`
+      UPDATE memories
+      SET importance_score = ?, relevance_score = ?,
+          last_importance_recalc = ?, last_decay_at = COALESCE(last_decay_at, created_at),
+          updated_at = ?
+      WHERE id = ? AND (importance_score IS NULL OR relevance_score IS NULL)
+    `).run(importanceScore, relevanceScore, now, now, row.id);
+
+    // Update the in-memory row so downstream code sees fresh values
+    row.importance_score = importanceScore;
+    row.relevance_score = relevanceScore;
+
+    logger.debug(`[LazyScores] Initialized scores for memory ${row.id}: importance=${importanceScore}, relevance=${relevanceScore}`);
+  } catch (err) {
+    logger.debug(`[LazyScores] Failed to initialize scores for ${row.id}: ${err}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -99,6 +160,9 @@ export async function getMemory(
 		const row = rows[0];
 		if (!row) return null;
 
+		// Lazy-initialize scores for legacy memories with NULL values
+		await ensureMemoryScores(row);
+
 		// Increment access count and update last accessed time
 		if (incrementAccess) {
 			await db.update(schema.memories)
@@ -153,6 +217,9 @@ export async function getMemoriesByIds(
     // Normalize and filter by team access if needed
     const memories: MemoryRecord[] = [];
     for (const row of rows) {
+      // Lazy-initialize scores for legacy memories with NULL values
+      await ensureMemoryScores(row);
+
       let content = row.content;
       if (row.is_encrypted) {
         try {

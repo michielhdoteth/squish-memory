@@ -89,7 +89,7 @@ export declare function updateImportanceScore(memoryId: string, incrementAccess?
  * Get low-importance memories that are candidates for consolidation
  * These are old, rarely accessed memories with low importance scores
  */
-export declare function getLowImportanceMemories(projectId: string, options?: {
+export declare function getLowImportanceMemories(projectId: string | undefined, options?: {
     minAge?: number;
     maxImportance?: number;
     limit?: number;

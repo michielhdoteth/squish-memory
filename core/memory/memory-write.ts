@@ -474,17 +474,27 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
 // ---------------------------------------------------------------------------
 
 /**
- * Extract slash-containing path-like tokens from memory content so
- * remember-writes contribute "files touched" signals to the working set.
+ * Extract file path signals from free-form text.
+ * Only matches realistic file paths (min 2 segments, each >=2 chars, with extension or common dir patterns).
+ * Used by remember-writes to contribute "files touched" signals to the working set.
  */
 function extractFilePathSignals(text: string): string[] {
   if (!text) return [];
-  const matches = text.match(/[A-Za-z0-9_.\-@\\/\[\](){}]+[/\\][A-Za-z0-9_.\-@\\/\[\](){}]+/g);
+  // Require: segment/segment with optional subdirectories
+  // Each segment: min 2 chars, alphanumeric + hyphens + dots + underscores
+  // Optional file extension at end
+  const matches = text.match(
+    /(?:^|[\s`'"@(,;]|^)([A-Za-z][A-Za-z0-9_-]{1,30}(?:\/[A-Za-z][A-Za-z0-9_._-]{1,30}){1,5}(?:\.[a-zA-Z]{1,10})?)(?:[\s`'"@),;]|$)/g
+  );
   if (!matches) return [];
   const seen = new Set<string>();
   for (const m of matches) {
-    seen.add(m);
-    if (seen.size >= 8) break;
+    // Trim whitespace and surrounding chars
+    const cleaned = m.replace(/^[\s`'"@(,;]+|[\s`'"@),;]+$/g, '').trim();
+    if (cleaned && cleaned.length >= 4) {
+      seen.add(cleaned);
+      if (seen.size >= 8) break;
+    }
   }
   return [...seen];
 }

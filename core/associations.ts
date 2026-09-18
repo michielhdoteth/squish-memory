@@ -28,9 +28,26 @@ export async function createAssociation(
   weight: number = 1,
   confidence?: { tag: AssociationConfidence; score: number }
 ): Promise<void> {
+  // Safety: reject self-links
+  if (fromMemoryId === toMemoryId) {
+    logger.debug(`[Associations] Rejected self-link for memory ${fromMemoryId}`);
+    return;
+  }
+
   try {
     const db = await getDb();
     const schema = await getSchema();
+
+    // Safety: cap fan-out at 50 associations per memory
+    const existingCount = await (db as any)
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.memoryAssociations)
+      .where(eq(schema.memoryAssociations.fromMemoryId, fromMemoryId));
+
+    if ((existingCount[0]?.count ?? 0) >= 50) {
+      logger.debug(`[Associations] Fan-out cap reached for memory ${fromMemoryId}, skipping`);
+      return;
+    }
 
     // Check if association already exists
     const existing = await (db as any)
@@ -327,6 +344,36 @@ export async function pruneWeakAssociations(weightThreshold: number = 5): Promis
     return result?.rowCount || 0;
   } catch (error) {
     logger.error('Error pruning weak associations', error);
+    return 0;
+  }
+}
+
+/**
+ * Prune associations that are BOTH weak AND old (dual criteria).
+ * More aggressive than weight-only pruning — removes stale low-value links.
+ */
+export async function pruneStaleAssociations(
+  maxWeight: number = 2,
+  maxAgeDays: number = 90
+): Promise<number> {
+  try {
+    const db = await getDb();
+    const schema = await getSchema();
+
+    const cutoff = Math.floor((Date.now() - maxAgeDays * 86400000) / 1000);
+
+    const result = await (db as any)
+      .delete(schema.memoryAssociations)
+      .where(
+        and(
+          sql`${schema.memoryAssociations.weight} <= ${maxWeight}`,
+          sql`${schema.memoryAssociations.createdAt} < ${cutoff}`
+        )
+      );
+
+    return result?.rowCount || 0;
+  } catch (error) {
+    logger.error('Error pruning stale associations', error);
     return 0;
   }
 }

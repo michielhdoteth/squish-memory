@@ -404,7 +404,7 @@ export async function updateImportanceScore(
  * These are old, rarely accessed memories with low importance scores
  */
 export async function getLowImportanceMemories(
-    projectId: string,
+    projectId: string | undefined,
     options: {
       minAge?: number; // days
       maxImportance?: number; // 0-100
@@ -421,11 +421,9 @@ export async function getLowImportanceMemories(
 
   const minAgeTimestamp = new Date(Date.now() - minAge * 24 * 60 * 60 * 1000);
 
-  const memories = await db
-    .select()
-    .from(schema.memories)
-    .where(eq(schema.memories.projectId, projectId))
-    .all();
+  const memories = projectId
+    ? await db.select().from(schema.memories).where(eq(schema.memories.projectId, projectId)).all()
+    : await db.select().from(schema.memories).all();
 
   // Filter by criteria
   return memories

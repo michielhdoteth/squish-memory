@@ -43,7 +43,7 @@ export interface SectorSignals {
 }
 
 /** Types that unambiguously describe durable world-knowledge. */
-const SEMANTIC_TYPES = new Set(['fact', 'decision', 'preference']);
+const SEMANTIC_TYPES = new Set(['fact', 'decision', 'preference', 'note']);
 
 /** Insight-flavored types and tags marking consolidation-produced reflections. */
 const REFLECTIVE_TYPES = new Set(['insight', 'reflection', 'learning']);
