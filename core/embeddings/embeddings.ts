@@ -1,6 +1,7 @@
 import { config } from '../../config.js';
 import { getGoogleMultimodalEmbedding, isMultimodalInput, MultimodalInput } from './google-multimodal.js';
 import { logger } from '../logger.js';
+import { validateOutboundUrl } from '../lib/url-validator.js';
 
 // Lazy-import transformers to avoid loading unless requested
 let transformersLocal: Promise<typeof import('./transformers-local.js')> | null = null;
@@ -523,6 +524,7 @@ async function getOpenAiEmbedding(input: string): Promise<number[] | null> {
   if (!config.openAiEmbeddingModel) return null;
   
   try {
+    validateOutboundUrl(config.openAiApiUrl);
     const response = await fetchWithRetryAndTimeout(config.openAiApiUrl, {
       method: 'POST',
       headers: {
@@ -554,7 +556,9 @@ async function getOllamaEmbedding(input: string): Promise<number[] | null> {
   if (!config.ollamaEmbeddingModel) return null;
 
   try {
-    const response = await fetchWithRetryAndTimeout(`${config.ollamaUrl}/api/embeddings`, {
+    const ollamaUrl = `${config.ollamaUrl}/api/embeddings`;
+    validateOutboundUrl(ollamaUrl, { allowLocalhost: true, allowHttp: true });
+    const response = await fetchWithRetryAndTimeout(ollamaUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -582,7 +586,9 @@ async function getLmStudioEmbedding(input: string): Promise<number[] | null> {
   if (!config.lmStudioEmbeddingModel) return null;
 
   try {
-    const response = await fetchWithRetryAndTimeout(`${config.lmStudioUrl}/v1/embeddings`, {
+    const lmStudioUrl = `${config.lmStudioUrl}/v1/embeddings`;
+    validateOutboundUrl(lmStudioUrl, { allowLocalhost: true, allowHttp: true });
+    const response = await fetchWithRetryAndTimeout(lmStudioUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

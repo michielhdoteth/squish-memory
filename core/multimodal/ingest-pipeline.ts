@@ -13,6 +13,7 @@ import { readFile, stat } from 'fs/promises';
 import { basename } from 'path';
 import { randomUUID } from 'crypto';
 import { logger } from '../logger.js';
+import { assertPathAllowed } from './path-validator.js';
 import { detectMimeType, isKnownMediaType } from './mime-detector.js';
 import { audioExtractor } from './extractors/audio-extractor.js';
 import { imageExtractor } from './extractors/image-extractor.js';
@@ -61,6 +62,9 @@ export interface IngestInput {
  */
 export async function ingestMediaFile(input: IngestInput): Promise<IngestResult> {
   const { filePath, projectId, mimeTypeOverride, tags = [], source } = input;
+
+  // 0. Path traversal guard -- reject paths outside allowed directories
+  assertPathAllowed(filePath);
 
   // 1. Detect MIME type
   const { mime: mimeType, category } = mimeTypeOverride

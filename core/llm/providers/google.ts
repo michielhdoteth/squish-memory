@@ -7,6 +7,7 @@
 
 import { config } from '../../../config.js';
 import { logger } from '../../logger.js';
+import { validateOutboundUrl } from '../../lib/url-validator.js';
 import type { LLMProvider, LLMCallOptions, LLMContentPart } from '../types.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -67,15 +68,14 @@ export const googleProvider: LLMProvider = {
         requestBody.systemInstruction = { parts: [{ text: options.systemPrompt }] };
       }
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.googleGeminiApiKey}`,
-        {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.googleGeminiApiKey}`;
+      validateOutboundUrl(geminiUrl);
+      const response = await fetch(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody),
           signal: controller.signal,
-        },
-      );
+      });
 
       clearTimeout(timeout);
 
