@@ -13,7 +13,7 @@
 export interface FullMaintenanceOptions {
   projectId?: string;
   dryRun?: boolean;
-  steps?: ('dedup' | 'stale' | 'consolidate' | 'inbox')[];
+  steps?: ('decay' | 'score' | 'tiers' | 'dedup' | 'stale' | 'superseded-cleanup' | 'consolidate' | 'llm-consolidate' | 'inbox' | 'prune-links')[];
   age?: number; // days threshold
   /** @deprecated No-op since Batch 8: the SimHash LLM second-pass was removed
    * in the consolidation bake-off. Kept for API compatibility; ignored. */
@@ -51,13 +51,12 @@ export async function runFullMaintenance(
   const {
     projectId,
     dryRun = false,
-    steps = ['dedup', 'stale', 'consolidate', 'inbox'],
+    steps = ['decay', 'score', 'tiers', 'dedup', 'superseded-cleanup', 'stale', 'consolidate', 'llm-consolidate', 'inbox', 'prune-links'],
     age,
     llmEnabled,
   } = options ?? {};
 
   const stepResults: Record<string, { ok: boolean; count: number; error?: string }> = {};
-  const useLlm = llmEnabled !== undefined ? llmEnabled : config.llmEnabled;
 
   // Cache original llm config if temporarily overriding
   const origLlmEnabled = config.llmEnabled;
@@ -68,7 +67,68 @@ export async function runFullMaintenance(
       (config as any).llmEnabled = llmEnabled;
     }
 
-    // --- Step 1: Dedup (canonical proposal workflow) ---
+    // --- Step 1: Decay (Ebbinghaus power-law) ---
+    if (steps.includes('decay')) {
+      try {
+        const { updateAllDecayScores } = await import('./decay/decay-engine.js');
+        const result = await updateAllDecayScores(projectId);
+        stepResults.decay = {
+          ok: result.errors.length === 0,
+          count: result.updated,
+          error: result.errors.length > 0 ? result.errors.join('; ') : undefined,
+        };
+        logger.info(`[FullMaintenance] decay: ${result.updated}/${result.processed} scores updated`);
+      } catch (error: any) {
+        stepResults.decay = {
+          ok: false,
+          count: 0,
+          error: error.message || String(error),
+        };
+        logger.error('[FullMaintenance] decay step failed:', error);
+      }
+    }
+
+    // --- Step 2: Importance scoring (recalculate for all memories) ---
+    if (steps.includes('score')) {
+      try {
+        const { recalculateImportanceScores } = await import('./memory/importance-recalc.js');
+        const result = await recalculateImportanceScores(projectId);
+        stepResults.score = {
+          ok: true,
+          count: result.updated,
+        };
+        logger.info(`[FullMaintenance] score: ${result.updated} importance scores recalculated`);
+      } catch (error: any) {
+        stepResults.score = {
+          ok: false,
+          count: 0,
+          error: error.message || String(error),
+        };
+        logger.error('[FullMaintenance] score step failed:', error);
+      }
+    }
+
+    // --- Step 3: Tier recalculation ---
+    if (steps.includes('tiers')) {
+      try {
+        const { recalculateTiers } = await import('./memory/tiers.js');
+        const result = await recalculateTiers(projectId);
+        stepResults.tiers = {
+          ok: true,
+          count: result.updated,
+        };
+        logger.info(`[FullMaintenance] tiers: ${result.updated} tiers updated, distribution: ${JSON.stringify(result.tiers)}`);
+      } catch (error: any) {
+        stepResults.tiers = {
+          ok: false,
+          count: 0,
+          error: error.message || String(error),
+        };
+        logger.error('[FullMaintenance] tiers step failed:', error);
+      }
+    }
+
+    // --- Step 4: Dedup (canonical proposal workflow) ---
     if (steps.includes('dedup')) {
       try {
         const { handleDetectDuplicates } = await import('./algorithms/handlers/detect-duplicates.js');
@@ -110,7 +170,49 @@ export async function runFullMaintenance(
       }
     }
 
-    // --- Step 2: Stale cleanup ---
+    // --- Step 5: Superseded cleanup ---
+    if (steps.includes('superseded-cleanup')) {
+      try {
+        const { getDbClient } = await import('./lib/db-client.js');
+        const client = await getDbClient();
+        const sqlite = (client.raw as any)?.$client;
+        if (sqlite) {
+          const cutoffDays = age ?? 30;
+          const cutoffSec = Math.floor(Date.now() / 1000) - cutoffDays * 86400;
+
+          // Find superseded memories older than cutoff, not pinned/protected
+          const superseded = sqlite.prepare(`
+            SELECT id FROM memories
+            WHERE status = 'superseded'
+              AND superseded_at IS NOT NULL
+              AND superseded_at < ?
+              AND is_pinned = 0
+              AND is_protected = 0
+          `).all(cutoffSec) as any[];
+
+          let deleted = 0;
+          if (!dryRun && superseded.length > 0) {
+            const ids = superseded.map((m: any) => m.id);
+            // Delete associations first
+            for (const id of ids) {
+              sqlite.prepare('DELETE FROM memory_associations WHERE from_memory_id = ? OR to_memory_id = ?').run(id, id);
+            }
+            // Delete the memories
+            const placeholders = ids.map(() => '?').join(',');
+            sqlite.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...ids);
+            deleted = ids.length;
+          }
+
+          stepResults['superseded-cleanup'] = { ok: true, count: dryRun ? superseded.length : deleted };
+          logger.info(`[FullMaintenance] superseded-cleanup: ${dryRun ? `${superseded.length} would be deleted` : `${deleted} deleted`}`);
+        }
+      } catch (error: any) {
+        stepResults['superseded-cleanup'] = { ok: false, count: 0, error: error.message || String(error) };
+        logger.error('[FullMaintenance] superseded-cleanup step failed:', error);
+      }
+    }
+
+    // --- Step 6: Stale cleanup ---
     if (steps.includes('stale')) {
       try {
         const { getStaleMemories, runAutoClean } = await import('./memory/stale-cleaner.js');
@@ -154,38 +256,28 @@ export async function runFullMaintenance(
       }
     }
 
-    // --- Step 3: Consolidation ---
+    // --- Step 7: Consolidation ---
     if (steps.includes('consolidate')) {
       try {
-        if (projectId) {
-          const { consolidateMemories } = await import('./memory/consolidation.js');
-          const consolidationResults = await consolidateMemories({
-            projectId,
-            minAge: age,
-            maxImportance: 30,
-            minClusterSize: 3,
-            similarityThreshold: 0.7,
-            limit: 100,
-          });
-          const totalSources = consolidationResults.reduce(
-            (sum, r) => sum + (r.clusterSize || 0),
-            0
-          );
-          stepResults.consolidate = {
-            ok: true,
-            count: totalSources,
-            error: undefined,
-          };
-          logger.info(`[FullMaintenance] consolidate: ${consolidationResults.length} clusters, ${totalSources} sources`);
-        } else {
-          // No project specified - skip consolidation
-          stepResults.consolidate = {
-            ok: true,
-            count: 0,
-            error: undefined,
-          };
-          logger.info('[FullMaintenance] consolidate: skipped (no project specified)');
-        }
+        const { consolidateMemories } = await import('./memory/consolidation.js');
+        const consolidationResults = await consolidateMemories({
+          projectId,
+          minAge: age,
+          maxImportance: 30,
+          minClusterSize: 3,
+          similarityThreshold: 0.7,
+          limit: 100,
+        });
+        const totalSources = consolidationResults.reduce(
+          (sum, r) => sum + (r.clusterSize || 0),
+          0
+        );
+        stepResults.consolidate = {
+          ok: true,
+          count: totalSources,
+          error: undefined,
+        };
+        logger.info(`[FullMaintenance] consolidate: ${consolidationResults.length} clusters, ${totalSources} sources`);
       } catch (error: any) {
         stepResults.consolidate = {
           ok: false,
@@ -196,7 +288,28 @@ export async function runFullMaintenance(
       }
     }
 
-    // --- Step 4: Inbox triage ---
+    // --- Step 8: LLM consolidation (cross-connection discovery) ---
+    if (steps.includes('llm-consolidate')) {
+      try {
+        const { runLLMConsolidation } = await import('./consolidation/llm-consolidator.js');
+        const llmResult = await runLLMConsolidation(projectId, { daysBack: 30 });
+        stepResults['llm-consolidate'] = {
+          ok: true,
+          count: llmResult.insightsCreated,
+          error: undefined,
+        };
+        logger.info(`[FullMaintenance] llm-consolidate: ${llmResult.insightsCreated} insights, ${llmResult.edgesCreated} edges, ${llmResult.memoriesProcessed} memories processed`);
+      } catch (error: any) {
+        stepResults['llm-consolidate'] = {
+          ok: false,
+          count: 0,
+          error: error.message || String(error),
+        };
+        logger.error('[FullMaintenance] llm-consolidate step failed:', error);
+      }
+    }
+
+    // --- Step 9: Inbox triage ---
     if (steps.includes('inbox')) {
       try {
         const { processInboxForAllProjects } = await import('./places/memory-places.js');
@@ -217,7 +330,29 @@ export async function runFullMaintenance(
       }
     }
 
-    void useLlm;
+    // --- Step 10: Prune weak associations ---
+    if (steps.includes('prune-links')) {
+      try {
+        const { pruneWeakAssociations, pruneStaleAssociations } = await import('./associations.js');
+        // First pass: remove weight-only weak links
+        const prunedWeak = await pruneWeakAssociations(5);
+        // Second pass: remove stale + weak dual-criteria links
+        const prunedStale = await pruneStaleAssociations(2, 90);
+        const totalPruned = prunedWeak + prunedStale;
+        stepResults['prune-links'] = {
+          ok: true,
+          count: totalPruned,
+        };
+        logger.info(`[FullMaintenance] prune-links: ${prunedWeak} weak + ${prunedStale} stale = ${totalPruned} associations removed`);
+      } catch (error: any) {
+        stepResults['prune-links'] = {
+          ok: false,
+          count: 0,
+          error: error.message || String(error),
+        };
+        logger.error('[FullMaintenance] prune-links step failed:', error);
+      }
+    }
 
     logger.info('[FullMaintenance] completed', { dryRun, steps: Object.keys(stepResults) });
 

@@ -21,7 +21,7 @@ function jsonResult(payload: unknown, version?: string) {
 }
 
 export function registerEditsTools(ctx: ToolCtx): number {
-  const { register, server, sdkClient, resolveProjectPath, errorResponse, SERVER_VERSION } = ctx;
+  const { register, server, resolveProjectPath, errorResponse, SERVER_VERSION } = ctx;
   let count = 0;
 
   if (register(
@@ -56,21 +56,25 @@ export function registerEditsTools(ctx: ToolCtx): number {
     }) => {
       const resolvedProject = resolveProjectPath(input.project);
 
+      const {
+        createEditProposal,
+        getEditProposals,
+        approveEditProposal,
+        rejectEditProposal,
+        correctMemory,
+      } = await import('../../../../core/memory/edit-workflow.js');
+
       try {
         if (input.action === "propose") {
           if (!input.memoryId || !input.proposedContent || !input.reason) {
             return errorResponse("missing_param", "memoryId, proposedContent, and reason are required for propose");
           }
-          const result = await sdkClient.createEditProposal({
-            memoryId: input.memoryId,
-            proposedContent: input.proposedContent,
-            reason: input.reason,
-          });
+          const result = await createEditProposal(input.memoryId, input.proposedContent, input.reason);
           return jsonResult(result, SERVER_VERSION);
         }
 
         if (input.action === "list") {
-          const result = await sdkClient.listEditProposals({
+          const result = await getEditProposals({
             memoryId: input.memoryId,
             status: input.status,
             limit: input.limit ?? 20,
@@ -82,7 +86,8 @@ export function registerEditsTools(ctx: ToolCtx): number {
           if (!input.proposalId) {
             return errorResponse("missing_param", "proposalId is required for preview");
           }
-          const result = await sdkClient.previewEditProposal(input.proposalId);
+          const proposals = await getEditProposals({ limit: 1000 });
+          const result = proposals.find((p: any) => p.id === input.proposalId) ?? null;
           return jsonResult(result, SERVER_VERSION);
         }
 
@@ -90,7 +95,7 @@ export function registerEditsTools(ctx: ToolCtx): number {
           if (!input.proposalId) {
             return errorResponse("missing_param", "proposalId is required for approve");
           }
-          const result = await sdkClient.approveEditProposal(input.proposalId, input.reviewNotes);
+          const result = await approveEditProposal(input.proposalId, input.reviewNotes);
           return jsonResult(result, SERVER_VERSION);
         }
 
@@ -98,7 +103,7 @@ export function registerEditsTools(ctx: ToolCtx): number {
           if (!input.proposalId) {
             return errorResponse("missing_param", "proposalId is required for reject");
           }
-          const result = await sdkClient.rejectEditProposal(input.proposalId, input.reviewNotes);
+          const result = await rejectEditProposal(input.proposalId, input.reviewNotes);
           return jsonResult(result, SERVER_VERSION);
         }
 
@@ -106,7 +111,7 @@ export function registerEditsTools(ctx: ToolCtx): number {
           if (!input.memoryId || !input.proposedContent || !input.reason) {
             return errorResponse("missing_param", "memoryId, proposedContent, and reason are required for correct");
           }
-          const result = await sdkClient.correctMemory(input.memoryId, input.proposedContent, input.reason);
+          const result = await correctMemory(input.memoryId, input.proposedContent, input.reason);
           return jsonResult(result, SERVER_VERSION);
         }
 

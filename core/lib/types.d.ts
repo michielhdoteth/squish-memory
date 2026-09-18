@@ -2,7 +2,7 @@
  * Shared type definitions for Squish Memory system
  * Consolidated from core/memory/memories.ts and core/memory/normalization.ts
  */
-export type MemoryType = 'observation' | 'fact' | 'decision' | 'context' | 'preference' | 'note' | 'task';
+export type MemoryType = 'observation' | 'fact' | 'decision' | 'context' | 'preference' | 'note';
 /**
  * Confidence level for memory records
  * - certain: High confidence, verified information

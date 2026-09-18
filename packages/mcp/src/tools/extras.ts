@@ -256,7 +256,7 @@ export function registerMaintenanceTools(ctx: ToolCtx): number {
 }
 
 export function registerStalenessReportTools(ctx: ToolCtx): number {
-  const { register, server, sdkClient, resolveProjectPath, SERVER_VERSION } = ctx;
+  const { register, server, sdkClient, resolveProjectPath, errorResponse, SERVER_VERSION } = ctx;
   let count = 0;
 
   if (register(
@@ -284,7 +284,7 @@ export function registerStalenessReportTools(ctx: ToolCtx): number {
           ? await sdkClient.listProjects().then((projects) => projects.find((p) => p.path === resolvedProject)?.id)
           : undefined;
 
-        const { buildStalenessReport } = await import('../../../core/memory/staleness-report.js');
+        const { buildStalenessReport } = await import('../../../../core/memory/staleness-report.js');
         const report = await buildStalenessReport({
           projectId: projectIdResolved,
           olderThanDays,

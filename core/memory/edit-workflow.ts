@@ -109,7 +109,7 @@ export async function createEditProposal(
       c.relatedMemoryId ? `${c.type}: ${c.description} (memory ${c.relatedMemoryId})` : `${c.type}: ${c.description}`
     );
   } catch (error) {
-    logger.warn('[EditWorkflow] conflict detection failed:', error instanceof Error ? error.message : error);
+    logger.warn(`[EditWorkflow] conflict detection failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   await (db as any)
@@ -216,7 +216,7 @@ export async function approveEditProposal(proposalId: string, reviewNotes?: stri
       logger.warn(`[EditWorkflow] post-approval reinforcement skipped: ${result.detail ?? 'unknown reason'}`);
     }
   } catch (error) {
-    logger.warn('[EditWorkflow] post-approval reinforcement failed:', error instanceof Error ? error.message : error);
+    logger.warn(`[EditWorkflow] post-approval reinforcement failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return {
@@ -310,7 +310,7 @@ export async function correctMemory(
       project: memory.projectId ?? undefined,
     });
   } catch (error) {
-    logger.warn('[EditWorkflow] post-correction reinforcement failed:', error instanceof Error ? error.message : error);
+    logger.warn(`[EditWorkflow] post-correction reinforcement failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return { ok: true, priorContent: memory.content, snapshotId };

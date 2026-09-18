@@ -99,9 +99,9 @@ export async function listUserTeams(userId: string): Promise<Team[]> {
 
   if (memberships.length === 0) return [];
 
-  const teamIds = memberships.map((m) => m.teamId);
+  const teamIds = memberships.map((m: any) => m.teamId);
   const results = await db.select().from(teams);
-  return results.filter((t) => teamIds.includes(t.id));
+  return results.filter((t: any) => teamIds.includes(t.id));
 }
 
 /**
@@ -334,7 +334,7 @@ export async function getTeamActivity(
     .orderBy(desc(audit_logs.createdAt))
     .limit(limit);
 
-  return results.map((r) => ({
+  return results.map((r: any) => ({
     id: r.id,
     teamId: r.teamId ?? teamId,
     userId: r.userId,

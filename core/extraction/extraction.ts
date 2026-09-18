@@ -19,47 +19,16 @@ interface ExtractionResult {
   data: any;
 }
 
-interface LLMResponse {
-  choices: Array<{
-    message: {
-      content: string;
-    };
-  }>;
-}
-
 // ─── LLM Client ───────────────────────────────────────────────────
+
+// Use shared LLM client instead of duplicating
+import { callLLM as sharedCallLLM } from '../llm/client.js';
 
 async function callLLM(
   prompt: string,
-  systemPrompt: string
+  _systemPrompt?: string
 ): Promise<string> {
-  const apiUrl = process.env.LLM_API_URL || "https://api.openai.com/v1/chat/completions";
-  const apiKey = process.env.LLM_API_KEY || "";
-  const model = process.env.LLM_MODEL || "gpt-4o-mini";
-
-  const res = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.3,
-      max_tokens: 2000,
-    }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`LLM API error: ${res.status}`);
-  }
-
-  const data = (await res.json()) as LLMResponse;
-  return data.choices[0]?.message?.content || "";
+  return (await sharedCallLLM(prompt)) ?? '';
 }
 
 // ─── Skill Extraction ─────────────────────────────────────────────

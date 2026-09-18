@@ -232,6 +232,35 @@ async function bfsTraverseFallback(
           )
         );
 
+      // Also fetch knowledge edges (from LLM consolidation) for these nodes
+      let knowledgeEdges: any[] = [];
+      try {
+        const schemaMod = await import('../../db/drizzle/schema-sqlite.js') as any;
+        const keSchema = schemaMod.knowledgeEdges;
+        if (keSchema) {
+          knowledgeEdges = await (db as any)
+          .select()
+          .from(keSchema)
+          .where(
+            or(
+              inArray(keSchema.sourceId, nodeIds),
+              inArray(keSchema.targetId, nodeIds)
+            )
+          );
+        }
+      } catch {
+        // knowledge_edges table may not exist yet
+      }
+
+      // Knowledge edge type weights (supports=positive, contradicts=negative)
+      const KNOWLEDGE_EDGE_WEIGHTS: Record<string, number> = {
+        supports: 0.05,
+        contradicts: -0.10,
+        informed_by: 0.03,
+        extends: 0.04,
+        related_to: 0.02,
+      };
+
       // Index edges by node ID for O(1) lookup using Set for fast membership tests
       const nodeIdSet = new Set(nodeIds);
       const edgesByNode = new Map<string, typeof edges>();
@@ -280,6 +309,37 @@ async function bfsTraverseFallback(
           });
 
           // Add to queue for further traversal only if not at max depth
+          if (newNodeDepth < maxDepth && !visited.has(connectedId)) {
+            queue.push({ id: connectedId, depth: newNodeDepth });
+          }
+        }
+
+        // Also process knowledge edges for this node
+        for (const ke of knowledgeEdges) {
+          const keSourceId = ke.sourceId;
+          const keTargetId = ke.targetId;
+          const connectedId = nodeIdSet.has(keSourceId) ? keTargetId : keSourceId;
+          const edgeType = ke.edgeType || 'related_to';
+
+          if (nodeIdSet.has(connectedId)) continue; // skip self-loops
+          if (visited.has(connectedId)) continue;
+
+          const keWeight = KNOWLEDGE_EDGE_WEIGHTS[edgeType] ?? 0.02;
+          if (Math.abs(keWeight) < minWeight) continue;
+
+          const newNodeDepth = current.depth + 1;
+          if (newNodeDepth > maxDepth) continue;
+
+          // Knowledge edges use absolute weight for traversal, signed weight for boost
+          results.push({
+            id: connectedId,
+            weight: Math.abs(keWeight),
+            depth: newNodeDepth,
+            associationType: `knowledge:${edgeType}`,
+            coactivationCount: 1,
+            lastAccessedAt: ke.createdAt || new Date(),
+          });
+
           if (newNodeDepth < maxDepth && !visited.has(connectedId)) {
             queue.push({ id: connectedId, depth: newNodeDepth });
           }

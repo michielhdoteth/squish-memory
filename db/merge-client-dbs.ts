@@ -97,8 +97,7 @@ export async function openNativeSqlite(
 
   if (isBunRuntime()) {
     try {
-      // @ts-ignore - bun:sqlite has no bundled types here but works at runtime
-      const { default: BunDatabase } = await import('bun:sqlite');
+      const BunDatabase = (await import('bun:sqlite')).default as any;
       const handle = readonlyMode
         ? new BunDatabase(dbPath, { readonly: true })
         : new BunDatabase(dbPath);

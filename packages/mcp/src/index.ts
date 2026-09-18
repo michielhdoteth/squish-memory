@@ -295,7 +295,7 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
       if (hasLessonPattern || hasLearningType || hasHackPattern || hasFixmePattern) {
         routing = "learning";
         routingReason = hasHackPattern || hasFixmePattern ? "Detected code pattern (HACK/FIXME)" : "Detected learning pattern in content";
-      } else if (signals.suggestedType === 'task') {
+      } else if (signals.suggestedType === 'fact' && /\b(TODO|FIXME|HACK|fix|task)\b/i.test(content)) {
         routing = "memory";
         routingReason = "Detected TODO pattern";
       } else if (signals.suggestedType === 'observation' && /\b(note|note\s+that|log|remember)\b/i.test(content)) {
