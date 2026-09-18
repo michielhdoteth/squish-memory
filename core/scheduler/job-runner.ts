@@ -2,9 +2,8 @@
 
 import { logger } from '../logger.js';
 import { type JobExecutionContext } from './cron-scheduler.js';
-import { runDeduplicationJob } from '../consolidation.js';
 import { pruneWeakAssociations } from '../associations.js';
-import { pruneOldSummaries } from '../summarization.js';
+import { pruneOldSummaries } from '../summarization/cleanup.js';
 import { getDb } from '../../db/index.js';
 import { memories, memoryFeedback } from '../../db/drizzle/schema-sqlite.js';
 import { eq, and, gt, lt } from 'drizzle-orm';
@@ -23,10 +22,11 @@ export async function runNightlyJob(context: JobExecutionContext): Promise<{
 
   if (context.config.mergeDuplicates !== false) {
     try {
-      const dedupResult = await runDeduplicationJob();
-      summary.duplicatesMerged = dedupResult?.mergedCount || 0;
-      recordsProcessed += summary.duplicatesMerged as number;
-      logger.info(`[NightlyJob] Merged ${summary.duplicatesMerged} duplicate memories`);
+      const { handleDetectDuplicates } = await import('../algorithms/handlers/detect-duplicates.js');
+      const dedupResult = await handleDetectDuplicates({ projectId: context.config.projectId as string | undefined });
+      summary.duplicatesDetected = dedupResult?.data?.proposalsCreated ?? 0;
+      recordsProcessed += summary.duplicatesDetected as number;
+      logger.info(`[NightlyJob] Detected ${summary.duplicatesDetected} potential duplicates for review`);
     } catch (error) {
       logger.error('[NightlyJob] Deduplication failed:', error);
       summary.dedupError = error instanceof Error ? error.message : String(error);

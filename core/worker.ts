@@ -10,7 +10,7 @@
 
 import { config } from '../config.js';
 import { pruneWeakAssociations, getAssociationStats } from './associations.js';
-import { pruneOldSummaries } from './summarization.js';
+import { pruneOldSummaries } from './summarization/cleanup.js';
 import { logger } from './logger.js';
 
 interface WorkerConfig {

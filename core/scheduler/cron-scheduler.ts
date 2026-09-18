@@ -546,77 +546,8 @@ async function checkMissedJobs(): Promise<void> {
 
 async function ensureDefaultJobs(db: any): Promise<void> {
   const defaultJobs = [
-    {
-      jobName: 'decay_maintenance',
-      jobType: 'hourly' as JobType,
-      cronExpression: '0 * * * *', // Run every hour at :00
-      enabled: true,
-      jobConfig: { applyDecay: true, updateTiers: true, evictOld: true },
-    },
-    {
-      jobName: 'belief_decay',
-      jobType: 'daily' as JobType,
-      cronExpression: '0 4 * * *', // Run daily at 4 AM
-      enabled: true,
-      jobConfig: { applyBeliefDecay: true },
-    },
-    // Batch 6b: bi-temporal lifecycle - expire memories past valid_to
-    {
-      jobName: 'temporal_cleanup',
-      jobType: 'daily' as JobType,
-      cronExpression: '15 4 * * *', // Run daily at 4:15 AM (after belief decay)
-      enabled: true,
-      jobConfig: {},
-    },
-    {
-      jobName: 'self_iteration',
-      jobType: 'hourly' as JobType,
-      cronExpression: '30 * * * *', // Run every hour at :30
-      enabled: true,
-      jobConfig: { minMessageCount: 5, maxMessagesToProcess: 50 },
-    },
-    {
-      jobName: 'tier_maintenance',
-      jobType: 'daily' as JobType,
-      cronExpression: '0 2 * * *', // Run daily at 2 AM
-      enabled: true,
-      jobConfig: { recalculateTiers: true },
-    },
-    {
-      jobName: 'auto_clean',
-      jobType: 'daily' as JobType,
-      cronExpression: '0 3 * * *', // Run daily at 3 AM
-      enabled: true,
-      jobConfig: { 
-        enabled: true,
-        olderThanDays: 30,
-        confidenceLevel: ['outdated', 'speculative'],
-        minImportance: 40,
-        dryRun: true, // Start with dry-run for safety
-      },
-    },
-    // LLM Consolidation - creative cross-connection finding
-    {
-      jobName: 'llm_consolidation',
-      jobType: 'daily' as JobType,
-      cronExpression: '30 3 * * *', // Run daily at 3:30 AM (LLM cross-connection pass; no-op without an LLM provider)
-      enabled: true,
-      jobConfig: {
-        enabled: true,
-        maxMemories: 50,
-        batchSize: 20,
-      },
-    },
-    {
-      jobName: 'inbox_triage',
-      jobType: 'daily' as JobType,
-      cronExpression: '0 */6 * * *', // Run every 6 hours
-      enabled: true,
-      jobConfig: {
-        enabled: true,
-      },
-    },
-    // Phase 6: Nightly auto-maintenance (dry-run for safety)
+    // === UNIFIED MAINTENANCE ===
+    // Nightly: decay → score → tiers → dedup → prune-links → stale (dry-run)
     {
       jobName: 'auto_maintenance',
       jobType: 'nightly' as JobType,
@@ -624,34 +555,12 @@ async function ensureDefaultJobs(db: any): Promise<void> {
       enabled: true,
       jobConfig: {
         enabled: true,
-        dryRun: true,
-        steps: ['dedup', 'stale'],
+        dryRun: false,
+        steps: ['decay', 'score', 'tiers', 'dedup', 'prune-links', 'stale'],
         age: 30,
       },
     },
-    {
-      jobName: 'dedup_maintenance',
-      jobType: 'nightly' as JobType,
-      cronExpression: '45 3 * * *', // Nightly at 3:45 AM (after auto_maintenance)
-      enabled: true,
-      jobConfig: {
-        enabled: true,
-        threshold: 0.95,
-        cap: 25,
-      },
-    },
-    // Expire edit proposals pending longer than their TTL
-    {
-      jobName: 'proposal_expiry',
-      jobType: 'daily' as JobType,
-      cronExpression: '45 4 * * *', // Daily at 4:45 AM (after temporal_cleanup)
-      enabled: true,
-      jobConfig: {
-        enabled: true,
-        days: 14,
-      },
-    },
-    // Phase 6: Weekly consolidation
+    // Weekly: full lifecycle + consolidation + inbox
     {
       jobName: 'weekly_consolidation',
       jobType: 'weekly' as JobType,
@@ -660,11 +569,11 @@ async function ensureDefaultJobs(db: any): Promise<void> {
       jobConfig: {
         enabled: true,
         dryRun: false,
-        steps: ['consolidate', 'inbox'],
+        steps: ['decay', 'score', 'tiers', 'dedup', 'prune-links', 'stale', 'consolidate', 'inbox'],
         age: 60,
       },
     },
-    // Phase 6: Monthly deep maintenance (LLM only)
+    // Monthly: full lifecycle + LLM cross-connections
     {
       jobName: 'deep_maintenance',
       jobType: 'weekly' as JobType,
@@ -673,8 +582,59 @@ async function ensureDefaultJobs(db: any): Promise<void> {
       jobConfig: {
         enabled: true,
         dryRun: false,
+        steps: ['decay', 'score', 'tiers', 'dedup', 'prune-links', 'stale', 'consolidate', 'inbox'],
         age: 90,
       },
+    },
+
+    // === SPECIALIZED JOBS (not covered by unified pipeline) ===
+    // Self-iteration: extract facts from ended conversations
+    {
+      jobName: 'self_iteration',
+      jobType: 'hourly' as JobType,
+      cronExpression: '30 * * * *', // Every hour at :30
+      enabled: true,
+      jobConfig: { minMessageCount: 5, maxMessagesToProcess: 50 },
+    },
+    // Knowledge decay: belief/strategy confidence decay (different table from memories)
+    {
+      jobName: 'belief_decay',
+      jobType: 'daily' as JobType,
+      cronExpression: '0 4 * * *', // Daily at 4 AM
+      enabled: true,
+      jobConfig: { applyBeliefDecay: true },
+    },
+    // Temporal cleanup: expire memories past valid_to
+    {
+      jobName: 'temporal_cleanup',
+      jobType: 'daily' as JobType,
+      cronExpression: '15 4 * * *', // Daily at 4:15 AM
+      enabled: true,
+      jobConfig: {},
+    },
+    // Proposal expiry: expire stale edit proposals
+    {
+      jobName: 'proposal_expiry',
+      jobType: 'daily' as JobType,
+      cronExpression: '45 4 * * *', // Daily at 4:45 AM
+      enabled: true,
+      jobConfig: { enabled: true, days: 14 },
+    },
+    // Dedup maintenance: detect + auto-merge high-confidence duplicates
+    {
+      jobName: 'dedup_maintenance',
+      jobType: 'nightly' as JobType,
+      cronExpression: '45 3 * * *', // Nightly at 3:45 AM (after auto_maintenance)
+      enabled: true,
+      jobConfig: { enabled: true, threshold: 0.95, cap: 25 },
+    },
+    // LLM consolidation: creative cross-connection finding
+    {
+      jobName: 'llm_consolidation',
+      jobType: 'daily' as JobType,
+      cronExpression: '30 3 * * *', // Daily at 3:30 AM
+      enabled: true,
+      jobConfig: { enabled: true, maxMemories: 50, batchSize: 20 },
     },
   ];
 
