@@ -60,6 +60,7 @@ type HybridSearchOptions = {
 interface CandidateRow {
   id: string;
   projectId: string | null;
+  teamId: string | null;
   type: string;
   content: string;
   summary: string | null;
@@ -183,6 +184,14 @@ function buildWhereConditions(
     paramsOut.push(projectId);
   }
 
+  // Team memory: when teamId is provided, include team-scoped memories
+  // (m.team_id = teamId) AND personal memories from the same project
+  // (m.team_id IS NULL) so both personal + team results are retrieved.
+  if (input.teamId) {
+    conditions.push('(m.team_id = ? OR m.team_id IS NULL)');
+    paramsOut.push(input.teamId);
+  }
+
   return conditions;
 }
 
@@ -246,6 +255,7 @@ function recencyWindowResults(
     SELECT
       m.id as id,
       m.project_id as projectId,
+      m.team_id as teamId,
       m.type as type,
       m.content as content,
       m.summary as summary,
@@ -277,6 +287,7 @@ function recencyScoredResults(
     SELECT
       m.id as id,
       m.project_id as projectId,
+      m.team_id as teamId,
       m.type as type,
       m.content as content,
       m.summary as summary,
@@ -411,6 +422,7 @@ function hydrateRows(sqlite: any, ids: string[]): Array<CandidateRow> {
     SELECT
       m.id as id,
       m.project_id as projectId,
+      m.team_id as teamId,
       m.type as type,
       m.content as content,
       m.summary as summary,

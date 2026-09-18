@@ -34,6 +34,6 @@ export declare function parseDate(input: string): Date | null;
 export declare function filterByDateRange<T extends {
     createdAt?: string | null;
 }>(items: T[], since?: string, until?: string): T[];
-export type VisibilityScope = 'private' | 'project';
+export type VisibilityScope = 'private' | 'project' | 'team';
 export declare function normalizeVisibilityScopes(visibilityScope?: VisibilityScope | VisibilityScope[] | null): string[] | null;
 //# sourceMappingURL=utils.d.ts.map

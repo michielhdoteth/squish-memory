@@ -25,7 +25,7 @@ export interface MemoryRecord {
     summary?: string | null;
     tags: string[];
     metadata?: Record<string, unknown> | null;
-    visibilityScope?: 'private' | 'project' | null;
+    visibilityScope?: 'private' | 'project' | 'team' | null;
     createdAt?: string | null;
     validFrom?: string | null;
     validTo?: string | null;

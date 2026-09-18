@@ -186,7 +186,7 @@ export function filterByDateRange<T extends { createdAt?: string | null }>(
   });
 }
 
-export type VisibilityScope = 'private' | 'project';
+export type VisibilityScope = 'private' | 'project' | 'team';
 
 export function normalizeVisibilityScopes(
   visibilityScope?: VisibilityScope | VisibilityScope[] | null

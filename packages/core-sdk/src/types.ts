@@ -267,6 +267,8 @@ export interface SearchOptions {
   user?: string;
   /** Minimum similarity score (0-1) */
   minScore?: number;
+  /** Team ID to search team-scoped memories (includes personal memories too) */
+  teamId?: string;
 }
 
 /**

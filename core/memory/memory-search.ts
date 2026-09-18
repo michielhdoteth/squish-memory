@@ -74,7 +74,7 @@ export async function search(input: SearchInput): Promise<SearchResult[]> {
   // skips entirely (zero cost) when no rules are defined.
   // Batch 6b: belief-corpus rows (unified knowledge table) gate under asset
   // type 'knowledge' - rules for them are authored per knowledge-row id.
-  const acl = input.acl ?? (await buildAutoAclContext(input.user));
+  const acl = input.acl ?? (await buildAutoAclContext(input.user, input.teamId ? [input.teamId] : undefined));
   dbResults = await applyAclReadGate(
     dbResults,
     acl,

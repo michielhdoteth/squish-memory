@@ -42,6 +42,7 @@ export const memories = sqliteTable(
     id: text('id').primaryKey().$default(() => crypto.randomUUID()),
     projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    teamId: text('team_id').references(() => teams.id, { onDelete: 'set null' }),
 
     // Content
     type: text('type').notNull().$type<'observation' | 'fact' | 'decision' | 'context' | 'preference' | 'note'>(),
@@ -143,7 +144,7 @@ export const memories = sqliteTable(
     // v0.3.0: Agent-Aware Memory
     agentId: text('agent_id'),
     agentRole: text('agent_role'),
-    visibilityScope: text('visibility_scope').$type<'private' | 'project'>().default('private'),
+    visibilityScope: text('visibility_scope').$type<'private' | 'project' | 'team'>().default('private'),
 
     // v0.3.0: Memory Governance
     isProtected: integer('is_protected', { mode: 'boolean' }).default(false),
@@ -236,6 +237,8 @@ export const memories = sqliteTable(
       table.visibilityScope,
       table.isActive
     ),
+    // Team memory retrieval optimization
+    index('memories_team_idx').on(table.teamId),
   ],
 ) as any;
 
@@ -879,7 +882,7 @@ export const knowledge: any = sqliteTable(
 
     // Visibility
     scope: text('scope').$type<'company' | 'employee'>().default('company'),
-    visibilityScope: text('visibility_scope').$type<'private' | 'project'>().default('private'),
+    visibilityScope: text('visibility_scope').$type<'private' | 'project' | 'team'>().default('private'),
 
     // Provenance
     actorUser: text('actor_user'),

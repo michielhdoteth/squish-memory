@@ -14,6 +14,7 @@ export interface RememberInput {
     tags?: string[];
     project?: string;
     user?: string;
+    teamId?: string;
     metadata?: Record<string, unknown>;
     source?: string;
     reasoning?: string;
@@ -35,6 +36,7 @@ export interface SearchInput {
     limit?: number;
     project?: string;
     user?: string;
+    teamId?: string;
     placeId?: string;
     placeType?: string;
     sessionId?: string;

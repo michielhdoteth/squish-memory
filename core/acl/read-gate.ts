@@ -31,6 +31,8 @@ function isAclEnforce(): boolean {
 export interface AclContext {
   userId: string;
   teamIds?: string[];
+  /** Current user's team IDs for team memory access (distinct from grantee teamIds) */
+  memberTeamIds?: string[];
 }
 
 /** Asset types that participate in auto-built ACL contexts. */
@@ -42,7 +44,7 @@ const GATED_ASSET_TYPES = ['memory', 'knowledge'] as const;
  * unless at least one visibility rule exists for a gated asset type. The
  * userId falls back to 'local-agent' when no explicit user is on the input.
  */
-export async function buildAutoAclContext(userId?: string | null): Promise<AclContext | null> {
+export async function buildAutoAclContext(userId?: string | null, memberTeamIds?: string[]): Promise<AclContext | null> {
   try {
     let anyRules = false;
     for (const assetType of GATED_ASSET_TYPES) {
@@ -51,14 +53,14 @@ export async function buildAutoAclContext(userId?: string | null): Promise<AclCo
         break;
       }
     }
-    if (!anyRules) {
+    if (!anyRules && (!memberTeamIds || memberTeamIds.length === 0)) {
       return null;
     }
   } catch {
     // Rule table unavailable -> fail open, no gating
     return null;
   }
-  return { userId: userId ?? 'local-agent' };
+  return { userId: userId ?? 'local-agent', memberTeamIds };
 }
 
 export async function applyAclReadGate<T extends { id?: string }>(
@@ -87,6 +89,14 @@ export async function applyAclReadGate<T extends { id?: string }>(
     }
 
     const assetType = resolveAssetType(result);
+
+    // Team memory access: if the memory has a teamId and the user is a
+    // member of that team, allow access without explicit visibility rules.
+    const memoryTeamId = (result as any).teamId ?? (result as any).team_id;
+    if (memoryTeamId && ctx.memberTeamIds?.includes(memoryTeamId)) {
+      kept.push(result);
+      continue;
+    }
 
     // Fast skip: no rules for this row -> serve without DB permission walk
     const rules = await getVisibilityRules(assetType, memoryId);

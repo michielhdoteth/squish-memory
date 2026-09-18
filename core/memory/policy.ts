@@ -5,8 +5,8 @@ import { serializeMetadata, deserializeMetadata } from './serialization.js';
 import { detectMemorySignals, type MemorySignals } from './trigger-detector.js';
 import type { MemoryType } from '../lib/types.js';
 
-export type VisibilityScope = 'private' | 'project';
-export type MemoryAudience = 'personal' | 'project';
+export type VisibilityScope = 'private' | 'project' | 'team';
+export type MemoryAudience = 'personal' | 'project' | 'team';
 export type MemoryPolicySource = 'explicit' | 'heuristic' | 'manual';
 export type MemoryPolicyReviewState = 'suggested' | 'promoted' | 'demoted';
 
@@ -45,6 +45,7 @@ export interface MemoryPolicyContext {
   usageCount?: number;
   isPinned?: boolean;
   signals?: MemorySignals;
+  teamId?: string;
 }
 
 export interface MemoryPolicyUpdateResult {
@@ -59,6 +60,8 @@ export function classifyAudience(scope: VisibilityScope): MemoryAudience {
       return 'personal';
     case 'project':
       return 'project';
+    case 'team':
+      return 'team';
     default:
       return 'project';
   }
@@ -68,6 +71,7 @@ export function buildVisibilityScopes(
   scope: VisibilityScope,
   subjectKind: 'user' | 'agent',
   subjectId?: string,
+  teamId?: string,
 ): { readScope: string[]; writeScope: string[] } {
   const identity = subjectId ? `${subjectKind}:${subjectId}` : scope;
 
@@ -81,6 +85,15 @@ export function buildVisibilityScopes(
       return {
         readScope: subjectId ? [identity, 'project:*'] : ['project:*'],
         writeScope: subjectId ? [identity, 'project:*'] : ['project:*'],
+      };
+    case 'team':
+      return {
+        readScope: subjectId
+          ? [identity, ...(teamId ? [`team:${teamId}`] : ['team:*'])]
+          : teamId ? [`team:${teamId}`] : ['team:*'],
+        writeScope: subjectId
+          ? [identity, ...(teamId ? [`team:${teamId}`] : ['team:*'])]
+          : teamId ? [`team:${teamId}`] : ['team:*'],
       };
     default:
       return {
@@ -243,6 +256,7 @@ export async function promoteMemoryVisibility(
   memoryId: string,
   scope: VisibilityScope,
   reason: string,
+  teamId?: string,
 ): Promise<MemoryPolicyUpdateResult | null> {
   try {
     const { db, schema } = await getDbClient();
@@ -289,8 +303,8 @@ export async function promoteMemoryVisibility(
     const nextMetadata = annotateMemoryMetadata(currentMetadata, nextPolicy);
     await db.update(schema.memories).set({
       visibilityScope: scope,
-      readScope: serializeVisibilityScopes(buildVisibilityScopes(scope, row.userId ? 'user' : 'agent', row.userId ?? row.agentId ?? undefined).readScope),
-      writeScope: serializeVisibilityScopes(buildVisibilityScopes(scope, row.userId ? 'user' : 'agent', row.userId ?? row.agentId ?? undefined).writeScope),
+      readScope: serializeVisibilityScopes(buildVisibilityScopes(scope, row.userId ? 'user' : 'agent', row.userId ?? row.agentId ?? undefined, teamId).readScope),
+      writeScope: serializeVisibilityScopes(buildVisibilityScopes(scope, row.userId ? 'user' : 'agent', row.userId ?? row.agentId ?? undefined, teamId).writeScope),
       metadata: serializeMetadata(nextMetadata),
       updatedAt: new Date(),
     }).where(eq(schema.memories.id, memoryId));

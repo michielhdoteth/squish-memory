@@ -79,7 +79,8 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   // Batch 6b: bi-temporal fields - validFrom defaults to write time unless
   // explicitly provided; recordedAt is always the write time.
   const validFromDate = input.validFrom ? new Date(input.validFrom) : now;
-  const visibilityScope = 'project' as VisibilityScope;
+  // Team-scoped memories use 'team' scope; everything else defaults to 'project'
+  const visibilityScope: VisibilityScope = input.teamId ? 'team' : 'project';
   const policyRecommendation = recommendMemoryScope({
     content: input.content,
     type,
@@ -90,6 +91,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     usageCount: 0,
     isPinned: false,
     signals,
+    teamId: input.teamId,
   });
   const memoryPolicy = buildMemoryPolicy({
     content: input.content,
@@ -101,9 +103,10 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     usageCount: 0,
     isPinned: false,
     signals,
+    teamId: input.teamId,
   });
   memoryPolicy.recommendation = policyRecommendation;
-  const readWriteScopes = buildVisibilityScopes(visibilityScope, 'user', accessUser);
+  const readWriteScopes = buildVisibilityScopes(visibilityScope, 'user', accessUser, input.teamId);
   const serializedReadScope = serializeVisibilityScopes(readWriteScopes.readScope);
   const serializedWriteScope = serializeVisibilityScopes(readWriteScopes.writeScope);
 
@@ -180,6 +183,8 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     // maintenance pass. Young memories are working-tier by definition;
     // recalculateTiers promotes/demotes from there.
     tier: 'working',
+    // Team memory: link to team if provided
+    ...(input.teamId ? { teamId: input.teamId } : {}),
   };
 
   // Add namespace if specified

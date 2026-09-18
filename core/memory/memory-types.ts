@@ -17,6 +17,7 @@ export interface RememberInput {
   tags?: string[];
   project?: string;
   user?: string;            // Optional user identifier (name or email)
+  teamId?: string;          // Optional team ID for team-scoped memory
   metadata?: Record<string, unknown>;
   source?: string;
   // Rich context fields (Agent 4 feedback)
@@ -47,6 +48,7 @@ export interface SearchInput {
   limit?: number;
   project?: string;
   user?: string;           // Optional user filter (name or email)
+  teamId?: string;         // Optional team ID for team-scoped search
   // Place and session filters for unified search (Task 2, Task 3)
   placeId?: string;        // Filter by place
   placeType?: string;     // Filter by place type (inbox, wip, archive, etc.)

@@ -54,6 +54,12 @@ export async function keywordSearch(
       params.push(project.id);
     }
 
+    // Team memory: include team-scoped + personal memories
+    if (input.teamId) {
+      conditions.push('(m.team_id = ? OR m.team_id IS NULL)');
+      params.push(input.teamId);
+    }
+
     if (input.type) {
       conditions.push('m.type = ?');
       params.push(input.type);
@@ -65,6 +71,7 @@ export async function keywordSearch(
       SELECT
         m.id as id,
         m.project_id as projectId,
+        m.team_id as teamId,
         m.type as type,
         m.content as content,
         m.summary as summary,
@@ -82,6 +89,7 @@ export async function keywordSearch(
     const rows = sqlite.prepare(query).all(...params, limit) as Array<{
       id: string;
       projectId: string | null;
+      teamId: string | null;
       type: string;
       content: string;
       summary: string | null;
@@ -94,6 +102,7 @@ export async function keywordSearch(
     return rows.map(item => ({
       id: item.id,
       projectId: item.projectId,
+      teamId: item.teamId,
       type: item.type as any,
       content: item.content,
       summary: item.summary ?? undefined,

@@ -58,6 +58,7 @@ export const projects = pgTable('projects', {
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
   description: text('description'),
+  metadata: jsonb('metadata'),
   ownerId: text('owner_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -72,6 +73,7 @@ export const projects = pgTable('projects', {
 export const memories = pgTable('memories', {
   id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  teamId: text('team_id').references(() => teams.id, { onDelete: 'set null' }),
   type: text('type').notNull(),
   content: text('content').notNull(),
   embedding: text('embedding'),  // JSON-serialized vector
@@ -83,6 +85,7 @@ export const memories = pgTable('memories', {
   index('memories_project_idx').on(table.projectId),
   index('memories_type_idx').on(table.type),
   index('memories_created_idx').on(table.createdAt),
+  index('memories_team_idx').on(table.teamId),
 ]);
 
 /**

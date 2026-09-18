@@ -92,10 +92,10 @@ export { logger } from '../../../core/logger.js';
 export { getDb } from '../../../db/index.js';
 export {
   probeSchemaHealth,
-  fixSchemaIssues,
   isSchemaDriftError,
   type SchemaProbeResult,
-} from '../../../db/schema-health.js';
+} from '../../../db/schema-probe.js';
+export { fixSchemaIssues } from '../../../db/schema-repair.js';
 export { ensureSqliteSchema } from '../../../db/bootstrap.js';
 
 // ─── Runtime ─────────────────────────────────────────────────────────────────
@@ -422,6 +422,7 @@ export class SquishClient {
         limit: options?.limit ?? 10,
         project: options?.project ?? this._activeProject,
         user: options?.user,
+        teamId: options?.teamId,
       });
 
       let results = coreResults.map(mapCoreSearchResultToSdk);
@@ -1377,7 +1378,7 @@ export class SquishClient {
    */
   async probeSchemaHealth(): Promise<SchemaHealthResult> {
     try {
-      const { probeSchemaHealth } = await import('../../../db/schema-health.js');
+      const { probeSchemaHealth } = await import('../../../db/schema-probe.js');
       const result = await probeSchemaHealth();
       return {
         healthy: result.status === 'ok',
@@ -1399,7 +1400,7 @@ export class SquishClient {
    */
   async fixSchemaIssues(): Promise<SchemaHealthResult> {
     try {
-      const { fixSchemaIssues } = await import('../../../db/schema-health.js');
+      const { fixSchemaIssues } = await import('../../../db/schema-repair.js');
       const actions = await fixSchemaIssues();
       return {
         healthy: actions.length === 0,

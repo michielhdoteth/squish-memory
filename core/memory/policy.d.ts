@@ -1,7 +1,7 @@
 import { type MemorySignals } from './trigger-detector.js';
 import type { MemoryType } from '../lib/types.js';
-export type VisibilityScope = 'private' | 'project';
-export type MemoryAudience = 'personal' | 'project';
+export type VisibilityScope = 'private' | 'project' | 'team';
+export type MemoryAudience = 'personal' | 'project' | 'team';
 export type MemoryPolicySource = 'explicit' | 'heuristic' | 'manual';
 export type MemoryPolicyReviewState = 'suggested' | 'promoted' | 'demoted';
 export interface MemoryPolicyHistoryEntry {
@@ -36,6 +36,7 @@ export interface MemoryPolicyContext {
     usageCount?: number;
     isPinned?: boolean;
     signals?: MemorySignals;
+    teamId?: string;
 }
 export interface MemoryPolicyUpdateResult {
     memoryId: string;
@@ -43,7 +44,7 @@ export interface MemoryPolicyUpdateResult {
     policy: MemoryPolicy;
 }
 export declare function classifyAudience(scope: VisibilityScope): MemoryAudience;
-export declare function buildVisibilityScopes(scope: VisibilityScope, subjectKind: 'user' | 'agent', subjectId?: string): {
+export declare function buildVisibilityScopes(scope: VisibilityScope, subjectKind: 'user' | 'agent', subjectId?: string, teamId?: string): {
     readScope: string[];
     writeScope: string[];
 };
@@ -52,5 +53,5 @@ export declare function recommendMemoryScope(input: MemoryPolicyContext): Memory
 export declare function buildMemoryPolicy(input: MemoryPolicyContext): MemoryPolicy;
 export declare function extractMemoryPolicy(metadata: Record<string, unknown> | null | undefined): MemoryPolicy | null;
 export declare function annotateMemoryMetadata(metadata: Record<string, unknown> | null | undefined, policy: MemoryPolicy): Record<string, unknown>;
-export declare function promoteMemoryVisibility(memoryId: string, scope: VisibilityScope, reason: string): Promise<MemoryPolicyUpdateResult | null>;
+export declare function promoteMemoryVisibility(memoryId: string, scope: VisibilityScope, reason: string, teamId?: string): Promise<MemoryPolicyUpdateResult | null>;
 //# sourceMappingURL=policy.d.ts.map
