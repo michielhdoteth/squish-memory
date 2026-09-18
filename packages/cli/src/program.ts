@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 
-import { probeSchemaHealth, fixSchemaIssues } from '../../../db/schema-health.js';
+import { probeSchemaHealth } from '../../../db/schema-probe.js';
+import { fixSchemaIssues } from '../../../db/schema-repair.js';
 import { config } from '../../../config.js';
 import { SquishClient } from '@squish/core-sdk';
 
@@ -19,6 +20,7 @@ import { registerCloudCommand } from './commands/cloud.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerContextCommand } from './commands/context.js';
 import { registerStaleReportCommand } from './commands/stale-report.js';
+import { registerBackupCommand } from './commands/backup.js';
 
 /** Shared SDK client available to all command handlers. */
 export const client = new SquishClient();
@@ -33,7 +35,7 @@ export function createProgram(): Command {
 
   program.hook('preAction', async (_thisCommand, actionCommand) => {
     const commandName = actionCommand.name();
-    const exempt = new Set(['doctor', 'install', 'install-plugin', 'uninstall', 'pin', 'sessions', 'cloud']);
+    const exempt = new Set(['doctor', 'install', 'install-plugin', 'uninstall', 'pin', 'sessions', 'cloud', 'backup']);
     if (exempt.has(commandName)) return;
 
     const probe = await probeSchemaHealth();
@@ -95,6 +97,7 @@ export function createProgram(): Command {
   registerStatusCommand(program);
   registerContextCommand(program);
   registerStaleReportCommand(program);
+  registerBackupCommand(program);
 
   return program;
 }

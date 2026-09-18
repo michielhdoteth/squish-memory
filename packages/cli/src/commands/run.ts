@@ -12,7 +12,36 @@ import { spawn } from 'child_process';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { basename } from 'path';
 import { resolveRuntimeLaunch } from '../../../../bin/runtime-launcher.mjs';
+
+/** Allowlist of commands safe to spawn as child processes. */
+const ALLOWED_RUNTIME_COMMANDS = new Set([
+  'node',
+  'node.exe',
+  'bun',
+  'bun.exe',
+  'python',
+  'python3',
+  'python.exe',
+  'python3.exe',
+  'tsx',
+  'ts-node',
+]);
+
+/**
+ * Validate that a resolved command is in the allowlist.
+ * Rejects arbitrary executables to prevent command injection.
+ */
+function validateRuntimeCommand(command: string): void {
+  const cmd = basename(command).toLowerCase();
+  if (!ALLOWED_RUNTIME_COMMANDS.has(cmd)) {
+    throw new Error(
+      `Refusing to spawn untrusted command: ${command}. ` +
+      `Allowed: ${[...ALLOWED_RUNTIME_COMMANDS].join(', ')}`
+    );
+  }
+}
 
 export function registerRunCommand(program: Command) {
   const __filename = fileURLToPath(import.meta.url);
@@ -42,6 +71,8 @@ export function registerRunCommand(program: Command) {
         entryRelativePath: 'webui/server.ts',
         extraArgs: [],
       });
+
+      validateRuntimeCommand(runtime.command);
 
       const child = spawn(runtime.command, runtime.args, {
         cwd: rootDir,

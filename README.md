@@ -115,6 +115,20 @@ Credits buy: cloud storage, managed embeddings, LLM inference, remote sync.
 
 ---
 
+## Security
+
+Squish's HTTP server (`squish mcp --http`) binds to localhost by default and is intended for local use only. HTTP mode transmits data in plaintext -- do not expose it to the internet without a TLS-terminating reverse proxy (e.g., Nginx, Caddy, Cloudflare Tunnel).
+
+For remote access:
+
+1. Set up a reverse proxy with TLS termination in front of the Squish HTTP server.
+2. Restrict network access to authorized clients only.
+3. Never bind the Squish HTTP server directly to a public interface.
+
+All local data is stored in SQLite at `.squish/squish.db` with no encryption at rest. The database file permissions should be restricted on shared systems.
+
+---
+
 ## License
 
 **AGPLv3** -- Free to use, modify, and self-host. Commercial license available for proprietary embedding.

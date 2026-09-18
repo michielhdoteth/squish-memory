@@ -24,9 +24,9 @@ import {
   checkPlacesInitialization,
   checkConsolidationState,
   checkMemoryVersionsTable,
-  fixSchemaIssues,
   type CheckResult,
-} from '../../../../db/schema-health.js';
+} from '../../../../db/schema-probe.js';
+import { fixSchemaIssues } from '../../../../db/schema-repair.js';
 import { buildHealthState } from '../../../../core/runtime/trust-state.js';
 import { formatHealthReport } from '../../../../core/runtime/trust-report.js';
 import { migrateMemories, type MigrateResult } from '../../../../core/memory/migrate.js';

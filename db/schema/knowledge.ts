@@ -29,6 +29,9 @@ export const knowledgeSchema: TableSchema = {
 
     embedding_json: { type: 'TEXT' },
     embedding: { type: 'BLOB' },
+    embedding_blob: { type: 'BLOB' },
+    embedding_model: { type: 'TEXT' },
+    embedding_dim: { type: 'INTEGER' },
 
     confidence: { type: 'REAL DEFAULT 0.5' },
     confidence_level: { type: 'TEXT DEFAULT "certain"' },
@@ -40,6 +43,7 @@ export const knowledgeSchema: TableSchema = {
     normalized_key: { type: 'TEXT' },
     reason: { type: 'TEXT' },
     evidence_summary: { type: 'TEXT' },
+    evidence: { type: 'TEXT' },
     last_confirmed_at: { type: 'INTEGER' },
     source_count: { type: 'INTEGER DEFAULT 1' },
 
@@ -56,7 +60,12 @@ export const knowledgeSchema: TableSchema = {
     last_success_at: { type: 'INTEGER' },
     last_failure_at: { type: 'INTEGER' },
 
+    // Status & lifecycle
     status: { type: 'TEXT DEFAULT "active"' },
+    is_active: { type: 'INTEGER DEFAULT 1' },
+    sector: { type: 'TEXT DEFAULT "general"' },
+    tier: { type: 'TEXT DEFAULT "episodic"' },
+    version: { type: 'INTEGER DEFAULT 1' },
 
     // Self-referencing relationships
     superseded_by: { type: 'TEXT' },
@@ -70,10 +79,75 @@ export const knowledgeSchema: TableSchema = {
     place_id: { type: 'TEXT' },
     primary_place: { type: 'TEXT' },
 
-    // Memory lifecycle
-    sector: { type: 'TEXT DEFAULT "general"' },
-    tier: { type: 'TEXT DEFAULT "episodic"' },
-    is_active: { type: 'INTEGER DEFAULT 1' },
+    // Privacy & governance
+    is_private: { type: 'INTEGER DEFAULT 0' },
+    is_protected: { type: 'INTEGER DEFAULT 0' },
+    is_pinned: { type: 'INTEGER DEFAULT 0' },
+    is_immutable: { type: 'INTEGER DEFAULT 0' },
+    write_scope: { type: 'TEXT' },
+    read_scope: { type: 'TEXT' },
+
+    // Visibility
+    scope: { type: 'TEXT DEFAULT "company"' },
+    visibility_scope: { type: 'TEXT DEFAULT "private"' },
+
+    // Provenance
+    actor_user: { type: 'TEXT' },
+    actor_agent: { type: 'TEXT' },
+    agent_role: { type: 'TEXT' },
+    triggered_by: { type: 'TEXT' },
+    capture_reason: { type: 'TEXT' },
+
+    // Temporal facts
+    valid_from: { type: 'INTEGER' },
+    valid_to: { type: 'INTEGER' },
+    recorded_at: { type: 'INTEGER DEFAULT (strftime(\'%s\',\'now\')) NOT NULL' },
+
+    // Access tracking
+    access_count: { type: 'INTEGER DEFAULT 0' },
+    last_accessed_at: { type: 'INTEGER' },
+
+    // Merge tracking
+    is_merged: { type: 'INTEGER DEFAULT 0' },
+    merged_into_id: { type: 'TEXT' },
+    merged_at: { type: 'INTEGER' },
+
+    // Consolidation
+    consolidated_from: { type: 'TEXT' },
+    consolidated_at: { type: 'INTEGER' },
+    is_consolidated: { type: 'INTEGER DEFAULT 0' },
+
+    // Encryption
+    encrypted_content: { type: 'TEXT' },
+    encryption_nonce: { type: 'TEXT' },
+    is_encrypted: { type: 'INTEGER DEFAULT 0' },
+
+    // Retrieval optimization
+    compression_level: { type: 'INTEGER' },
+    relevance_score: { type: 'INTEGER DEFAULT 50' },
+    tokens_estimate: { type: 'INTEGER DEFAULT 0' },
+
+    // Decay system
+    decay_rate: { type: 'INTEGER DEFAULT 30' },
+    coactivation_score: { type: 'INTEGER DEFAULT 0' },
+    last_decay_at: { type: 'INTEGER' },
+
+    // Layer tracking
+    has_l0_abstract: { type: 'INTEGER DEFAULT 0' },
+    has_l1_overview: { type: 'INTEGER DEFAULT 0' },
+    last_layer_update: { type: 'INTEGER' },
+
+    // Multimodal
+    media_type: { type: 'TEXT' },
+    media_path: { type: 'TEXT' },
+    media_metadata: { type: 'TEXT' },
+
+    // Organization
+    namespace_id: { type: 'TEXT' },
+    namespace_path: { type: 'TEXT' },
+
+    // Cloud-specific
+    employee_id: { type: 'TEXT' },
 
     created_at: { type: 'INTEGER DEFAULT (strftime(\'%s\',\'now\')) NOT NULL' },
     updated_at: { type: 'INTEGER DEFAULT (strftime(\'%s\',\'now\')) NOT NULL' },

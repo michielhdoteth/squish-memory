@@ -4,8 +4,7 @@
  */
 
 import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
-import { getDb } from '../db/index.js';
-import { getSchema } from '../db/schema.js';
+import { getDbClient } from './lib/db-client.js';
 import { logger } from './logger.js';
 
 export type AssociationType = 'co_occurred' | 'supersedes' | 'contradicts' | 'supports' | 'relates_to' | 'duplicate' | 'merged' | 'updates' | 'extends' | 'derives';
@@ -35,8 +34,7 @@ export async function createAssociation(
   }
 
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
 
     // Safety: cap fan-out at 50 associations per memory
     const existingCount = await (db as any)
@@ -107,8 +105,7 @@ export async function autoLinkByEntities(
   if (entityNames.length === 0) return 0;
 
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
 
     // Find existing memories that contain any of these entity names
     // Use simple LIKE query for matching
@@ -152,8 +149,7 @@ export async function trackCoactivation(memoryIds: string[]): Promise<void> {
   if (memoryIds.length < 2) return;
 
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
     const now = new Date();
 
     // Generate all pairs
@@ -294,8 +290,7 @@ export async function getRelatedMemories(
   limit: number = 10
 ): Promise<any[]> {
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
 
     // Get all associated memories, sorted by weight
     const associations = await (db as any)
@@ -334,8 +329,7 @@ export async function getRelatedMemories(
  */
 export async function pruneWeakAssociations(weightThreshold: number = 5): Promise<number> {
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
 
     const result = await (db as any)
       .delete(schema.memoryAssociations)
@@ -357,8 +351,7 @@ export async function pruneStaleAssociations(
   maxAgeDays: number = 90
 ): Promise<number> {
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
 
     const cutoff = Math.floor((Date.now() - maxAgeDays * 86400000) / 1000);
 
@@ -388,8 +381,7 @@ export async function getAssociationStats(): Promise<{
   maxWeight: number;
 }> {
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
 
     const associations = await (db as any)
       .select()

@@ -19,7 +19,8 @@
     "@modelcontextprotocol/node": "^2.0.0",
     "@squish/core-sdk": "workspace:*",
     "zod": "^4.3.6",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "express-rate-limit": "^7.4.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

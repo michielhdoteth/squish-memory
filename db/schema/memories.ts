@@ -53,7 +53,7 @@ export const memoriesSchema: TableSchema = {
     consolidated_at: { type: 'INTEGER' },
     is_consolidated: { type: 'INTEGER', default: '0' },
     sector: { type: 'TEXT', default: "'episodic'" },
-    tier: { type: 'TEXT', default: "'hot'" },
+    tier: { type: 'TEXT', default: "'working'" },
     status: { type: 'TEXT', default: "'active'" },
     encrypted_content: { type: 'TEXT' },
     encryption_nonce: { type: 'TEXT' },

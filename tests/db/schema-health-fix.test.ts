@@ -23,8 +23,8 @@ import {
   checkGraphEntitiesTable,
   checkPlacesInitialization,
   checkConsolidationState,
-  fixSchemaIssues,
-} from '../../db/schema-health.js';
+} from '../../db/schema-probe.js';
+import { fixSchemaIssues } from '../../db/schema-repair.js';
 import { resetDb } from '../../db/index.js';
 import { ensureSqliteSchema } from '../../db/bootstrap.js';
 

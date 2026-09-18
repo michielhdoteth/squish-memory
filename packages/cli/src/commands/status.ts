@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { probeSchemaHealth } from '../../../../db/schema-health.js';
+import { probeSchemaHealth } from '../../../../db/schema-probe.js';
 import { allAgentStores } from '../../../../core/sessions/agent-stores/registry.js';
 import { buildStatsState } from '../../../../core/runtime/trust-state.js';
 import { formatStatsReport } from '../../../../core/runtime/trust-report.js';

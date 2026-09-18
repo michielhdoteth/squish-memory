@@ -42,6 +42,10 @@ const ALLOWED_TABLE_NAMES = new Set([
   'telemetry_events', 'learnings', 'core_memory', 'conversations',
   'edit_proposals', 'merge_proposals', 'snapshots', 'summaries',
   'strategies', 'strategy_edges', 'strategy_belief_edges',
+  'messages', 'namespaces', 'session_summaries',
+  'knowledge', 'knowledge_edges',
+  'teams', 'team_members', 'team_invitations', 'team_shares', 'team_memory',
+  'agent_session_cache', 'agent_preferences',
 ]);
 
 function sanitizeTableName(name: string): string {

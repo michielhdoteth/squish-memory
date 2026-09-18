@@ -1,8 +1,6 @@
 import { eq, and, desc } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { getDb } from '../../db/index.js';
-import { getSchema } from '../../db/schema.js';
-import { createDatabaseClient } from '../storage/database.js';
+import { getDbClient } from '../lib/db-client.js';
 import { logger } from '../logger.js';
 
 // ============================================================================
@@ -44,8 +42,7 @@ export async function addLoadout(input: {
   injectionMode?: string;
   metadata?: Record<string, unknown>;
 }): Promise<AgentLoadoutRecord> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const id = randomUUID();
 
   await db.insert(schema.agentLoadouts).values({
@@ -65,8 +62,7 @@ export async function addLoadout(input: {
 }
 
 export async function removeLoadout(agentId: string, assetType: string, assetId: string): Promise<void> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   await db
     .delete(schema.agentLoadouts)
     .where(
@@ -79,8 +75,7 @@ export async function removeLoadout(agentId: string, assetType: string, assetId:
 }
 
 export async function getAgentLoadout(agentId: string): Promise<AgentLoadoutRecord[]> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const rows = await db
     .select()
     .from(schema.agentLoadouts)
@@ -95,8 +90,7 @@ export async function updateLoadoutPriority(
   assetId: string,
   priority: number,
 ): Promise<void> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   await db
     .update(schema.agentLoadouts)
     .set({ priority })
@@ -115,8 +109,7 @@ export async function toggleLoadout(
   assetId: string,
   enabled: boolean,
 ): Promise<void> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   await db
     .update(schema.agentLoadouts)
     .set({ enabled })
@@ -141,8 +134,7 @@ export async function setVisibilityRule(input: {
   granteeId: string;
   permission?: string;
 }): Promise<VisibilityRuleRecord> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const id = randomUUID();
 
   await db.insert(schema.visibilityRules).values({
@@ -166,8 +158,7 @@ export async function removeVisibilityRule(
   granteeType: string,
   granteeId: string,
 ): Promise<void> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   await db
     .delete(schema.visibilityRules)
     .where(
@@ -184,8 +175,7 @@ export async function getVisibilityRules(
   assetType: string,
   assetId: string,
 ): Promise<VisibilityRuleRecord[]> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const rows = await db
     .select()
     .from(schema.visibilityRules)
@@ -204,8 +194,7 @@ export async function getVisibilityRules(
  * when no rules exist.
  */
 export async function hasVisibilityRules(assetType: string): Promise<boolean> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const rows = await db
     .select({ id: schema.visibilityRules.id })
     .from(schema.visibilityRules)
