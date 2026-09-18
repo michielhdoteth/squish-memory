@@ -33,7 +33,7 @@ const env = {
 function run(args: string[]): { status: number; stdout: string; stderr: string } {
   const r = spawnSync(
     'bun',
-    ['run', 'packages/cli/src/index.ts', ...args, '--json'],
+    ['run', 'cli/index.ts', ...args, '--json'],
     { cwd: repoRoot, encoding: 'utf8', env, timeout: 60000 }
   );
   return {
@@ -211,7 +211,7 @@ describe('squish sessions status', () => {
 
 describe('sessions command is in the program surface', () => {
   it('appears under program.commands', async () => {
-    const { createProgram } = await import('../../packages/cli/src/program.ts');
+    const { createProgram } = await import('../../cli/program.ts');
     const program = createProgram();
     const names = program.commands.map((c) => c.name());
     expect(names).toContain('sessions');

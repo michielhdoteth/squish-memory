@@ -1513,10 +1513,6 @@ export const skillMemoryLinks = sqliteTable('skill_memory_links', {
   unique('skill_memory_links_unique').on(table.skillId, table.memoryId),
 ]);
 
-// Wiki System (v2.1.0) REMOVED in Batch 8 - db-only memory.
-// Legacy wiki_pages/wiki_links/wiki_page_versions rows are migrated into
-// memories (tagged 'wiki-origin') by db/migrations/wiki-to-memory.ts.
-
 // Agent Loadout & Visibility (v2.1.0)
 // ============================================================================
 

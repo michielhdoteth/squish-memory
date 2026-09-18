@@ -15,7 +15,7 @@ import { join } from 'node:path';
 const repoRoot = join(import.meta.dir, '..', '..');
 
 function runCli(args: string[], dataDir: string, timeout = 30000) {
-  return spawnSync('bun', ['run', 'packages/cli/src/index.ts', ...args], {
+  return spawnSync('bun', ['run', 'cli/index.ts', ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
     env: {

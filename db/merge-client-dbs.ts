@@ -145,7 +145,7 @@ function loadTableInfo(handle: NativeSqliteHandle): SourceTableInfo[] {
     if (/virtual\s+table/i.test(sql)) continue;
     if (name.includes('fts')) continue;
 
-    const info = handle.prepare(`PRAGMA table_info("${name.replace(/"/g, '""')}")`).all() as Array<{
+    const info = handle.prepare(`PRAGMA table_info(${quoteIdent(name)})`).all() as Array<{
       name: string;
       pk: number;
     }>;

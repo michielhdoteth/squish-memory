@@ -13,7 +13,7 @@ describe('launch-path CLI commands', () => {
     try {
       const result = spawnSync(
         'bun',
-        ['run', 'packages/cli/src/index.ts', 'status', '--context', '--json'],
+        ['run', 'cli/index.ts', 'status', '--context', '--json'],
         {
           cwd: repoRoot,
           encoding: 'utf8',
@@ -47,7 +47,7 @@ describe('launch-path CLI commands', () => {
         'bun',
         [
           'run',
-          'packages/cli/src/index.ts',
+          'cli/index.ts',
           'remember',
           'Keep launch demos focused on one clean JSON command',
           '--type',
@@ -71,7 +71,7 @@ describe('launch-path CLI commands', () => {
 
       const context = spawnSync(
         'bun',
-        ['run', 'packages/cli/src/index.ts', 'status', '--context', '--json'],
+        ['run', 'cli/index.ts', 'status', '--context', '--json'],
         {
           cwd: repoRoot,
           encoding: 'utf8',
@@ -163,7 +163,7 @@ describe('launch-path CLI commands', () => {
         'bun',
         [
           'run',
-          'packages/cli/src/index.ts',
+          'cli/index.ts',
           'remember',
           'This should be blocked until doctor repairs the schema',
           '--type',
@@ -183,7 +183,7 @@ describe('launch-path CLI commands', () => {
 
       const degradedHealth = spawnSync(
         'bun',
-        ['run', 'packages/cli/src/index.ts', 'doctor', '--json'],
+        ['run', 'cli/index.ts', 'doctor', '--json'],
         {
           cwd: repoRoot,
           encoding: 'utf8',
@@ -207,7 +207,7 @@ describe('launch-path CLI commands', () => {
 
       const doctor = spawnSync(
         'bun',
-        ['run', 'packages/cli/src/index.ts', 'doctor', '--json', '--migrate'],
+        ['run', 'cli/index.ts', 'doctor', '--json', '--migrate'],
         {
           cwd: repoRoot,
           encoding: 'utf8',
@@ -230,7 +230,7 @@ describe('launch-path CLI commands', () => {
         'bun',
         [
           'run',
-          'packages/cli/src/index.ts',
+          'cli/index.ts',
           'remember',
           'Older installs should migrate forward without losing release features',
           '--type',
@@ -253,7 +253,7 @@ describe('launch-path CLI commands', () => {
 
       const context = spawnSync(
         'bun',
-        ['run', 'packages/cli/src/index.ts', 'status', '--context', '--json', '--project', '.'],
+        ['run', 'cli/index.ts', 'status', '--context', '--json', '--project', '.'],
         {
           cwd: repoRoot,
           encoding: 'utf8',

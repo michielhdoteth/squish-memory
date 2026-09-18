@@ -17,7 +17,7 @@ describe('installer path shadowing guard', () => {
   });
 
   test('CLI install command handles shadow detection with remediation', () => {
-    const source = readText('packages/cli/src/commands/install.ts');
+    const source = readText('cli/commands/install.ts');
     expect(source).toContain('checkShadowIssues');
     expect(source).toContain('Stale Bun global install is shadowing');
     expect(source).toContain('bun uninstall -g squish-memory');

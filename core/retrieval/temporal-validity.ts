@@ -125,10 +125,6 @@ export function applyTemporalEligibility(
   return candidates.map(() => ({ eligible: true, boost: 0 }));
 }
 
-// ---------------------------------------------------------------------------
-// Legacy content-based staleness heuristics (evidence-only, see header)
-// ---------------------------------------------------------------------------
-
 /**
  * Temporal reference patterns
  */
@@ -173,7 +169,7 @@ export function detectTemporalReferences(content: string): {
 } {
   const references: string[] = [];
 
-  // Check each pattern category
+  // Check each pattern
   for (const [, pattern] of Object.entries(TEMPORAL_PATTERNS)) {
     const matches = content.matchAll(pattern);
     for (const match of matches) {
@@ -181,7 +177,7 @@ export function detectTemporalReferences(content: string): {
     }
   }
 
-  // Deduplicate references
+  // Deduplicate
   const uniqueReferences = [...new Set(references)];
 
   return {
@@ -210,10 +206,8 @@ export function isLikelyStale(memory: {
 }): boolean {
   const { content, createdAt, lastAccessedAt } = memory;
 
-  // Check for temporal references
   const { hasTemporal, references } = detectTemporalReferences(content);
 
-  // If no temporal references, not likely stale
   if (!hasTemporal) {
     return false;
   }
@@ -222,15 +216,14 @@ export function isLikelyStale(memory: {
   const createdDate = new Date(createdAt);
   const ageInDays = (Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24);
 
-  // Check for year references that are old
+  // Check for old year references
   for (const ref of references) {
-    // Extract year from reference
     const yearMatch = ref.match(/\b(20\d{2})\b/);
     if (yearMatch) {
       const referencedYear = parseInt(yearMatch[1]);
       const yearAge = currentYear - referencedYear;
 
-      // If reference is more than 2 years old, likely stale
+      // Reference older than 2 years = stale
       if (yearAge > 2) {
         return true;
       }

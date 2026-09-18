@@ -294,11 +294,11 @@ describe('adversarial unanswerable corpus integrity (B12-3)', () => {
     process.env.SQUISH_EMBEDDINGS_PROVIDER ||= 'local';
     if (!process.env.SQUISH_LOCAL_BUNDLED_MODEL) process.env.SQUISH_LOCAL_BUNDLED_MODEL = 'off';
 
-    const { SquishClient } = await import('../../packages/core-sdk/src/index.js');
+    const { SquishRuntime } = await import('../../core/runtime/squish-runtime.js');
     const dbModule = await import('../../db/index.js');
 
     const corpus = buildBenchCorpus();
-    const client = new SquishClient();
+    const client = new SquishRuntime();
     const uuidToBench = new Map<string, string>();
     for (const mem of corpus.memories) {
       const stored = await client.remember(mem.content, {

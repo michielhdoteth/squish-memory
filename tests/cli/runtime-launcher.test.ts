@@ -9,19 +9,19 @@ describe('runtime launcher', () => {
     const { resolveRuntimeLaunch } = await import('../../bin/runtime-launcher.mjs');
     const launch = resolveRuntimeLaunch({
       rootDir: repoRoot,
-      entryRelativePath: 'packages/mcp/src/index.ts',
+      entryRelativePath: 'mcp/src/index.ts',
       env: {},
     });
 
     // When bun is on PATH, it should prefer bun; otherwise falls back to tsx via node
     const isBun = launch.command.includes('bun');
     if (isBun) {
-      expect(launch.args[0]).toBe(repoRoot.replace(/\\/g, '/') + '/packages/mcp/src/index.ts');
+      expect(launch.args[0]).toBe(repoRoot.replace(/\\/g, '/') + '/mcp/src/index.ts');
     } else {
       expect(launch.command).toBe(process.execPath.replace(/\\/g, '/'));
       expect(launch.args[0]).toContain('node_modules');
       expect(launch.args[0]).toContain('tsx');
-      expect(launch.args[launch.args.length - 1]).toBe(repoRoot.replace(/\\/g, '/') + '/packages/mcp/src/index.ts');
+      expect(launch.args[launch.args.length - 1]).toBe(repoRoot.replace(/\\/g, '/') + '/mcp/src/index.ts');
     }
   });
 
@@ -29,11 +29,11 @@ describe('runtime launcher', () => {
     const { resolveRuntimeLaunch } = await import('../../bin/runtime-launcher.mjs');
     const launch = resolveRuntimeLaunch({
       rootDir: 'C:/repo',
-      entryRelativePath: 'packages/cli/src/index.ts',
+      entryRelativePath: 'cli/index.ts',
       env: { BUN: 'C:\\bun\\bin\\bun.exe' },
     });
 
     expect(launch.command).toBe('C:/bun/bin/bun.exe');
-    expect(launch.args).toEqual(['C:/repo/packages/cli/src/index.ts']);
+    expect(launch.args).toEqual(['C:/repo/cli/index.ts']);
   });
 });

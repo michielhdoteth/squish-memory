@@ -154,10 +154,10 @@ function scoreQuery(
 // ─── Seeding mirror (identical to run-memory-bench.ts seedCorpus) ───────────
 
 async function seedCorpus(corpus: BenchCorpus) {
-  const { SquishClient } = await import('../packages/core-sdk/src/index.js');
+  const { SquishRuntime } = await import('../core/runtime/squish-runtime.js');
   const { getDb } = await import('../db/index.js');
 
-  const client = new SquishClient();
+  const client = new SquishRuntime();
   const uuidToBench = new Map<string, string>();
 
   for (const mem of corpus.memories) {

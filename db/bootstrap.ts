@@ -544,18 +544,21 @@ CREATE INDEX IF NOT EXISTS place_rules_type_idx ON place_rules(place_type);
 CREATE TABLE IF NOT EXISTS knowledge (
   id TEXT PRIMARY KEY,
   project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
-  user_id TEXT,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   agent_id TEXT,
   session_id TEXT,
 
-  knowledge_kind TEXT NOT NULL,  -- 'memory' | 'belief' | 'strategy'
-  knowledge_type TEXT NOT NULL,  -- subtype per kind
+  knowledge_kind TEXT NOT NULL,
+  knowledge_type TEXT NOT NULL,
 
   content TEXT NOT NULL,
   summary TEXT,
 
   embedding_json TEXT,
   embedding BLOB,
+  embedding_blob BLOB,
+  embedding_model TEXT,
+  embedding_dim INTEGER,
 
   confidence REAL DEFAULT 0.5,
   confidence_level TEXT DEFAULT 'certain',
@@ -563,17 +566,16 @@ CREATE TABLE IF NOT EXISTS knowledge (
   importance_decay_rate REAL DEFAULT 30,
   last_importance_recalc INTEGER,
 
-  -- Belief fields
   normalized_key TEXT,
   reason TEXT,
   evidence_summary TEXT,
+  evidence TEXT,
   last_confirmed_at INTEGER,
   source_count INTEGER DEFAULT 1,
 
-  -- Strategy fields
   title TEXT,
   description TEXT,
-  steps TEXT,                    -- JSON array of strings
+  steps TEXT,
   success_criteria TEXT,
   failure_indicators TEXT,
   usage_count INTEGER DEFAULT 0,
@@ -584,23 +586,76 @@ CREATE TABLE IF NOT EXISTS knowledge (
   last_failure_at INTEGER,
 
   status TEXT DEFAULT 'active',
+  is_active INTEGER DEFAULT 1,
+  sector TEXT DEFAULT 'general',
+  tier TEXT DEFAULT 'episodic',
+  version INTEGER DEFAULT 1,
 
-  -- Self-referencing relationships
   superseded_by TEXT,
   contradicts_id TEXT,
   informed_by_id TEXT,
 
-  tags TEXT,                     -- JSON array
-  metadata TEXT,                 -- JSON object
+  tags TEXT,
+  metadata TEXT,
 
-  -- Place routing
   place_id TEXT,
   primary_place TEXT,
 
-  -- Memory lifecycle
-  sector TEXT DEFAULT 'general',
-  tier TEXT DEFAULT 'episodic',
-  is_active INTEGER DEFAULT 1,
+  is_private INTEGER DEFAULT 0,
+  is_protected INTEGER DEFAULT 0,
+  is_pinned INTEGER DEFAULT 0,
+  is_immutable INTEGER DEFAULT 0,
+  write_scope TEXT,
+  read_scope TEXT,
+
+  scope TEXT DEFAULT 'company',
+  visibility_scope TEXT DEFAULT 'private',
+
+  actor_user TEXT,
+  actor_agent TEXT,
+  agent_role TEXT,
+  triggered_by TEXT,
+  capture_reason TEXT,
+
+  valid_from INTEGER,
+  valid_to INTEGER,
+  recorded_at INTEGER DEFAULT (strftime('%s','now')),
+
+  access_count INTEGER DEFAULT 0,
+  last_accessed_at INTEGER,
+
+  is_merged INTEGER DEFAULT 0,
+  merged_into_id TEXT,
+  merged_at INTEGER,
+
+  consolidated_from TEXT,
+  consolidated_at INTEGER,
+  is_consolidated INTEGER DEFAULT 0,
+
+  encrypted_content TEXT,
+  encryption_nonce TEXT,
+  is_encrypted INTEGER DEFAULT 0,
+
+  compression_level INTEGER,
+  relevance_score INTEGER DEFAULT 50,
+  tokens_estimate INTEGER DEFAULT 0,
+
+  decay_rate INTEGER DEFAULT 30,
+  coactivation_score INTEGER DEFAULT 0,
+  last_decay_at INTEGER DEFAULT (strftime('%s','now')),
+
+  has_l0_abstract INTEGER DEFAULT 0,
+  has_l1_overview INTEGER DEFAULT 0,
+  last_layer_update INTEGER,
+
+  media_type TEXT,
+  media_path TEXT,
+  media_metadata TEXT,
+
+  namespace_id TEXT,
+  namespace_path TEXT,
+
+  employee_id TEXT,
 
   created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
   updated_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL

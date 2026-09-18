@@ -33,7 +33,7 @@ const waitModelSec = Math.max(0, parseInt(argFlag('--wait-model', '30'), 10) || 
 delete process.env.SQUISH_VECTOR_SCAN; // irrelevant for writes
 
 async function main(): Promise<void> {
-  const { getEmbedding, getActiveEmbeddingModelId, ensureLocalModelReady, getActiveEmbeddingDim } =
+  const { getEmbedding, activeEmbeddingModel, ensureLocalModelReady, embeddingDim } =
     await import('../core/embeddings/embeddings.js');
   const { enrichContent } = await import('../core/retrieval/contextual-enrichment.js');
   const { prepareEmbedding } = await import('../core/lib/utils.js');
@@ -47,8 +47,8 @@ async function main(): Promise<void> {
     }
   }
 
-  const currentModel = getActiveEmbeddingModelId();
-  console.log(`current embedding model: ${currentModel} (dim=${getActiveEmbeddingDim()})`);
+  const currentModel = activeEmbeddingModel();
+  console.log(`current embedding model: ${currentModel} (dim=${embeddingDim()})`);
 
   // getDbClient (not raw getDb) so pre-Batch-4 databases go through the
   // schema-drift auto-heal that adds embedding_blob/model/dim columns.

@@ -1,11 +1,4 @@
 // Memory maintenance orchestration.
-//
-// Batch 8: the parallel SimHash dedup engine that used to live here was
-// deleted after the consolidation bake-off (docs/consolidation-bakeoff.md)
-// measured 141 incorrect pairs vs 14 correct on a seeded corpus, and caught
-// its auto-merge writing a nonexistent column (orphaned status flips). Dedup
-// is owned by core/algorithms (two-stage detector + proposals + history) and
-// surfaced via squish_dedup; this module only routes the 'dedup' step there.
 
 /**
  * Options for unified full maintenance run (Phase 6)
@@ -179,8 +172,8 @@ export async function runFullMaintenance(
           const superseded = sqlite.prepare(`
             SELECT id FROM memories
             WHERE status = 'superseded'
-              AND superseded_at IS NOT NULL
-              AND superseded_at < ?
+              AND superseded_by IS NOT NULL
+              AND updated_at < ?
               AND is_pinned = 0
               AND is_protected = 0
           `).all(cutoffSec) as any[];

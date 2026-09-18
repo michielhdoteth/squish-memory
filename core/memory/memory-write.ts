@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm';
 import { config } from '../../config.js';
 import { logger } from '../logger.js';
 import { getOrCreateProject } from '../../core/projects.js';
-import { getEmbedding, getActiveEmbeddingModelId } from '../../core/embeddings.js';
+import { getEmbedding, activeEmbeddingModel } from '../../core/embeddings.js';
 import { enrichContent } from '../retrieval/contextual-enrichment.js';
 import { normalizeTags, serializeTags, serializeMetadata } from '../../core/memory/serialization.js';
 import { prepareEmbedding } from '../lib/utils.js';
@@ -23,7 +23,7 @@ import { estimateTokens } from '../context/context-window.js';
 import { getDbClient } from '../lib/db-client.js';
 import { extractBeliefs } from '../knowledge/extractor.js';
 import { upsertBeliefsForMemory, createKnowledge, createKnowledgeEdge } from '../knowledge/store.js';
-import { extractStrategiesFromConversation } from '../knowledge/extractor.js';
+import { extractConversationStrats } from '../knowledge/extractor.js';
 import type { CreateKnowledgeInput } from '../knowledge/types.js';
 import { buildMemoryPolicy, buildVisibilityScopes, serializeVisibilityScopes, recommendMemoryScope } from './policy.js';
 import { onMemoryStored } from '../graph/incremental-sync.js';
@@ -34,7 +34,7 @@ import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { withBusyRetry } from '../../db/busy-retry.js';
 import { computeInitialImportance } from './importance.js';
-import { normalizeMemory, getOrCreateUser } from './memory-crud.js';
+import { normalizeMemoryRecord, getOrCreateUser } from './memory-crud.js';
 import { emit } from '../event-bus.js';
 // Batch 7: every durable write feeds the session working set so wake-up
 // summaries reflect real project activity.
@@ -132,7 +132,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   });
 
   // Batch 4: L2-normalized float32 blob (primary) + JSON compat + model stamp
-  const embeddingValues = prepareEmbedding(embedding, { model: getActiveEmbeddingModelId() });
+  const embeddingValues = prepareEmbedding(embedding, { model: activeEmbeddingModel() });
 
   const tokensEstimate = estimateTokens(input.content);
 
@@ -243,7 +243,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
 
     // Extract strategies from memory content into unified knowledge table
     try {
-      const extractedStrategies = await extractStrategiesFromConversation(input.content, {
+      const extractedStrategies = await extractConversationStrats(input.content, {
         projectId: project.id,
         sourceType: 'memory',
         sourceId: id,

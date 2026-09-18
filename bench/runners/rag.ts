@@ -144,8 +144,8 @@ async function seedCorpusAndRetrieve(
   }
 
   try {
-    const { SquishClient } = await import('../../packages/core-sdk/src/index.js');
-    const client = new SquishClient();
+    const { SquishRuntime } = await import('../../core/runtime/squish-runtime.js');
+    const client = new SquishRuntime();
 
     // Seed corpus
     const goldenPath = join(__dirname, '..', 'datasets', 'golden', 'golden-set.json');

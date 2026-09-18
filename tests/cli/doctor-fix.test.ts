@@ -12,7 +12,7 @@ const repoRoot = join(import.meta.dir, '..', '..');
 
 function runSquish(args: string[], env: Record<string, string>, timeoutMs = 30000): { status: number; stdout: string } {
   try {
-    const stdout = execFileSync('bun', ['run', 'packages/cli/src/index.ts', ...args], {
+    const stdout = execFileSync('bun', ['run', 'cli/index.ts', ...args], {
       cwd: repoRoot,
       encoding: 'utf8',
       env,
