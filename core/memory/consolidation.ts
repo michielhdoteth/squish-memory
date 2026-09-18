@@ -330,7 +330,6 @@ async function consolidateCluster(
               gacSpreadUnsafe: decision.spreadUnsafe,
               gacRepresentatives: decision.representatives,
               gacReason: decision.reason,
-              // Residual budget for future reference
               residualBudget: {
                 medoidId: budget.medoidId,
                 principalDirections: budget.principalDirections.length,

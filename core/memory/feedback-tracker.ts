@@ -5,7 +5,7 @@ import { config } from '../../config.js';
 import { getDb } from '../../db/index.js';
 import { memoryFeedback, memories, type MemoryFeedback } from '../../db/drizzle/schema-sqlite.js';
 import { eq, and } from 'drizzle-orm';
-import { analyzeResponseForMemoryReferences, mightContainMemoryReferences } from './response-analyzer.js';
+import { findMemoryRefs, hasMemoryRefs } from './response-analyzer.js';
 
 interface InjectionRecord {
   memoryIds: string[];
@@ -63,13 +63,13 @@ export async function analyzeAndRecordFeedback(
     return;
   }
 
-  if (!mightContainMemoryReferences(responseText)) {
+  if (!hasMemoryRefs(responseText)) {
     await applyFizzlePenalty(injection.memoryIds);
     injectionTracker.delete(sessionId);
     return;
   }
 
-  const analysis = analyzeResponseForMemoryReferences(
+  const analysis = findMemoryRefs(
     responseText,
     injection.memoryIds,
     injection.memoryContent

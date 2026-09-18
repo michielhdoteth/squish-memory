@@ -1,0 +1,31 @@
+bun test v1.4.1 (4661e494f)
+
+--- Benchmark: 50 memories ---
+  Query Expansion: 0.13ms
+  Entity Extraction: 0.03ms
+  Vector Search (50 cosine): 0.65ms
+  Entity Boost (50): 0.13ms
+  Temporal Validity (50): 0.40ms
+  MMR Diversity (50→10): 0.25ms
+  Composite Scoring (10): 0.01ms
+  TOTAL: 1.60ms
+
+--- Benchmark: 200 memories ---
+  Query Expansion: 0.06ms
+  Entity Extraction: 0.03ms
+  Vector Search (200 cosine): 0.69ms
+  Entity Boost (50): 0.07ms
+  Temporal Validity (50): 0.24ms
+  MMR Diversity (50→10): 0.02ms
+  Composite Scoring (10): 0.00ms
+  TOTAL: 1.12ms
+
+--- Benchmark: 1000 memories ---
+  Query Expansion: 0.12ms
+  Entity Extraction: 0.02ms
+  Vector Search (1000 cosine): 2.19ms
+  Entity Boost (50): 0.08ms
+  Temporal Validity (50): 0.31ms
+  MMR Diversity (50→10): 0.03ms
+  Composite Scoring (10): 0.00ms
+  TOTAL: 2.75ms
