@@ -1,0 +1,163 @@
+{
+  "meta": {
+    "name": "squish-abstention-curve",
+    "gitSha": "6ab693b",
+    "generatedAt": "2026-08-25T10:12:04.533Z",
+    "runtimeMs": 20380,
+    "thresholds": [
+      0.3,
+      0.35,
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.7,
+      0.8
+    ],
+    "constraints": {
+      "referenceThreshold": 0.35,
+      "coverageFractionOfMax": 0.85,
+      "macroTolerance": 0.03,
+      "minCoverage": 0.8185,
+      "macroFloor": 0.1959
+    }
+  },
+  "recommendation": {
+    "chosenThreshold": 0.6,
+    "cwr": 0.037,
+    "pWrongGivenConfident": 0.122,
+    "coverage": 0.8889,
+    "selectiveScore": 0.4958,
+    "macro": 0.2648,
+    "unanswerablePenalty": 0.3
+  },
+  "rows": [
+    {
+      "threshold": 0.3,
+      "totalQueries": 135,
+      "answeredQueries": 130,
+      "coverage": 0.963,
+      "confidentWrong": 5,
+      "confidentCount": 41,
+      "cwr": 0.037,
+      "pWrongGivenConfident": 0.122,
+      "selectiveScore": 0.4731,
+      "macro": 0.2259,
+      "micro": 0.4778,
+      "unanswerablePenalty": -0.05
+    },
+    {
+      "threshold": 0.35,
+      "totalQueries": 135,
+      "answeredQueries": 130,
+      "coverage": 0.963,
+      "confidentWrong": 5,
+      "confidentCount": 41,
+      "cwr": 0.037,
+      "pWrongGivenConfident": 0.122,
+      "selectiveScore": 0.4731,
+      "macro": 0.2259,
+      "micro": 0.4778,
+      "unanswerablePenalty": -0.05
+    },
+    {
+      "threshold": 0.4,
+      "totalQueries": 135,
+      "answeredQueries": 129,
+      "coverage": 0.9556,
+      "confidentWrong": 5,
+      "confidentCount": 41,
+      "cwr": 0.037,
+      "pWrongGivenConfident": 0.122,
+      "selectiveScore": 0.469,
+      "macro": 0.2259,
+      "micro": 0.4778,
+      "unanswerablePenalty": -0.05
+    },
+    {
+      "threshold": 0.45,
+      "totalQueries": 135,
+      "answeredQueries": 128,
+      "coverage": 0.9481,
+      "confidentWrong": 5,
+      "confidentCount": 41,
+      "cwr": 0.037,
+      "pWrongGivenConfident": 0.122,
+      "selectiveScore": 0.4727,
+      "macro": 0.2315,
+      "micro": 0.4852,
+      "unanswerablePenalty": 0
+    },
+    {
+      "threshold": 0.5,
+      "totalQueries": 135,
+      "answeredQueries": 126,
+      "coverage": 0.9333,
+      "confidentWrong": 5,
+      "confidentCount": 41,
+      "cwr": 0.037,
+      "pWrongGivenConfident": 0.122,
+      "selectiveScore": 0.4762,
+      "macro": 0.237,
+      "micro": 0.4926,
+      "unanswerablePenalty": 0.05
+    },
+    {
+      "threshold": 0.55,
+      "totalQueries": 135,
+      "answeredQueries": 122,
+      "coverage": 0.9037,
+      "confidentWrong": 5,
+      "confidentCount": 41,
+      "cwr": 0.037,
+      "pWrongGivenConfident": 0.122,
+      "selectiveScore": 0.4877,
+      "macro": 0.2537,
+      "micro": 0.5148,
+      "unanswerablePenalty": 0.2
+    },
+    {
+      "threshold": 0.6,
+      "totalQueries": 135,
+      "answeredQueries": 120,
+      "coverage": 0.8889,
+      "confidentWrong": 5,
+      "confidentCount": 41,
+      "cwr": 0.037,
+      "pWrongGivenConfident": 0.122,
+      "selectiveScore": 0.4958,
+      "macro": 0.2648,
+      "micro": 0.5296,
+      "unanswerablePenalty": 0.3
+    },
+    {
+      "threshold": 0.7,
+      "totalQueries": 135,
+      "answeredQueries": 120,
+      "coverage": 0.8889,
+      "confidentWrong": 5,
+      "confidentCount": 41,
+      "cwr": 0.037,
+      "pWrongGivenConfident": 0.122,
+      "selectiveScore": 0.4958,
+      "macro": 0.2648,
+      "micro": 0.5296,
+      "unanswerablePenalty": 0.3
+    },
+    {
+      "threshold": 0.8,
+      "totalQueries": 135,
+      "answeredQueries": 120,
+      "coverage": 0.8889,
+      "confidentWrong": 5,
+      "confidentCount": 41,
+      "cwr": 0.037,
+      "pWrongGivenConfident": 0.122,
+      "selectiveScore": 0.4958,
+      "macro": 0.2648,
+      "micro": 0.5296,
+      "unanswerablePenalty": 0.3
+    }
+  ]
+}

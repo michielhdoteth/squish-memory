@@ -78,6 +78,8 @@ export const memoriesSchema: TableSchema = {
     valid_to: { type: 'INTEGER' },
     recorded_at: { type: 'INTEGER' },
     superseded_by: { type: 'TEXT' },
+    stability: { type: 'REAL', default: '0.0' },
+    last_reinforced_at: { type: 'INTEGER' },
     version: { type: 'INTEGER', default: '1' },
     place_id: { type: 'TEXT' },
     place_sort_order: { type: 'INTEGER', default: '0' },

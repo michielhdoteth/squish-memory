@@ -1,0 +1,2675 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-24T03:27:47.871Z",
+    "gitSha": "7564b01",
+    "gitDirty": true,
+    "corpusSize": 60,
+    "queryCount": 46,
+    "topK": 10,
+    "embeddingsProvider": "local",
+    "bundledModel": "off",
+    "precisionStack": {
+      "reranker": false,
+      "queryExpansion": true,
+      "graphBoostLegacy": false,
+      "temporalValidity": true,
+      "scoringServeV2": true
+    },
+    "envPinned": true,
+    "durationMs": 1549,
+    "deterministic": true
+  },
+  "thresholds": {
+    "recallAt5": 0.85,
+    "mrr": 0.82,
+    "hitAt1": 0.78
+  },
+  "overall": {
+    "count": 46,
+    "recallAt5": 0.8369565217391305,
+    "mrr": 0.8087819185645273,
+    "hitAt1": 0.7391304347826086
+  },
+  "byCategory": {
+    "paraphrase": {
+      "count": 9,
+      "recallAt5": 0.8888888888888888,
+      "mrr": 0.8888888888888888,
+      "hitAt1": 0.8888888888888888
+    },
+    "entity": {
+      "count": 9,
+      "recallAt5": 1,
+      "mrr": 0.9444444444444444,
+      "hitAt1": 0.8888888888888888
+    },
+    "temporal": {
+      "count": 8,
+      "recallAt5": 0.5625,
+      "mrr": 0.44737103174603177,
+      "hitAt1": 0.25
+    },
+    "negation": {
+      "count": 8,
+      "recallAt5": 0.8125,
+      "mrr": 0.75,
+      "hitAt1": 0.625
+    },
+    "procedural": {
+      "count": 8,
+      "recallAt5": 0.875,
+      "mrr": 0.890625,
+      "hitAt1": 0.875
+    },
+    "multi-hop": {
+      "count": 4,
+      "recallAt5": 0.875,
+      "mrr": 1,
+      "hitAt1": 1
+    }
+  },
+  "queries": [
+    {
+      "id": "q_paraphrase_01",
+      "category": "paraphrase",
+      "query": "Why did we pick a relational database over a document store for experiment metadata?",
+      "mustHit": [
+        "golden_001"
+      ],
+      "mayHit": [
+        "golden_040"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_001",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.9587
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.9144
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8857
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8524
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8472
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.8089
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.788
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.5084
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_02",
+      "category": "paraphrase",
+      "query": "Which package manager won out and what was the reason?",
+      "mustHit": [
+        "golden_002"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_013",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.9472
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9414
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.9328
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.915
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.9056
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.9054
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.8483
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.8432
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.5923
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 0,
+      "rr": 0,
+      "hitAt1": false
+    },
+    {
+      "id": "q_paraphrase_03",
+      "category": "paraphrase",
+      "query": "What framework ended up powering the labeling backend?",
+      "mustHit": [
+        "golden_003"
+      ],
+      "mayHit": [
+        "golden_019"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_003",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9541
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.9534
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9186
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.8781
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.8778
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 0.8664
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.8619
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8044
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.6081
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_04",
+      "category": "paraphrase",
+      "query": "How do events move between ingestion services?",
+      "mustHit": [
+        "golden_004"
+      ],
+      "mayHit": [
+        "golden_041"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_004",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.9839
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9318
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.5752
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4842
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4766
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4693
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.4622
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.4486
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.4421
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_05",
+      "category": "paraphrase",
+      "query": "Do embeddings get recomputed on every lookup?",
+      "mustHit": [
+        "golden_035",
+        "golden_036"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_036",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.9764
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.952
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9403
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.906
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.7997
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.4881
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4731
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.1659
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_06",
+      "category": "paraphrase",
+      "query": "What is the team's stance on Python code linting tools?",
+      "mustHit": [
+        "golden_008"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_008",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9434
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.9153
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9123
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8978
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.8871
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.8483
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.82
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.6885
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.5773
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_07",
+      "category": "paraphrase",
+      "query": "What format do status summaries need to follow?",
+      "mustHit": [
+        "golden_007"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_007",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9962
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.9664
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.8616
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.496
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4805
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4731
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.459
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4522
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4457
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_08",
+      "category": "paraphrase",
+      "query": "What happens to the staging database overnight?",
+      "mustHit": [
+        "golden_054",
+        "golden_055"
+      ],
+      "mayHit": [
+        "golden_056"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_055",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_054",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9735
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9537
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8915
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8905
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.8787
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.8732
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.6603
+        },
+        {
+          "goldenId": "golden_031",
+          "score": 0.6017
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_01",
+      "category": "entity",
+      "query": "Who leads Project Aurora?",
+      "mustHit": [
+        "golden_024",
+        "golden_048"
+      ],
+      "mayHit": [
+        "golden_058"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_024",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.9387
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.9248
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.7122
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.4805
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 0.4804
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4731
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4659
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.4522
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_02",
+      "category": "entity",
+      "query": "Who is Elena Vasquez?",
+      "mustHit": [
+        "golden_026"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_026",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 0.8933
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.492
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4842
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4766
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.4693
+        },
+        {
+          "goldenId": "golden_045",
+          "score": 0.4622
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4486
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.4421
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.1553
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_03",
+      "category": "entity",
+      "query": "What does Nordwind Energy do for us?",
+      "mustHit": [
+        "golden_047",
+        "golden_025"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_047",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.9135
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.8853
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8777
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.8727
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.8725
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.8601
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.8493
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.5689
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_04",
+      "category": "entity",
+      "query": "What is PaperTrail?",
+      "mustHit": [
+        "golden_029",
+        "golden_058"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_058",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4881
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.4805
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4731
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4659
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.459
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4457
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.1522
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.1393
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_05",
+      "category": "entity",
+      "query": "What are Tomas Lindqvist's responsibilities?",
+      "mustHit": [
+        "golden_027",
+        "golden_053"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_053",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.8118
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8011
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.7774
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4842
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.4841
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.4766
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4622
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.1693
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_06",
+      "category": "entity",
+      "query": "Why did we end up on Qdrant?",
+      "mustHit": [
+        "golden_030",
+        "golden_017"
+      ],
+      "mayHit": [
+        "golden_042",
+        "golden_016"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_058",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.993
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.5357
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.5123
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.504
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4883
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4735
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4664
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.4529
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.1596
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 0.5,
+      "hitAt1": false
+    },
+    {
+      "id": "q_entity_07",
+      "category": "entity",
+      "query": "Tell me about Helios Research Lab.",
+      "mustHit": [
+        "golden_028"
+      ],
+      "mayHit": [
+        "golden_059"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_028",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.9663
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.9612
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 0.6734
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.6518
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 0.4919
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.4766
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4622
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.4486
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4421
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_08",
+      "category": "entity",
+      "query": "What role does MLflow play here?",
+      "mustHit": [
+        "golden_031"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_031",
+          "score": 0.72
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.614
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.6041
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.5945
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.5852
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.5762
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.5675
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.559
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.5428
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.2508
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_01",
+      "category": "temporal",
+      "query": "What did we use for vector search before Qdrant?",
+      "mustHit": [
+        "golden_017",
+        "golden_016"
+      ],
+      "mayHit": [
+        "golden_042",
+        "golden_030"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_030",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.9739
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.9663
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.9387
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.9234
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.9113
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.9038
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8973
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8594
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.6569
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "recallAtK": 1,
+      "rr": 0.5,
+      "hitAt1": false
+    },
+    {
+      "id": "q_temporal_02",
+      "category": "temporal",
+      "query": "Which annotation platform did the team switch away from in spring 2026?",
+      "mustHit": [
+        "golden_018",
+        "golden_019"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_003",
+          "score": 0.9451
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.925
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.8799
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.8588
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.74
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.6805
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.5874
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.5481
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.5318
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 0.5257
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 0.5,
+      "rr": 0.2,
+      "hitAt1": false
+    },
+    {
+      "id": "q_temporal_03",
+      "category": "temporal",
+      "query": "When is the weekly sync held now?",
+      "mustHit": [
+        "golden_021",
+        "golden_020"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_021",
+          "score": 0.9739
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9734
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.9732
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9245
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 0.74
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 0.7164
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.6766
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.675
+        },
+        {
+          "goldenId": "golden_023",
+          "score": 0.655
+        },
+        {
+          "goldenId": "golden_022",
+          "score": 0.6137
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_04",
+      "category": "temporal",
+      "query": "How has the GPU cluster size changed this year?",
+      "mustHit": [
+        "golden_022",
+        "golden_023"
+      ],
+      "mayHit": [
+        "golden_053"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_027",
+          "score": 0.9761
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.9106
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.8989
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.8979
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8789
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.8779
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.8274
+        },
+        {
+          "goldenId": "golden_022",
+          "score": 0.72
+        },
+        {
+          "goldenId": "golden_023",
+          "score": 0.6961
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.6179
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "recallAtK": 0,
+      "rr": 0.125,
+      "hitAt1": false
+    },
+    {
+      "id": "q_temporal_05",
+      "category": "temporal",
+      "query": "Did anything change with documentation hosting?",
+      "mustHit": [
+        "golden_032"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_036",
+          "score": 0.934
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.9173
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.911
+        },
+        {
+          "goldenId": "golden_054",
+          "score": 0.9108
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.8405
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.8357
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.8281
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.8066
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.72
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.6734
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 0,
+      "rr": 0.1111111111111111,
+      "hitAt1": false
+    },
+    {
+      "id": "q_temporal_06",
+      "category": "temporal",
+      "query": "How often are budget reviews held these days?",
+      "mustHit": [
+        "golden_034"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_050",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.8615
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.8555
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.8353
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8165
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8164
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.72
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.512
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.5038
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.1958
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 0,
+      "rr": 0.14285714285714285,
+      "hitAt1": false
+    },
+    {
+      "id": "q_temporal_07",
+      "category": "temporal",
+      "query": "When did external users start participating in studies?",
+      "mustHit": [
+        "golden_033"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_047",
+          "score": 0.9883
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 0.97
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.6416
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.492
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4766
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4693
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4622
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4553
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.3514
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.3411
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "recallAtK": 1,
+      "rr": 0.5,
+      "hitAt1": false
+    },
+    {
+      "id": "q_temporal_08",
+      "category": "temporal",
+      "query": "Where did config files live before the July change?",
+      "mustHit": [
+        "golden_057"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_057",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9741
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.9732
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.934
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9188
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.7419
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.6819
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.6812
+        },
+        {
+          "goldenId": "golden_023",
+          "score": 0.6557
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 0.6426
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_01",
+      "category": "negation",
+      "query": "Do we still use MongoDB anywhere?",
+      "mustHit": [
+        "golden_040",
+        "golden_001"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_001",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.9961
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.9734
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.9174
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.9113
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.8676
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.4766
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4622
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4486
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.192
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_02",
+      "category": "negation",
+      "query": "Is FAISS still part of our stack?",
+      "mustHit": [
+        "golden_042",
+        "golden_017"
+      ],
+      "mayHit": [
+        "golden_016",
+        "golden_030"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_042",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.9394
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.9098
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8074
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.7702
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.6961
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.6732
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.5198
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4693
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.4622
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 0.5,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_03",
+      "category": "negation",
+      "query": "Are we still considering Kafka?",
+      "mustHit": [
+        "golden_041",
+        "golden_004"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_042",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.9843
+        },
+        {
+          "goldenId": "golden_041",
+          "score": 0.9587
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.926
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.9136
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.8762
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.8138
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.7933
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.5123
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.504
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 0.5,
+      "hitAt1": false
+    },
+    {
+      "id": "q_negation_04",
+      "category": "negation",
+      "query": "Does the team still meet Thursday mornings?",
+      "mustHit": [
+        "golden_020",
+        "golden_021"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_012",
+          "score": 0.9981
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.9466
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.9408
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.94
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9304
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.9063
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.9011
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8809
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8807
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.72
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 0,
+      "rr": 0,
+      "hitAt1": false
+    },
+    {
+      "id": "q_negation_05",
+      "category": "negation",
+      "query": "Is Label Studio deprecated?",
+      "mustHit": [
+        "golden_018",
+        "golden_019"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_018",
+          "score": 0.74
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.7239
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4842
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4766
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.4693
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.4553
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.4486
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4421
+        },
+        {
+          "goldenId": "golden_049",
+          "score": 0.4358
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 0.1622
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_06",
+      "category": "negation",
+      "query": "Was Redis rejected for anything?",
+      "mustHit": [
+        "golden_039"
+      ],
+      "mayHit": [
+        "golden_035",
+        "golden_036"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_040",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.9611
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.952
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.9327
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.912
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.9071
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.8874
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8371
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.5509
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 0.5,
+      "hitAt1": false
+    },
+    {
+      "id": "q_procedural_01",
+      "category": "procedural",
+      "query": "How do we deploy a service to production?",
+      "mustHit": [
+        "golden_011"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_011",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.9603
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.929
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9261
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.9252
+        },
+        {
+          "goldenId": "golden_037",
+          "score": 0.913
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 0.8318
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.663
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.6535
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.5453
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_02",
+      "category": "procedural",
+      "query": "What are the steps for onboarding a new dataset?",
+      "mustHit": [
+        "golden_012"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_012",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.9685
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9405
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.9137
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8514
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.8434
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8192
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.8157
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.5536
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.5118
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_03",
+      "category": "procedural",
+      "query": "Walk me through rotating API credentials.",
+      "mustHit": [
+        "golden_013"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_013",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_045",
+          "score": 0.983
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.496
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.4881
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4805
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4731
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4659
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4522
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4457
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4393
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_04",
+      "category": "procedural",
+      "query": "What is the protocol during a production outage?",
+      "mustHit": [
+        "golden_014"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_030",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9767
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9469
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.9285
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.9254
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.9224
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.8611
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.8453
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.6088
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 0.5971
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "recallAtK": 0,
+      "rr": 0.125,
+      "hitAt1": false
+    },
+    {
+      "id": "q_procedural_05",
+      "category": "procedural",
+      "query": "What needs checking before submitting a paper?",
+      "mustHit": [
+        "golden_015"
+      ],
+      "mayHit": [
+        "golden_043"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_015",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.492
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4842
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.4766
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4693
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4622
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4553
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.3737
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.3567
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.2889
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_06",
+      "category": "procedural",
+      "query": "How do we release a new SDK version?",
+      "mustHit": [
+        "golden_051"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_051",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9611
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9594
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.8886
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.684
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.5041
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.4805
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4522
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.4457
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.1659
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_01",
+      "category": "multi-hop",
+      "query": "Which project depends on PaperTrail and why?",
+      "mustHit": [
+        "golden_058",
+        "golden_029"
+      ],
+      "mayHit": [
+        "golden_024"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_058",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.9812
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9144
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.8973
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.863
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.8547
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.5943
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4842
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4766
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4693
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_02",
+      "category": "multi-hop",
+      "query": "Who maintains the machines our training runs depend on?",
+      "mustHit": [
+        "golden_053",
+        "golden_027"
+      ],
+      "mayHit": [
+        "golden_022",
+        "golden_023"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_053",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.8906
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8743
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.8731
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.8676
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8624
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8592
+        },
+        {
+          "goldenId": "golden_023",
+          "score": 0.622
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.5359
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_03",
+      "category": "multi-hop",
+      "query": "How does Nordwind Energy connect to our forecasting benchmark?",
+      "mustHit": [
+        "golden_025",
+        "golden_047"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_047",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9611
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.8798
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8207
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.8076
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.6403
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.4805
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4731
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4659
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_04",
+      "category": "multi-hop",
+      "query": "Which vector store backs Project Aurora's retrieval index, and what preceded it?",
+      "mustHit": [
+        "golden_058",
+        "golden_017"
+      ],
+      "mayHit": [
+        "golden_030",
+        "golden_016"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_058",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.9313
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.9173
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8732
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.8451
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.8218
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.6718
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.6663
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.5961
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 0.5,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_09",
+      "category": "paraphrase",
+      "query": "Why is there a cap on database connections per service?",
+      "mustHit": [
+        "golden_037",
+        "golden_038"
+      ],
+      "mayHit": [
+        "golden_001"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_038",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_037",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.9883
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9374
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8929
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8781
+        },
+        {
+          "goldenId": "golden_041",
+          "score": 0.8676
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8594
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.6107
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.5566
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_09",
+      "category": "entity",
+      "query": "What do we use for tracing across services?",
+      "mustHit": [
+        "golden_046"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_046",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9961
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.9394
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.9387
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9245
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9179
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8781
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8627
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.8363
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.7977
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_07",
+      "category": "negation",
+      "query": "Are we still on Confluence for the wiki?",
+      "mustHit": [
+        "golden_049"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_049",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.883
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.8794
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8752
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8702
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8619
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.8531
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.8109
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.8082
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.7991
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_08",
+      "category": "negation",
+      "query": "Do we send customer text to GPT-4 for classification?",
+      "mustHit": [
+        "golden_005"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_005",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.9243
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.8963
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8855
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8715
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.8619
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.8599
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.8447
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.8309
+        },
+        {
+          "goldenId": "golden_010",
+          "score": 0.8201
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_07",
+      "category": "procedural",
+      "query": "How does the weekly model evaluation work?",
+      "mustHit": [
+        "golden_044"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_044",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9445
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.922
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9199
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.9043
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.9042
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.8592
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.6741
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 0.6658
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.6041
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_08",
+      "category": "procedural",
+      "query": "What are the rules for reviewing pull requests?",
+      "mustHit": [
+        "golden_050"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_050",
+          "score": 1
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9809
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.9612
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8902
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8482
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.8481
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.8258
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.8227
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.5612
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.5483
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    }
+  ],
+  "notes": {
+    "purpose": "Committed evidence for the decision to keep SQUISH_TEMPORAL_VALIDITY OFF by default. This run enables the flag; every overall metric breaches its golden gate threshold.",
+    "howProduced": "SQUISH_TEMPORAL_VALIDITY=true bun tests/golden/run-eval.ts --out tests/golden/reports/temporal-validity-on-breach.json --quiet (exit code 1: threshold breach). All other env identical to the pinned canonical baseline env (see tests/golden/README.md), so the only delta vs baseline-report.json is the temporal-validity penalty.",
+    "breach": "recallAt5 0.837 < 0.85; mrr 0.809 < 0.82; hitAt1 0.739 < 0.78",
+    "baseline": {
+      "recallAt5": 0.935,
+      "mrr": 0.904,
+      "hitAt1": 0.87,
+      "source": "tests/golden/baseline-report.json (pinned env)"
+    },
+    "diagnosis": "The flat staleness penalty (-0.30 on the served composite) is too blunt on aged corpora: golden memories are seeded at fixed Jan-2026 timestamps and many legitimately contain historical/temporal references, so isLikelyStale() fires on relevant must-hit documents and demotes them below non-stale distractors.",
+    "decision": "Flag stays opt-in until the staleness signal is scoped (e.g. only penalize when the query itself references current state). Re-run this exact command after any change to temporal-validity.ts and re-commit this artifact alongside any default flip."
+  }
+}

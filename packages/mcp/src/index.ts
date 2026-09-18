@@ -323,7 +323,10 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
         });
         result = { id: learning.id, type: "learning", learningType: finalLearningType, content };
       } else {
-        const memory = await sdkClient.remember(content, {
+        // Direct call to rememberMemory (avoids HTTP roundtrip + recursive loop)
+        const { rememberMemory } = await import('../../../core/memory/memory-write.js');
+        const memory = await rememberMemory({
+          content,
           type: inferredType as any,
           tags,
           project: resolvedProject,

@@ -106,12 +106,13 @@ export function recordUsefulRetrieval(
  * Record that a memory was cited in a response.
  * This is stronger feedback than just "useful" - it means the memory
  * was explicitly referenced.
+ * Also triggers resurrection reinforcement on the cited memory.
  */
-export function recordCitation(
+export async function recordCitation(
   memoryId: string,
   responseId: string,
-  options?: { sessionId?: string }
-): void {
+  options?: { sessionId?: string; relevance?: number; answerConfidence?: number }
+): Promise<void> {
   const key = options?.sessionId || 'default';
   const buffer = feedbackBuffer.get(key) || [];
 
@@ -125,6 +126,19 @@ export function recordCitation(
   }
 
   feedbackBuffer.set(key, buffer);
+
+  // Trigger resurrection reinforcement for cited memory
+  try {
+    const { reinforceMemory } = await import('./resurrection.js');
+    await reinforceMemory({
+      memoryId,
+      signal: 'successful_use',
+      relevance: options?.relevance ?? 0.8,
+      answerConfidence: options?.answerConfidence ?? 0.9,
+    });
+  } catch {
+    // Best-effort — don't break feedback flow if resurrection fails
+  }
 }
 
 /**

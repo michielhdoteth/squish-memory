@@ -1,0 +1,169 @@
+{
+  "meta": {
+    "name": "squish-rag-eval-v1",
+    "description": "End-to-end RAG evaluation dataset. Each query has an expected answer, category, and whether it's answerable from memory. Tests answer correctness, groundedness, stale-fact leakage, and abstention.",
+    "version": 1
+  },
+  "queries": [
+    {
+      "id": "rag_001",
+      "category": "fact-retrieval",
+      "query": "What database did we choose for experiment metadata?",
+      "expected": "PostgreSQL",
+      "answerable": true,
+      "memoryIds": ["golden_001"]
+    },
+    {
+      "id": "rag_002",
+      "category": "fact-retrieval",
+      "query": "Which package manager do we use for TypeScript monorepos?",
+      "expected": "pnpm",
+      "answerable": true,
+      "memoryIds": ["golden_002"]
+    },
+    {
+      "id": "rag_003",
+      "category": "multi-hop",
+      "query": "Who leads Project Aurora and what is it about?",
+      "expected": "Priya Nair leads Project Aurora, which is a RAG evaluation harness for reproducible RAG benchmarks across changing corpora.",
+      "answerable": true,
+      "memoryIds": ["golden_024"]
+    },
+    {
+      "id": "rag_004",
+      "category": "temporal",
+      "query": "What annotation tool do we currently use?",
+      "expected": "Argilla",
+      "answerable": true,
+      "memoryIds": ["golden_019"]
+    },
+    {
+      "id": "rag_005",
+      "category": "temporal",
+      "query": "What did we use for annotation before Argilla?",
+      "expected": "Label Studio",
+      "answerable": true,
+      "memoryIds": ["golden_018"]
+    },
+    {
+      "id": "rag_006",
+      "category": "contradiction",
+      "query": "How many GPUs are in the cluster?",
+      "expected": "Sixteen A100s plus four H100s (as of August 2026 expansion)",
+      "answerable": true,
+      "memoryIds": ["golden_023"]
+    },
+    {
+      "id": "rag_007",
+      "category": "contradiction",
+      "query": "What vector store is used in production?",
+      "expected": "Qdrant",
+      "answerable": true,
+      "memoryIds": ["golden_017", "golden_030"]
+    },
+    {
+      "id": "rag_008",
+      "category": "procedural",
+      "query": "What is the deployment SOP?",
+      "expected": "Run full test suite, docker compose build, tag release image, push to registry, deploy to staging, verify health endpoint, promote to production.",
+      "answerable": true,
+      "memoryIds": ["golden_011"]
+    },
+    {
+      "id": "rag_009",
+      "category": "preference",
+      "query": "How should weekly research reports be formatted?",
+      "expected": "Bullet-point summaries, maximum one page, with links to raw notebooks at the bottom.",
+      "answerable": true,
+      "memoryIds": ["golden_007"]
+    },
+    {
+      "id": "rag_010",
+      "category": "unanswerable",
+      "query": "What is the company's annual revenue?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_011",
+      "category": "unanswerable",
+      "query": "How many employees work in the Berlin office?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_012",
+      "category": "stale-fact",
+      "query": "What GPU count was reported in January 2026?",
+      "expected": "Eight A100 cards (this is the old/stale fact)",
+      "answerable": true,
+      "memoryIds": ["golden_022"]
+    },
+    {
+      "id": "rag_013",
+      "category": "reasoning",
+      "query": "Why was Redis chosen over Kafka for event relay?",
+      "expected": "Peak throughput under 5k messages per second and Kafka's operational overhead is not justified at this scale.",
+      "answerable": true,
+      "memoryIds": ["golden_004"]
+    },
+    {
+      "id": "rag_014",
+      "category": "entity",
+      "query": "What is PaperTrail?",
+      "expected": "Internal literature tracker that indexes arXiv daily, flags citations in drafts, and sends digest emails each morning.",
+      "answerable": true,
+      "memoryIds": ["golden_029"]
+    },
+    {
+      "id": "rag_015",
+      "category": "entity",
+      "query": "Who is Tomas Lindqvist?",
+      "expected": "Infrastructure engineer who maintains the GPU cluster, deploy pipelines, and backup schedules.",
+      "answerable": true,
+      "memoryIds": ["golden_027"]
+    },
+    {
+      "id": "rag_016",
+      "category": "multi-hop",
+      "query": "What framework is the annotation service built on and why?",
+      "expected": "FastAPI, because async endpoints handle concurrent labeling sessions better and pydantic gives request validation for free.",
+      "answerable": true,
+      "memoryIds": ["golden_003"]
+    },
+    {
+      "id": "rag_017",
+      "category": "fact-retrieval",
+      "query": "Where is Helios Research Lab located?",
+      "expected": "Utrecht",
+      "answerable": true,
+      "memoryIds": ["golden_028"]
+    },
+    {
+      "id": "rag_018",
+      "category": "preference",
+      "query": "What linting tool do we use for Python?",
+      "expected": "ruff (replaces flake8, isort, and black)",
+      "answerable": true,
+      "memoryIds": ["golden_008"]
+    },
+    {
+      "id": "rag_019",
+      "category": "procedural",
+      "query": "How do we handle credential rotation?",
+      "expected": "Generate new secret in vault, update .env.prod through secrets manager only, restart affected services, confirm health checks pass, log rotation date in audit sheet.",
+      "answerable": true,
+      "memoryIds": ["golden_013"]
+    },
+    {
+      "id": "rag_020",
+      "category": "unanswerable",
+      "query": "What is our strategy for Series B fundraising?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    }
+  ]
+}

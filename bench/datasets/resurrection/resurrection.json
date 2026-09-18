@@ -1,0 +1,126 @@
+{
+  "meta": {
+    "name": "squish-resurrection-v1",
+    "description": "Tests memory resurrection behavior. Memories should strengthen only when successfully used, not from accidental retrieval alone.",
+    "version": 1
+  },
+  "memories": [
+    {
+      "id": "res_dormant_useful",
+      "type": "fact",
+      "content": "The deployment pipeline uses GitHub Actions with a self-hosted runner on the office Mac Mini.",
+      "createdAt": "2025-01-15T10:00:00Z",
+      "initialConfidence": 0.3,
+      "initialStability": 0.1,
+      "scenario": "dormant_useful"
+    },
+    {
+      "id": "res_dormant_irrelevant",
+      "type": "fact",
+      "content": "The office kitchen has a Nespresso machine with pods delivered monthly.",
+      "createdAt": "2025-02-01T10:00:00Z",
+      "initialConfidence": 0.2,
+      "initialStability": 0.05,
+      "scenario": "dormant_irrelevant"
+    },
+    {
+      "id": "res_frequently_retrieved",
+      "type": "fact",
+      "content": "The standup meeting is at 9:30 AM every weekday.",
+      "createdAt": "2025-03-01T10:00:00Z",
+      "initialConfidence": 0.8,
+      "initialStability": 0.7,
+      "scenario": "frequent_retrieval"
+    },
+    {
+      "id": "res_contradicted",
+      "type": "fact",
+      "content": "The staging environment runs on AWS us-east-1.",
+      "createdAt": "2025-01-10T10:00:00Z",
+      "initialConfidence": 0.6,
+      "initialStability": 0.3,
+      "scenario": "contradicted"
+    },
+    {
+      "id": "res_contradicted_by_newer",
+      "type": "fact",
+      "content": "The staging environment runs on GCP europe-west1.",
+      "createdAt": "2025-06-01T10:00:00Z",
+      "initialConfidence": 0.9,
+      "initialStability": 0.5,
+      "scenario": "contradicted_by_newer"
+    }
+  ],
+  "testCases": [
+    {
+      "id": "test_dormant_useful",
+      "description": "Dormant memory that gets used successfully should strengthen",
+      "memoryId": "res_dormant_useful",
+      "events": [
+        {
+          "signal": "successful_use",
+          "relevance": 0.85,
+          "answerConfidence": 0.9
+        }
+      ],
+      "expectations": {
+        "confidenceIncreased": true,
+        "stabilityIncreased": true,
+        "resurrected": false
+      }
+    },
+    {
+      "id": "test_dormant_irrelevant",
+      "description": "Dormant memory that is never used should remain weak",
+      "memoryId": "res_dormant_irrelevant",
+      "events": [],
+      "expectations": {
+        "confidenceUnchanged": true,
+        "stabilityUnchanged": true,
+        "resurrected": false
+      }
+    },
+    {
+      "id": "test_frequent_accidental_retrieval",
+      "description": "Frequently retrieved but not useful should not become immortal",
+      "memoryId": "res_frequently_retrieved",
+      "events": [
+        { "signal": "successful_use", "relevance": 0.3, "answerConfidence": 0.4 },
+        { "signal": "successful_use", "relevance": 0.3, "answerConfidence": 0.4 },
+        { "signal": "successful_use", "relevance": 0.3, "answerConfidence": 0.4 },
+        { "signal": "successful_use", "relevance": 0.3, "answerConfidence": 0.4 },
+        { "signal": "successful_use", "relevance": 0.3, "answerConfidence": 0.4 }
+      ],
+      "expectations": {
+        "confidenceBelow": 0.95,
+        "stabilityBelow": 0.95,
+        "diminishingReturns": true
+      }
+    },
+    {
+      "id": "test_contradiction_blocks",
+      "description": "Contradicted memory should lose confidence",
+      "memoryId": "res_contradicted",
+      "events": [
+        { "signal": "contradicted", "relevance": 0.9, "answerConfidence": 0.95 }
+      ],
+      "expectations": {
+        "confidenceDecreased": true,
+        "blocked": false
+      }
+    },
+    {
+      "id": "test_contradicted_not_resurrected",
+      "description": "Older fact contradicted by newer should not resurrect over replacement",
+      "memoryId": "res_contradicted",
+      "events": [
+        { "signal": "successful_use", "relevance": 0.8, "answerConfidence": 0.85 }
+      ],
+      "afterContradiction": true,
+      "expectations": {
+        "confidenceBelow": 0.7,
+        "resurrected": false
+      }
+    }
+  ]
+}
