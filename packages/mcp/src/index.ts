@@ -4,9 +4,9 @@
 import dotenv from 'dotenv';
 import { resolve } from 'path';
 dotenv.config({ path: resolve(__dirname, '../../../.env') });
-import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
-import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
-import { McpServer } from "@modelcontextprotocol/server";
+import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { toNodeHandler } from "@modelcontextprotocol/node";
 import express from "express";
 import { timingSafeEqual } from "crypto";
 import rateLimit from "express-rate-limit";
@@ -19,7 +19,6 @@ import {
   probeSchemaHealth,
   type SchemaProbeResult,
 } from "@squish/core-sdk";
-import { logger } from "../../../core/logger.js";
 // SDK client — replaces direct core imports for recall, search, remember, forget,
 // listProjects, associations, scheduler, and graph operations
 import { SquishClient } from "@squish/core-sdk";
@@ -62,10 +61,6 @@ let httpServerRef: import('node:http').Server | null = null;
 
 // Create shared SDK client — wraps core storage/embeddings for clean API access
 const sdkClient = new SquishClient();
-
-// Create server instance ONCE (not per-session)
-const { server: SQUISH_SERVER, toolCount: SQUISH_TOOL_COUNT } = createSquishServer();
-console.error(`[MCP] Server created with ${SQUISH_TOOL_COUNT} tools`);
 
 function parseArgs(): { mode: "stdio" | "http"; port: number; health: boolean } {
   const args = process.argv.slice(2);
@@ -225,8 +220,8 @@ function createSquishServer(): { server: McpServer; toolCount: number } {
   return { server, toolCount };
 }
 
-async function runStdio(server: McpServer, toolCount: number): Promise<void> {
-  console.error(`[MCP] Starting in STDIO mode...`);
+async function runStdio(): Promise<void> {
+  console.error(`[MCP] Starting in STDIO mode (2026-07-28 protocol)...`);
   const probe = await probeSchemaHealth();
   if (probe.status !== "ok") {
     console.error(`[MCP] Degraded startup: ${probe.detail}`);
@@ -234,52 +229,15 @@ async function runStdio(server: McpServer, toolCount: number): Promise<void> {
       console.error(`[MCP] Remediation: ${probe.remediation}`);
     }
   }
-  const transport = new StdioServerTransport();
 
-  transport.onclose = () => {
-    console.error(`[MCP] STDIO transport closed`);
-  };
-
-  await server.connect(transport);
-  console.error(`[MCP] Connected via stdio. ${toolCount} tools available.`);
-
-  // Keep process alive - wait for stdin to close
-  // SIGINT/SIGTERM are handled by main()'s shutdown function
-  // Idle timeout: if no data arrives for 5 minutes, assume parent crashed
-  // and resolve to avoid hanging forever with an open pipe.
-  await new Promise<void>((resolve) => {
-    const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-    let idleTimer: ReturnType<typeof setTimeout>;
-
-    const resetTimer = () => {
-      clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => {
-        logger.info('Stdio idle timeout - no input for 5 minutes, shutting down');
-        resolve();
-      }, IDLE_TIMEOUT_MS);
-    };
-
-    process.stdin.on('data', () => {
-      resetTimer();
-    });
-
-    process.stdin.on('close', () => {
-      clearTimeout(idleTimer);
-      resolve();
-    });
-
-    process.stdin.on('error', (error) => {
-      clearTimeout(idleTimer);
-      console.error(`[MCP] STDIO stdin error:`, error.message);
-      resolve();
-    });
-
-    resetTimer();
-  });
+  await serveStdio(() => {
+    const { server } = createSquishServer();
+    return server;
+  }, { legacy: 'serve' });
 }
 
-async function runHttp(server: McpServer, port: number): Promise<void> {
-  console.error(`[MCP] Starting in Streamable HTTP mode on port ${port}...`);
+async function runHttp(port: number): Promise<void> {
+  console.error(`[MCP] Starting in HTTP mode (2026-07-28 protocol) on port ${port}...`);
   const startupProbe = await probeSchemaHealth();
   if (startupProbe.status !== "ok") {
     console.error(`[MCP] Degraded startup: ${startupProbe.detail}`);
@@ -288,29 +246,19 @@ async function runHttp(server: McpServer, port: number): Promise<void> {
     }
   }
 
+  // Create the MCP handler using the v2 factory pattern (per-request server instances)
+  const mcpHandler = createMcpHandler(
+    () => {
+      const { server } = createSquishServer();
+      return server;
+    },
+    { legacy: 'stateless' }
+  );
+
+  const nodeHandler = toNodeHandler(mcpHandler);
+
   const app = express();
   app.use(express.json());
-
-  // Store transports by session ID
-  const transports = new Map<string, NodeStreamableHTTPServerTransport>();
-  const MAX_SESSIONS = 100;
-
-  // Clean up stale sessions every 5 minutes
-  const cleanupInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [sid, transport] of transports) {
-      const lastActivity = (transport as any)._lastActivity;
-      if (lastActivity && now - lastActivity > 30 * 60 * 1000) {
-        console.error(`[MCP] Cleaning up stale session: ${sid}`);
-        transport.close().catch(() => {});
-        transports.delete(sid);
-      }
-    }
-  }, 5 * 60 * 1000);
-
-  // Clear interval on shutdown
-  process.on('SIGTERM', () => clearInterval(cleanupInterval));
-  process.on('SIGINT', () => clearInterval(cleanupInterval));
 
   // CORS for web-based MCP clients (restrictive origins)
   const allowedOrigins = process.env.SQUISH_CORS_ORIGINS
@@ -332,11 +280,6 @@ async function runHttp(server: McpServer, port: number): Promise<void> {
     next();
   });
 
-  // Helper to check if request is an initialization request
-  function isInitializeRequest(body: any): boolean {
-    return body?.method === 'initialize';
-  }
-
   // Rate limiting for /mcp endpoint (60 requests per minute per IP)
   const mcpLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -344,21 +287,6 @@ async function runHttp(server: McpServer, port: number): Promise<void> {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later' },
-  });
-
-  // Health check endpoint
-  app.get("/health", (req, res) => {
-    void probeSchemaHealth().then((probe) => {
-      res.json({
-        status: probe.status === "ok" ? "ok" : (probe.status === "drifted" ? "degraded" : "broken"),
-        version: SERVER_VERSION,
-      });
-    }).catch(() => {
-      res.status(500).json({
-        status: "broken",
-        version: SERVER_VERSION,
-      });
-    });
   });
 
   // API key auth for HTTP mode - MANDATORY for security (H-01)
@@ -380,154 +308,25 @@ async function runHttp(server: McpServer, port: number): Promise<void> {
     return true;
   }
 
-  // Streamable HTTP POST endpoint
-  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-  app.post("/mcp", mcpLimiter, async (req, res) => {
-    if (!checkMcpAuth(req, res)) return;
-
-    const sessionId = req.headers["mcp-session-id"] as string | undefined;
-    const body = req.body;
-
-    let transport: NodeStreamableHTTPServerTransport | undefined;
-    let serverToUse: McpServer | undefined;
-
-    // Validate session ID format before using as Map key
-    if (sessionId && !UUID_REGEX.test(sessionId)) {
-      res.status(400).json({
-        jsonrpc: '2.0',
-        error: { code: -32000, message: 'Bad Request: Invalid session ID format' },
-        id: body?.id || null
+  // Health check endpoint
+  app.get("/health", (req, res) => {
+    void probeSchemaHealth().then((probe) => {
+      res.json({
+        status: probe.status === "ok" ? "ok" : (probe.status === "drifted" ? "degraded" : "broken"),
+        version: SERVER_VERSION,
       });
-      return;
-    }
-
-    // Check if we have an existing transport for this session
-    if (sessionId && transports.has(sessionId)) {
-      transport = transports.get(sessionId);
-      serverToUse = server;
-    }
-
-    // If no existing transport, create new one (only for initialize requests)
-    if (!transport) {
-      if (!isInitializeRequest(body)) {
-        res.status(400).json({
-          jsonrpc: '2.0',
-          error: { code: -32000, message: 'Bad Request: No valid session ID and not an initialize request' },
-          id: body?.id || null
-        });
-        return;
-      }
-
-      // Cap session count to prevent resource exhaustion
-      if (transports.size >= MAX_SESSIONS) {
-        console.error(`[MCP] Session limit reached (${MAX_SESSIONS}). Rejecting new session.`);
-        res.status(503).json({
-          jsonrpc: '2.0',
-          error: { code: -32000, message: 'Service Unavailable: Maximum session limit reached' },
-          id: body?.id || null
-        });
-        return;
-      }
-
-      // Create NEW server instance for this session (required - can't reuse)
-      const { server: newServer } = createSquishServer();
-      serverToUse = newServer;
-
-      // Create new transport with JSON response mode
-      transport = new NodeStreamableHTTPServerTransport({
-        sessionIdGenerator: () => crypto.randomUUID(),
-        enableJsonResponse: true,
-        onsessioninitialized: (newSessionId: string) => {
-          console.error(`[MCP] Session initialized: ${newSessionId}`);
-          transports.set(newSessionId, transport!);
-        }
+    }).catch(() => {
+      res.status(500).json({
+        status: "broken",
+        version: SERVER_VERSION,
       });
-
-      // Connect the NEW session-specific server to this transport
-      try {
-        await serverToUse.connect(transport);
-      } catch (connectError: any) {
-        // Ignore "Already connected" errors - can happen if server was used before
-        if (connectError.message?.includes('Already connected')) {
-          console.error(`[MCP] Server already connected, creating fresh server...`);
-          const { server: freshServer } = createSquishServer();
-          serverToUse = freshServer;
-          await serverToUse.connect(transport);
-        } else {
-          console.error(`[MCP] Connect error:`, connectError.message);
-        }
-      }
-
-      // Set up onclose handler
-      transport.onclose = () => {
-        const sid = transport?.sessionId;
-        if (sid) {
-          console.error(`[MCP] Session closed: ${sid}`);
-          transports.delete(sid);
-        }
-      };
-
-      transport.onerror = (error) => {
-        console.error(`[MCP] Transport error:`, error);
-      };
-    }
-
-    try {
-      // Handle the request with the parsed body
-      await transport.handleRequest(req, res, body);
-    } catch (error) {
-      console.error(`[MCP] Error handling request:`, error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: "Internal server error" });
-      }
-    }
+    });
   });
 
-  // Streamable HTTP GET endpoint (for SSE)
-  app.get("/mcp", mcpLimiter, async (req, res) => {
+  // Route all MCP requests through createMcpHandler via toNodeHandler
+  app.all("/mcp", mcpLimiter, (req, res) => {
     if (!checkMcpAuth(req, res)) return;
-
-    const sessionId = req.headers["mcp-session-id"] as string | undefined;
-
-    if (!sessionId || !UUID_REGEX.test(sessionId) || !transports.has(sessionId)) {
-      res.status(400).send('Invalid or missing session ID');
-      return;
-    }
-
-    const transport = transports.get(sessionId)!;
-
-    try {
-      await transport.handleRequest(req, res);
-    } catch (error) {
-      console.error(`[MCP] Error handling GET request:`, error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: "Internal server error" });
-      }
-    }
-  });
-
-  // DELETE endpoint to close session
-  app.delete("/mcp", mcpLimiter, async (req, res) => {
-    if (!checkMcpAuth(req, res)) return;
-
-    const sessionId = req.headers["mcp-session-id"] as string | undefined;
-
-    if (!sessionId || !UUID_REGEX.test(sessionId) || !transports.has(sessionId)) {
-      res.status(400).send('Invalid or missing session ID');
-      return;
-    }
-
-    const transport = transports.get(sessionId)!;
-
-    try {
-      await transport.handleRequest(req, res);
-    } catch (error) {
-      console.error(`[MCP] Error handling DELETE request:`, error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: "Internal server error" });
-      }
-    }
+    nodeHandler(req, res);
   });
 
   await new Promise<void>((resolve) => {
@@ -622,9 +421,9 @@ async function main(): Promise<void> {
     process.on("SIGTERM", shutdown);
 
     if (mode === "stdio") {
-      await runStdio(SQUISH_SERVER, SQUISH_TOOL_COUNT);
+      await runStdio();
     } else {
-      await runHttp(SQUISH_SERVER, port);
+      await runHttp(port);
     }
   } catch (error) {
     console.error(`[${SERVER_NAME}] Fatal error:`, error);
