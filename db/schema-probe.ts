@@ -114,7 +114,7 @@ export class SchemaDriftError extends Error {
   readonly probe: SchemaProbeResult;
 
   constructor(probe: SchemaProbeResult) {
-    super(formatSchemaProbeMessage(probe));
+    super(formatProbeMsg(probe));
     this.name = 'SchemaDriftError';
     this.probe = probe;
   }
@@ -126,11 +126,11 @@ function getLocalDbPath(): string {
   return path.join(getDataDir(), 'squish.db');
 }
 
-export function getSchemaRemediationCommand(): string {
+export function schemaRemedyCmd(): string {
   return 'squish doctor --migrate';
 }
 
-export function formatSchemaProbeMessage(probe: SchemaProbeResult): string {
+export function formatProbeMsg(probe: SchemaProbeResult): string {
   const location = probe.dbPath
     ? ` (${probe.dbPath})`
     : probe.dataDir
@@ -178,7 +178,7 @@ async function listTableColumns(db: any, tableName: string): Promise<string[]> {
  */
 export async function probeSchemaHealth(): Promise<SchemaProbeResult> {
   const backend = 'local:sqlite';
-  const remediation = getSchemaRemediationCommand();
+  const remediation = schemaRemedyCmd();
 
   const dbPath = getLocalDbPath();
   if (!fs.existsSync(dbPath)) {

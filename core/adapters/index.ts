@@ -53,10 +53,10 @@ export async function loadAllAdapters(dir: string): Promise<void> {
     const { registerCursorAdapter } = await import('./config/cursor.js');
     const { registerWindsurfAdapter } = await import('./config/windsurf.js');
     
-    registerClaudeCodeAdapter();
-    registerOpenCodeAdapter();
-    registerCursorAdapter();
-    registerWindsurfAdapter();
+    registerClaudeCodeAdapter(registerAdapter);
+    registerOpenCodeAdapter(registerAdapter);
+    registerCursorAdapter(registerAdapter);
+    registerWindsurfAdapter(registerAdapter);
     
     logger.info(`[Adapters] Loaded ${listAdapters().length} adapters`);
   } catch (error) {

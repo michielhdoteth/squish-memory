@@ -49,7 +49,7 @@ function bundledModelId(): string {
  * Stamped into memories.embedding_model on writes so the reembed worker can
  * target rows produced by an older model.
  */
-export function getActiveEmbeddingModelId(): string {
+export function activeEmbeddingModel(): string {
   const provider = config.embeddingsProvider;
   if (provider === 'none') return 'none';
   if (provider === 'openai') return `openai:${config.openAiEmbeddingModel || 'text-embedding-3-small'}`;
@@ -75,7 +75,7 @@ function peekTransformersModule(): typeof import('./transformers-local.js') | nu
  * The TF-IDF boot provider hashes to 768 dims; bundled MiniLM-class models
  * produce 384-dim vectors.
  */
-export function getActiveEmbeddingDim(): number {
+export function embeddingDim(): number {
   if (bundledModelState === 'ready') {
     const dim = peekTransformersModule()?.getEmbeddingDimension() ?? 0;
     if (dim > 0) return dim;

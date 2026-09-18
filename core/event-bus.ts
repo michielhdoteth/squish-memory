@@ -4,22 +4,40 @@
  * Import this in any core module to emit events:
  *   import { eventBus } from '../event-bus.js';
  *   eventBus.emit({ type: 'memory:stored', payload: { ... } });
- *
- * The bus is a DefaultEventBus from the SDK. Handlers are registered
- * by the MCP server, CLI, or any consumer that imports the SDK.
  */
-import { DefaultEventBus } from '../packages/core-sdk/src/events/event-bus.js';
-import type { SquishEvent } from '../packages/core-sdk/src/interfaces/events.js';
+
+// --- Inlined from deleted core-sdk/src/interfaces/events.ts ---
+
+export type SquishEvent = { type: string; payload: Record<string, unknown> };
+
+export type SquishEventHandler = (event: SquishEvent) => void;
+
+// --- Inlined from deleted core-sdk/src/events/event-bus.ts ---
+
+export class DefaultEventBus {
+  private handlers: SquishEventHandler[] = [];
+
+  on(handler: SquishEventHandler): () => void {
+    this.handlers.push(handler);
+    return () => {
+      this.handlers = this.handlers.filter((h) => h !== handler);
+    };
+  }
+
+  emit(event: SquishEvent): void {
+    for (const handler of this.handlers) {
+      try {
+        handler(event);
+      } catch {
+        // swallow handler errors
+      }
+    }
+  }
+}
 
 export const eventBus = new DefaultEventBus();
 
-/**
- * Convenience emitter that swallows errors (fire-and-forget).
- */
+/** Convenience re-export: emit(event) wraps eventBus.emit(event) */
 export function emit(event: SquishEvent): void {
-  try {
-    eventBus.emit(event);
-  } catch {
-    // Event handlers should never crash the caller
-  }
+  eventBus.emit(event);
 }

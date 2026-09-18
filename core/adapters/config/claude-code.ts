@@ -32,9 +32,7 @@ const ADAPTER_CONFIG: AgentConfig = {
 /**
  * Register Claude Code adapter
  */
-export function registerClaudeCodeAdapter(): void {
-  const { registerAdapter } = require('../index.js');
-  
+export function registerClaudeCodeAdapter(registerAdapter: (adapter: AgentAdapter) => void): void {
   const adapter: AgentAdapter = {
     id: 'claude-code',
     type: 'claude-code',
@@ -83,8 +81,9 @@ export function registerClaudeCodeAdapter(): void {
     },
     
     getTimeline: async (query, depth, limit) => {
-      const { getTimeline } = await require('../timeline.js');
-      return getTimeline(query, depth, limit);
+      const { getTimeline } = await import('../timeline.js');
+      const result = await getTimeline(query, depth, limit);
+      return result.results;
     },
     
     shouldCaptureTool: (toolName) => {

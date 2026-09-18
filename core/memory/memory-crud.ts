@@ -2,7 +2,7 @@
  * Memory CRUD operations.
  *
  * Core read/write primitives: get, getByIds, recent, confidence updates.
- * Also exports internal helpers (normalizeMemory, getOrCreateUser) consumed
+ * Also exports internal helpers (normalizeMemoryRecord, getOrCreateUser) consumed
  * by the write and search sub-modules.
  */
 
@@ -82,7 +82,7 @@ export async function ensureMemoryScores(row: any): Promise<void> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-export function normalizeMemory(row: any): MemoryRecord {
+export function normalizeMemoryRecord(row: any): MemoryRecord {
   const tags = deserializeTags(row.tags ?? null);
   const metadata = deserializeMetadata(row.metadata ?? null);
 
@@ -183,7 +183,7 @@ export async function getMemory(
 		  }
 		}
 		const decryptedRow = { ...row, content };
-    const normalized = normalizeMemory(decryptedRow);
+    const normalized = normalizeMemoryRecord(decryptedRow);
 		return normalized;
 	} catch (error: any) {
 		throw error;
@@ -229,7 +229,7 @@ export async function getMemoriesByIds(
         }
       }
       const decryptedRow = { ...row, content };
-      const normalized = normalizeMemory(decryptedRow);
+      const normalized = normalizeMemoryRecord(decryptedRow);
       // Skip team mode check for batch (simplified - trust the caller)
       memories.push(normalized);
     }
@@ -270,7 +270,7 @@ export async function getRecent(projectPath: string, limit: number): Promise<Mem
       LIMIT ?
     `).all(project.id, limit);
 
-    return rows.map((row: any) => normalizeMemory(row));
+    return rows.map((row: any) => normalizeMemoryRecord(row));
   } catch (error: any) {
     throw error;
   }

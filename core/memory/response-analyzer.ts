@@ -16,7 +16,7 @@ const REFERENCE_PATTERNS = [
   /from (?:my|our|the) (?:memory|notes|records)/gi,
 ];
 
-export function analyzeResponseForMemoryReferences(
+export function findMemoryRefs(
   responseText: string,
   injectedMemoryIds: string[],
   injectedMemoryContent: Map<string, string>
@@ -71,7 +71,7 @@ export function analyzeResponseForMemoryReferences(
   return result;
 }
 
-export function mightContainMemoryReferences(responseText: string): boolean {
+export function hasMemoryRefs(responseText: string): boolean {
   const responseLower = responseText.toLowerCase();
   const quickPatterns = [
     'remember', 'recall', 'mentioned', 'noted', 'earlier',

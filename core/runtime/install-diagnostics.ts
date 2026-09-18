@@ -83,7 +83,7 @@ function summarizeShadowedBinary(command: string, paths: string[]): string | nul
   return `${command} resolves to stale Bun shim first: ${first} (alternates: ${nonBunAlternates.join(', ')})`;
 }
 
-export function getInstallShadowDiagnostic(): InstallShadowDiagnostic {
+export function installDiagnostic(): InstallShadowDiagnostic {
   const commands = ['squish', 'squish-mcp'].filter(commandExists);
   const binaries = commands.map((command) => ({
     command,

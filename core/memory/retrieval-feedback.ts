@@ -41,7 +41,7 @@ let flushTimer: ReturnType<typeof setInterval> | null = null;
  * Record that a memory was retrieved for a query.
  * Call this when a memory appears in search results.
  */
-export function recordRetrieval(
+export function recordFeedback(
   memoryId: string,
   query: string,
   options?: { sessionId?: string }
