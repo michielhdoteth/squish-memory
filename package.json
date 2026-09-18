@@ -1,12 +1,13 @@
 {
   "name": "squish-memory",
-  "version": "2.1.0",
-  "author": "4m-labs",
+  "version": "2.0.0",
+  "author": "4M Labs",
+  "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/michielhdoteth/squish-memory.git"
+    "url": "https://github.com/4m-labs/squish.git"
   },
-  "mcpName": "io.github.michielhdoteth/squish",
+  "mcpName": "io.github.4m-labs/squish",
   "main": "config.ts",
   "dependencies": {
     "@clack/prompts": "^1.2.0",
@@ -79,9 +80,7 @@
     "!packages/**/*.test.js",
     "!packages/**/*.map",
     "!packages/**/*.d.ts.map",
-    "webui",
-    "!webui/**/*.map",
-    "!webui/**/*.d.ts.map",
+
     "mcp.json.example",
     ".env.example",
     "LICENSE",

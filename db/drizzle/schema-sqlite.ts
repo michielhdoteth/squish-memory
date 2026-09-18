@@ -44,11 +44,11 @@ export const memories = sqliteTable(
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
 
     // Content
-    type: text('type').notNull().$type<'observation' | 'fact' | 'decision' | 'context' | 'preference'>(),
+    type: text('type').notNull().$type<'observation' | 'fact' | 'decision' | 'context' | 'preference' | 'note'>(),
     content: text('content').notNull(),
     summary: text('summary'),
 
-    // Embeddings stored as JSON string (not for semantic search in SQLite)
+    // Embeddings stored as JSON string (for vector similarity search)
     embeddingJson: text('embedding_json'),
 
     // v0.2.0: Vector embedding for local search
