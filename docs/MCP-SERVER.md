@@ -623,4 +623,4 @@ The MCP server reports version `2.0.0` in health checks and tool responses.
 
 - [GitHub](https://github.com/michielhdoteth/squish)
 - [npm](https://www.npmjs.com/package/squish-memory)
-- [SDK Documentation](https://github.com/michielhdoteth/squish/blob/master/packages/sdk/README.md)
+- [MCP Documentation](https://github.com/michielhdoteth/squish/blob/master/packages/mcp/README.md)

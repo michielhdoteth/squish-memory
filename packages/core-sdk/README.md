@@ -8,7 +8,7 @@ It only works inside this monorepo (or inside the published `squish-memory` pack
 
 ## Third-party consumers
 
-If you are building an application that talks to a **running** squish instance (local `squish-mcp --http` or cloud), use `packages/sdk` (`@squish/sdk`) instead - the standalone, dependency-free MCP-over-HTTP client. See `packages/sdk/README.md`.
+If you are building an application that talks to a **running** squish instance (local `squish-mcp --http` or cloud), use any MCP-compatible client — the MCP server (`packages/mcp/src/index.ts`) speaks standard MCP over stdio or HTTP. There is no separate `@squish/sdk` package.
 
 If you want to embed the engine in-process, depend on the `squish-memory` package itself.
 

@@ -50,7 +50,7 @@
   "bugs": {
     "url": "https://github.com/michielhdoteth/squish-memory/issues"
   },
-  "description": "Local-first memory runtime for AI coding agents. MCP server, SDK, and CLI with hybrid search, knowledge graphs, decay scoring, and multi-tier storage.",
+  "description": "Local-first memory runtime for AI coding agents. One package, three interfaces: CLI, MCP server, and desktop. Hybrid search, knowledge graphs, decay scoring, and multi-tier storage.",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -129,7 +129,12 @@
     "dev": "tsx --watch core/index.ts",
     "dev:mcp": "tsx --watch packages/mcp/src/index.ts",
     "test": "bun test --isolate",
-    "eval": "bun tests/golden/run-eval.ts",
+    "bench": "bun bench/index.ts",
+    "bench:retrieval": "bun bench/runners/retrieval.ts",
+    "bench:rag": "bun bench/runners/rag.ts",
+    "bench:locomo": "bun bench/runners/locomo.ts",
+    "bench:resurrection": "bun bench/runners/resurrection.ts",
+    "eval": "bun bench/runners/retrieval.ts",
     "bench:memory": "bun scripts/run-memory-bench.ts",
     "report:calibration": "bun scripts/calibration-report.ts",
     "verify:mcp": "tsx packages/mcp/src/index.ts --health"
