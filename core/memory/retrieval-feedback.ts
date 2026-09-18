@@ -190,11 +190,16 @@ export async function flushFeedback(): Promise<{
   const db = await getDb();
   const schema = await getSchema();
 
+  // Swap-and-flush: snapshot current buffer, replace with empty map
+  // so new writes during flush go to the new map (no lost updates)
+  const snapshot = new Map(feedbackBuffer);
+  feedbackBuffer.clear();
+
   let strengthened = 0;
   let weakened = 0;
   let total = 0;
 
-  for (const [, buffer] of feedbackBuffer) {
+  for (const [, buffer] of snapshot) {
     for (const feedback of buffer) {
       total++;
 
@@ -238,9 +243,6 @@ export async function flushFeedback(): Promise<{
       }
     }
   }
-
-  // Clear the buffer after flushing
-  feedbackBuffer.clear();
 
   logger.info('Feedback flushed', { strengthened, weakened, total });
 

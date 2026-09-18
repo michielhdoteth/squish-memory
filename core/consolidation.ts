@@ -58,15 +58,10 @@ export async function runFullMaintenance(
 
   const stepResults: Record<string, { ok: boolean; count: number; error?: string }> = {};
 
-  // Cache original llm config if temporarily overriding
-  const origLlmEnabled = config.llmEnabled;
+  // Resolve effective LLM enabled state without mutating global config
+  const effectiveLlmEnabled = llmEnabled !== undefined ? llmEnabled : config.llmEnabled;
 
   try {
-    // Temporarily override llmEnabled for this run if specified
-    if (llmEnabled !== undefined && llmEnabled !== config.llmEnabled) {
-      (config as any).llmEnabled = llmEnabled;
-    }
-
     // --- Step 1: Decay (Ebbinghaus power-law) ---
     if (steps.includes('decay')) {
       try {
@@ -292,7 +287,7 @@ export async function runFullMaintenance(
     if (steps.includes('llm-consolidate')) {
       try {
         const { runLLMConsolidation } = await import('./consolidation/llm-consolidator.js');
-        const llmResult = await runLLMConsolidation(projectId, { daysBack: 30 });
+        const llmResult = await runLLMConsolidation(projectId, { daysBack: 30, llmEnabled: effectiveLlmEnabled });
         stepResults['llm-consolidate'] = {
           ok: true,
           count: llmResult.insightsCreated,
@@ -369,9 +364,6 @@ export async function runFullMaintenance(
       dryRun,
     };
   } finally {
-    // Restore original llm config
-    if (llmEnabled !== undefined && llmEnabled !== origLlmEnabled) {
-      (config as any).llmEnabled = origLlmEnabled;
-    }
+    // No global config to restore — llmEnabled passed as parameter
   }
 }

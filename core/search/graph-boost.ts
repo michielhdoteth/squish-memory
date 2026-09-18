@@ -61,16 +61,23 @@ export interface GraphNode {
 }
 
 let graphBackendInstance: GraphBackend | null = null;
+let graphBackendInitPromise: Promise<GraphBackend> | null = null;
 
 /**
  * Get or create the graph backend instance (exported for testing)
+ * Uses promise-based init to prevent TOCTOU race on lazy singleton.
  */
 export async function getGraphBackend(): Promise<GraphBackend> {
-  if (!graphBackendInstance) {
-    graphBackendInstance = new InMemoryGraphBackend();
-    await graphBackendInstance.connect();
+  if (graphBackendInstance) return graphBackendInstance;
+  if (!graphBackendInitPromise) {
+    graphBackendInitPromise = (async () => {
+      const instance = new InMemoryGraphBackend();
+      await instance.connect();
+      graphBackendInstance = instance;
+      return instance;
+    })();
   }
-  return graphBackendInstance;
+  return graphBackendInitPromise;
 }
 
 /**

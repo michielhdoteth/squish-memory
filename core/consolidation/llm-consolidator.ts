@@ -91,6 +91,7 @@ export async function runLLMConsolidation(
     maxMemories?: number;
     batchSize?: number;
     daysBack?: number;
+    llmEnabled?: boolean;
   }
 ): Promise<ConsolidationResult> {
   const result: ConsolidationResult = {
@@ -100,7 +101,8 @@ export async function runLLMConsolidation(
     errors: [],
   };
 
-  if (!config.llmEnabled) {
+  const effectiveLlmEnabled = options?.llmEnabled ?? config.llmEnabled;
+  if (!effectiveLlmEnabled) {
     logger.debug('[LLM Consolidation] LLM not enabled, skipping');
     return result;
   }
