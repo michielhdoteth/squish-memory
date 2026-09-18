@@ -174,6 +174,7 @@ export async function updateAllDecayScores(projectId?: string): Promise<DecayEng
          FROM memories WHERE status = 'active' AND (is_pinned IS NULL OR is_pinned = 0)`;
 
     const memories = sqlite.prepare(query).all(projectId || null) as any[];
+    const updates: { id: string; score: number }[] = [];
 
     for (const mem of memories) {
       try {
@@ -202,16 +203,30 @@ export async function updateAllDecayScores(projectId?: string): Promise<DecayEng
         // Update if score changed significantly (baseline uses the same
         // ||100 fallback the decay math used pre-refactor).
         if (Math.abs(newScore - (mem.relevance_score || 100)) > 0.5) {
-          sqlite.prepare(`
-            UPDATE memories SET relevance_score = ?, last_decay_at = ?, updated_at = ?
-            WHERE id = ?
-          `).run(Math.round(newScore), Math.floor(now / 1000), Math.floor(now / 1000), mem.id);
-          stats.updated++;
+          updates.push({ id: mem.id, score: Math.round(newScore) });
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         stats.errors.push(`Memory ${mem.id}: ${msg}`);
       }
+    }
+
+    // Batch update via single CASE/WHEN statement
+    if (updates.length > 0) {
+      const nowSec = Math.floor(now / 1000);
+      const cases = updates.map(u => `WHEN id = ? THEN ?`).join(' ');
+      const ids = updates.map(u => u.id);
+      const scores = updates.map(u => u.score);
+      const params = [...ids.flatMap((id, i) => [id, scores[i]]), ...ids, nowSec, nowSec];
+
+      sqlite.prepare(`
+        UPDATE memories
+        SET relevance_score = CASE ${cases} END,
+            last_decay_at = ?,
+            updated_at = ?
+        WHERE id IN (${ids.map(() => '?').join(',')})
+      `).run(...params);
+      stats.updated = updates.length;
     }
 
     logger.info('Ebbinghaus decay applied', stats);

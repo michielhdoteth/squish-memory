@@ -130,6 +130,7 @@ export async function recalculateTiers(
 
     const memories = sqlite.prepare(query).all(projectId || null) as any[];
     const now = Math.floor(Date.now() / 1000);
+    const updates: { id: string; tier: string }[] = [];
 
     for (const mem of memories) {
       const newTier = classifyMemoryTier({
@@ -141,12 +142,25 @@ export async function recalculateTiers(
       });
 
       if (newTier !== mem.tier) {
-        sqlite
-          .prepare(`UPDATE memories SET tier = ?, updated_at = ? WHERE id = ?`)
-          .run(newTier, now, mem.id);
-        result.updated++;
+        updates.push({ id: mem.id, tier: newTier });
       }
       result.tiers[newTier]++;
+    }
+
+    // Batch update via single CASE/WHEN statement
+    if (updates.length > 0) {
+      const cases = updates.map(() => `WHEN id = ? THEN ?`).join(' ');
+      const params = [
+        ...updates.flatMap(u => [u.id, u.tier]),
+        ...updates.map(u => u.id),
+        now,
+      ];
+      sqlite.prepare(`
+        UPDATE memories
+        SET tier = CASE ${cases} END, updated_at = ?
+        WHERE id IN (${updates.map(() => '?').join(',')})
+      `).run(...params);
+      result.updated = updates.length;
     }
 
     logger.info('Tier recalculation complete', {

@@ -62,6 +62,7 @@ export async function recalculateImportanceScores(
 
     const memories = sqlite.prepare(query).all(projectId || null) as any[];
     result.total = memories.length;
+    const updates: { id: string; score: number }[] = [];
 
     for (const mem of memories) {
       try {
@@ -93,15 +94,29 @@ export async function recalculateImportanceScores(
 
         // Only update if score changed by more than 1 point
         if (Math.abs(v2Score - (mem.importance_score ?? 50)) > 1) {
-          sqlite.prepare(`
-            UPDATE memories SET importance_score = ?, last_importance_recalc = ?, updated_at = ?
-            WHERE id = ?
-          `).run(v2Score, nowSec, nowSec, mem.id);
-          result.updated++;
+          updates.push({ id: mem.id, score: v2Score });
         }
       } catch (err) {
         result.errors.push(`Memory ${mem.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
+    }
+
+    // Batch update via single CASE/WHEN statement
+    if (updates.length > 0) {
+      const cases = updates.map(() => `WHEN id = ? THEN ?`).join(' ');
+      const params = [
+        ...updates.flatMap(u => [u.id, u.score]),
+        ...updates.map(u => u.id),
+        nowSec, nowSec,
+      ];
+      sqlite.prepare(`
+        UPDATE memories
+        SET importance_score = CASE ${cases} END,
+            last_importance_recalc = ?,
+            updated_at = ?
+        WHERE id IN (${updates.map(() => '?').join(',')})
+      `).run(...params);
+      result.updated = updates.length;
     }
 
     logger.info('Importance recalculation complete', {
