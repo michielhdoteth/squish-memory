@@ -19,6 +19,7 @@ import { runFtsMigrations } from './fts.js';
 import { runMaintenanceMigrations } from './maintenance.js';
 import { runEntitiesMigrations } from './entities.js';
 import { runTeamsMigrations } from './teams.js';
+import { runKnowledgeMigrations } from './knowledge.js';
 
 /**
  * Run all v1.2.0 migrations in order
@@ -37,6 +38,7 @@ export async function runAllMigrations(sqlite: Database): Promise<void> {
   await runFtsMigrations(sqlite);
   await runMaintenanceMigrations(sqlite);
   await runTeamsMigrations(sqlite);
+  await runKnowledgeMigrations(sqlite);
 }
 
 // Re-export for direct usage if needed
@@ -52,3 +54,4 @@ export { runFtsMigrations } from './fts.js';
 export { runMaintenanceMigrations } from './maintenance.js';
 export { runEntitiesMigrations } from './entities.js';
 export { runTeamsMigrations } from './teams.js';
+export { runKnowledgeMigrations } from './knowledge.js';

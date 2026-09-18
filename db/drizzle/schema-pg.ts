@@ -30,6 +30,7 @@ export const beliefTypeEnum = pgEnum('belief_type', ['decision', 'preference', '
 export const beliefEdgeTypeEnum = pgEnum('belief_edge_type', ['causes', 'supports', 'rejects', 'supersedes', 'depends_on']);
 export const teamMemberRoleEnum = pgEnum('team_member_role', ['owner', 'admin', 'member']);
 export const teamInvitationStatusEnum = pgEnum('team_invitation_status', ['pending', 'accepted', 'expired']);
+export const knowledgeKindEnum = pgEnum('knowledge_kind', ['memory', 'belief', 'strategy']);
 
 // =============================================================================
 // Core Tables
@@ -406,6 +407,195 @@ export const auditLogs = pgTable('audit_logs', {
   index('audit_logs_created_idx').on(table.createdAt),
 ]);
 
+// =============================================================================
+// Knowledge System (v2.0.0) — Unified table replacing memories, beliefs, strategies
+// =============================================================================
+
+/**
+ * Knowledge - single source of truth for all knowledge items.
+ * knowledge_kind discriminates: 'memory' | 'belief' | 'strategy'.
+ */
+export const knowledge = pgTable('knowledge', {
+  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+  agentId: text('agent_id'),
+  sessionId: text('session_id'),
+
+  // Classification
+  knowledgeKind: knowledgeKindEnum('knowledge_kind').notNull(),
+  knowledgeType: text('knowledge_type').notNull(),
+
+  // Content
+  content: text('content').notNull(),
+  summary: text('summary'),
+
+  // Embeddings (multi-model)
+  embeddingJson: text('embedding_json'),
+  embedding: text('embedding'),
+  embeddingModel: text('embedding_model'),
+  embeddingDim: integer('embedding_dim'),
+
+  // Confidence & importance
+  confidence: real('confidence').default(0.5),
+  confidenceLevel: text('confidence_level').default('certain'),
+  importanceScore: real('importance_score').default(0.5),
+  importanceDecayRate: real('importance_decay_rate').default(30),
+  lastImportanceRecalc: timestamp('last_importance_recalc'),
+
+  // Belief-specific
+  normalizedKey: text('normalized_key'),
+  reason: text('reason'),
+  evidenceSummary: text('evidence_summary'),
+  evidence: jsonb('evidence'),
+  lastConfirmedAt: timestamp('last_confirmed_at'),
+  sourceCount: integer('source_count').default(1),
+
+  // Strategy-specific
+  title: text('title'),
+  description: text('description'),
+  steps: text('steps'),
+  successCriteria: text('success_criteria'),
+  failureIndicators: text('failure_indicators'),
+  usageCount: integer('usage_count').default(0),
+  successCount: integer('success_count').default(0),
+  failureCount: integer('failure_count').default(0),
+  lastUsedAt: timestamp('last_used_at'),
+  lastSuccessAt: timestamp('last_success_at'),
+  lastFailureAt: timestamp('last_failure_at'),
+
+  // Status & lifecycle
+  status: text('status').default('active'),
+  isActive: boolean('is_active').default(true),
+  sector: text('sector').default('general'),
+  tier: text('tier').default('episodic'),
+  version: integer('version').default(1),
+
+  // Self-referencing relationships
+  supersededBy: text('superseded_by'),
+  contradictsId: text('contradicts_id'),
+  informedById: text('informed_by_id'),
+
+  // Tags & metadata
+  tags: text('tags'),
+  metadata: jsonb('metadata'),
+
+  // Place routing
+  placeId: text('place_id'),
+  primaryPlace: text('primary_place'),
+
+  // Privacy & governance
+  isPrivate: boolean('is_private').default(false),
+  isProtected: boolean('is_protected').default(false),
+  isPinned: boolean('is_pinned').default(false),
+  isImmutable: boolean('is_immutable').default(false),
+  writeScope: text('write_scope'),
+  readScope: text('read_scope'),
+
+  // Visibility
+  scope: text('scope').default('company'),
+  visibilityScope: text('visibility_scope').default('private'),
+
+  // Provenance
+  actorUser: text('actor_user'),
+  actorAgent: text('actor_agent'),
+  agentRole: text('agent_role'),
+  triggeredBy: text('triggered_by'),
+  captureReason: text('capture_reason'),
+
+  // Temporal facts
+  validFrom: timestamp('valid_from'),
+  validTo: timestamp('valid_to'),
+  recordedAt: timestamp('recorded_at').defaultNow().notNull(),
+
+  // Access tracking
+  accessCount: integer('access_count').default(0),
+  lastAccessedAt: timestamp('last_accessed_at'),
+
+  // Merge tracking
+  isMerged: boolean('is_merged').default(false),
+  mergedIntoId: text('merged_into_id'),
+  mergedAt: timestamp('merged_at'),
+
+  // Consolidation
+  consolidatedFrom: text('consolidated_from'),
+  consolidatedAt: timestamp('consolidated_at'),
+  isConsolidated: boolean('is_consolidated').default(false),
+
+  // Encryption
+  encryptedContent: text('encrypted_content'),
+  encryptionNonce: text('encryption_nonce'),
+  isEncrypted: boolean('is_encrypted').default(false),
+
+  // Retrieval optimization
+  compressionLevel: integer('compression_level'),
+  relevanceScore: integer('relevance_score').default(50),
+  tokensEstimate: integer('tokens_estimate').default(0),
+
+  // Decay system
+  decayRate: integer('decay_rate').default(30),
+  coactivationScore: integer('coactivation_score').default(0),
+  lastDecayAt: timestamp('last_decay_at').defaultNow(),
+
+  // Layer tracking
+  hasL0Abstract: boolean('has_l0_abstract').default(false),
+  hasL1Overview: boolean('has_l1_overview').default(false),
+  lastLayerUpdate: timestamp('last_layer_update'),
+
+  // Multimodal
+  mediaType: text('media_type'),
+  mediaPath: text('media_path'),
+  mediaMetadata: text('media_metadata'),
+
+  // Organization
+  namespaceId: text('namespace_id'),
+  namespacePath: text('namespace_path'),
+
+  // Cloud-specific
+  employeeId: text('employee_id'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('knowledge_project_idx').on(table.projectId),
+  index('knowledge_kind_idx').on(table.knowledgeKind),
+  index('knowledge_type_idx').on(table.knowledgeType),
+  index('knowledge_status_idx').on(table.status),
+  index('knowledge_session_idx').on(table.sessionId),
+  index('knowledge_user_idx').on(table.userId),
+  index('knowledge_agent_idx').on(table.agentId),
+  index('knowledge_confidence_idx').on(table.confidence),
+  index('knowledge_active_idx').on(table.isActive),
+  index('knowledge_created_idx').on(table.createdAt),
+  index('knowledge_sector_idx').on(table.sector),
+  index('knowledge_tier_idx').on(table.tier),
+  index('knowledge_project_kind_idx').on(table.projectId, table.knowledgeKind),
+  index('knowledge_project_status_idx').on(table.projectId, table.status),
+  index('knowledge_normalized_key_idx').on(table.normalizedKey),
+]);
+
+/**
+ * Knowledge Edges - universal relationship table (v2.0.0).
+ * Replaces: belief_edges, strategy_edges, strategy_belief_edges,
+ *           entity_relations, graph_edges.
+ */
+export const knowledgeEdges = pgTable('knowledge_edges', {
+  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
+  fromId: text('from_id').notNull(),
+  fromKind: text('from_kind').notNull(),
+  toId: text('to_id').notNull(),
+  toKind: text('to_kind').notNull(),
+  edgeType: text('edge_type').notNull(),
+  weight: real('weight').default(1.0),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('knowledge_edges_from_idx').on(table.fromId, table.fromKind),
+  index('knowledge_edges_to_idx').on(table.toId, table.toKind),
+  index('knowledge_edges_type_idx').on(table.edgeType),
+  uniqueIndex('knowledge_edges_unique').on(table.fromId, table.fromKind, table.toId, table.toKind, table.edgeType),
+]);
+
 /**
  * Memory Decay States - forgetting curve tracking
  */
@@ -753,6 +943,12 @@ export type SkillAssignment = typeof skillAssignments.$inferSelect;
 export type NewSkillAssignment = typeof skillAssignments.$inferInsert;
 export type SkillMemoryLink = typeof skillMemoryLinks.$inferSelect;
 export type NewSkillMemoryLink = typeof skillMemoryLinks.$inferInsert;
+
+// Knowledge System type exports
+export type Knowledge = typeof knowledge.$inferSelect;
+export type NewKnowledge = typeof knowledge.$inferInsert;
+export type KnowledgeEdge = typeof knowledgeEdges.$inferSelect;
+export type NewKnowledgeEdge = typeof knowledgeEdges.$inferInsert;
 
 // Agent Loadout type exports
 export type AgentLoadout = typeof agentLoadouts.$inferSelect;
