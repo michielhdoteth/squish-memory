@@ -24,7 +24,7 @@ const rootDir = join(__dirname, '..');
 const args = process.argv.slice(2);
 const runtime = resolveRuntimeLaunch({
   rootDir,
-  entryRelativePath: 'packages/cli/src/index.ts',
+  entryRelativePath: 'cli/index.ts',
   extraArgs: args,
 });
 
