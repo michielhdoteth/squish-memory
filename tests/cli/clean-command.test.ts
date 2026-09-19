@@ -7,7 +7,7 @@ import { describe, test, expect } from 'bun:test';
 
 describe('clean command registration', () => {
   test('registers clean command with correct name', async () => {
-    const { createProgram } = await import('../../packages/cli/src/program.ts');
+    const { createProgram } = await import('../../cli/program.ts');
     const program = createProgram();
     const cleanCommand = program.commands.find((c) => c.name() === 'clean');
 
@@ -16,7 +16,7 @@ describe('clean command registration', () => {
   });
 
   test('clean command has description', async () => {
-    const { createProgram } = await import('../../packages/cli/src/program.ts');
+    const { createProgram } = await import('../../cli/program.ts');
     const program = createProgram();
     const cleanCommand = program.commands.find((c) => c.name() === 'clean');
 
@@ -24,7 +24,7 @@ describe('clean command registration', () => {
   });
 
   test('clean command has --dry-run option', async () => {
-    const { createProgram } = await import('../../packages/cli/src/program.ts');
+    const { createProgram } = await import('../../cli/program.ts');
     const program = createProgram();
     const cleanCommand = program.commands.find((c) => c.name() === 'clean');
 
@@ -33,7 +33,7 @@ describe('clean command registration', () => {
   });
 
   test('clean command has --steps option', async () => {
-    const { createProgram } = await import('../../packages/cli/src/program.ts');
+    const { createProgram } = await import('../../cli/program.ts');
     const program = createProgram();
     const cleanCommand = program.commands.find((c) => c.name() === 'clean');
 
@@ -42,7 +42,7 @@ describe('clean command registration', () => {
   });
 
   test('clean command has --age option', async () => {
-    const { createProgram } = await import('../../packages/cli/src/program.ts');
+    const { createProgram } = await import('../../cli/program.ts');
     const program = createProgram();
     const cleanCommand = program.commands.find((c) => c.name() === 'clean');
 
@@ -51,7 +51,7 @@ describe('clean command registration', () => {
   });
 
   test('clean --dry-run defaults to false', async () => {
-    const { createProgram } = await import('../../packages/cli/src/program.ts');
+    const { createProgram } = await import('../../cli/program.ts');
     const program = createProgram();
     const cleanCommand = program.commands.find((c) => c.name() === 'clean');
 
@@ -62,7 +62,7 @@ describe('clean command registration', () => {
   });
 
   test('clean --steps accepts comma-separated values', async () => {
-    const { createProgram } = await import('../../packages/cli/src/program.ts');
+    const { createProgram } = await import('../../cli/program.ts');
     const program = createProgram();
     const cleanCommand = program.commands.find((c) => c.name() === 'clean');
 

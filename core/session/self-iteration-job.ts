@@ -14,7 +14,7 @@ import { logger } from '../logger.js';
 import { meetsSemanticThreshold } from '../scoring/three-field.js';
 import { generateExtractiveSummary, extractMessageContent } from '../utils/content-extraction.js';
 import {
-  extractStrategiesFromConversation,
+  extractConversationStrats,
 } from '../knowledge/extractor.js';
 import {
   listKnowledgeByKind,
@@ -322,7 +322,7 @@ async function processConversation(
     for (const fact of extractedFacts) {
       try {
         if (await hasSimilarSelfIterationMemory(fact, projectPath)) {
-          logger.debug(`[SelfIteration] Suppressed duplicate memory: ${fact.type} - ${fact.content.substring(0, 50)}...`);
+          logger.debug(`[SelfIteration] Suppressed duplicate memory`, { type: fact.type, contentLength: fact.content.length });
           continue;
         }
 
@@ -339,7 +339,7 @@ async function processConversation(
           source: 'self-iteration',
         });
         memoriesCreated++;
-        logger.info(`[SelfIteration] Extracted memory: ${fact.type} - ${fact.content.substring(0, 50)}...`);
+        logger.info(`[SelfIteration] Extracted memory`, { type: fact.type, contentLength: fact.content.length });
       } catch (error) {
         logger.error(`[SelfIteration] Failed to store memory:`, error);
       }
@@ -350,7 +350,7 @@ async function processConversation(
   try {
     const conversationContent = messagesToProcess.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
     const project = conversation.projectId ? await getProjectById(conversation.projectId) : null;
-    const extractedStrategies = await extractStrategiesFromConversation(conversationContent, {
+    const extractedStrategies = await extractConversationStrats(conversationContent, {
       projectId: project?.id,
       sourceType: 'conversation',
     });

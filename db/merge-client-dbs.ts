@@ -97,8 +97,7 @@ export async function openNativeSqlite(
 
   if (isBunRuntime()) {
     try {
-      // @ts-ignore - bun:sqlite has no bundled types here but works at runtime
-      const { default: BunDatabase } = await import('bun:sqlite');
+      const BunDatabase = (await import('bun:sqlite')).default as any;
       const handle = readonlyMode
         ? new BunDatabase(dbPath, { readonly: true })
         : new BunDatabase(dbPath);
@@ -146,7 +145,7 @@ function loadTableInfo(handle: NativeSqliteHandle): SourceTableInfo[] {
     if (/virtual\s+table/i.test(sql)) continue;
     if (name.includes('fts')) continue;
 
-    const info = handle.prepare(`PRAGMA table_info("${name.replace(/"/g, '""')}")`).all() as Array<{
+    const info = handle.prepare(`PRAGMA table_info(${quoteIdent(name)})`).all() as Array<{
       name: string;
       pk: number;
     }>;

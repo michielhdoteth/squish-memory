@@ -73,9 +73,9 @@ squish/
 
 ## Architecture Layers
 
-### 1. MCP Server (7 Tools)
+### 1. MCP Server (15 Tools + 1 gated)
 
-The main entry point (`packages/mcp/src/index.ts`) defines 7 MCP tools covering memory management, recall, graph linking, context, inspection, multimodal ingestion, and LLM consolidation.
+The main entry point (`packages/mcp/src/index.ts`) defines 15 MCP tools by default, with a 16th (squish_maintenance) gated behind `SQUISH_ENABLE_MAINTENANCE_TOOLS=true`. Tools cover memory management, recall, graph linking, context, inspection, multimodal ingestion, and LLM consolidation.
 
 - **remember** - Store memories with auto-detection (supports multimodal file ingestion via `filePath`)
 - **recall** - Query memories or get a specific memory by ID

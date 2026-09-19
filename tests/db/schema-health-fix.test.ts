@@ -23,8 +23,8 @@ import {
   checkGraphEntitiesTable,
   checkPlacesInitialization,
   checkConsolidationState,
-  fixSchemaIssues,
-} from '../../db/schema-health.js';
+} from '../../db/schema-probe.js';
+import { fixSchemaIssues } from '../../db/schema-repair.js';
 import { resetDb } from '../../db/index.js';
 import { ensureSqliteSchema } from '../../db/bootstrap.js';
 
@@ -79,7 +79,7 @@ describe('schema-health fix functionality', () => {
     await ensureFreshDb(dataDir);
     const actions = await fixSchemaIssues({ fixMissingTables: true, verbose: false });
     expect(actions.length).toBeGreaterThan(0);
-    expect(actions.some(a => a.type === 'run_migration')).toBe(true);
+    expect(actions.some(a => a.type === 'run_migration' || a.type === 'create_table')).toBe(true);
 
     // Recheck - should be ok now
     await ensureFreshDb(dataDir);

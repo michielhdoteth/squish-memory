@@ -482,7 +482,7 @@ export function extractBeliefs(
 /**
  * Extract strategies from conversation text.
  */
-export function extractStrategiesFromConversation(
+export function extractConversationStrats(
   conversation: string,
   options: ExtractionOptions = {},
 ): ExtractedStrategy[] {
@@ -495,7 +495,7 @@ export function extractStrategiesFromConversation(
 /**
  * Extract strategies from a learning entry.
  */
-export function extractStrategiesFromLearningEntry(
+export function extractLearningStrats(
   learning: { content: string; type: string },
   options: ExtractionOptions = {},
 ): ExtractedStrategy[] {
@@ -508,7 +508,7 @@ export function extractStrategiesFromLearningEntry(
 /**
  * Extract strategies from a belief.
  */
-export function extractStrategiesFromBeliefEntry(
+export function extractBeliefStrats(
   belief: { statement: string; beliefType: string },
   options: ExtractionOptions = {},
 ): ExtractedStrategy[] {
@@ -522,7 +522,7 @@ export function extractStrategiesFromBeliefEntry(
  * Extract ALL knowledge (beliefs + strategies) from a memory in one call.
  * This is the main entry point for the unified extraction pipeline.
  */
-export function extractKnowledgeFromMemory(
+export function knowledgeFromMemory(
   input: {
     memoryId: string;
     content: string;
@@ -556,7 +556,7 @@ export function extractKnowledgeFromMemory(
 /**
  * Extract ALL knowledge from a learning entry.
  */
-export function extractKnowledgeFromLearning(
+export function knowledgeFromLearning(
   learning: { content: string; type: string },
   options: ExtractionOptions = {},
 ): ExtractedKnowledge[] {

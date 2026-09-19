@@ -8,7 +8,6 @@ import {
   computeSpectralBound,
   estimateEffectiveDimension,
   compressionSafetyTest,
-  clusterSpread,
   computeCentroid,
 } from '../core/clustering/geometry.js';
 
@@ -296,39 +295,6 @@ describe('computeMeanCosineDistance (pairwise)', () => {
     const dBarOld = computeMeanCosineDistance(vectors, centroid);
     const dBarNew = computePairwiseMeanCosineDistance(vectors);
     expect(dBarOld).toBeCloseTo(dBarNew, 10);
-  });
-});
-
-// ─── clusterSpread (updated to pairwise) ──────────────────────────────────────
-
-describe('clusterSpread (pairwise)', () => {
-  test('returns 0 for identical vectors', () => {
-    const vectors = [
-      [1, 0, 0],
-      [1, 0, 0],
-      [1, 0, 0],
-    ];
-    expect(clusterSpread(vectors)).toBeCloseTo(0, 10);
-  });
-
-  test('returns positive for varied vectors', () => {
-    const vectors = [
-      [1, 0, 0],
-      [0, 1, 0],
-    ];
-    expect(clusterSpread(vectors)).toBeGreaterThan(0);
-  });
-
-  test('matches computePairwiseMeanCosineDistance', () => {
-    const vectors = [
-      [1, 2, 3],
-      [4, 5, 6],
-      [7, 8, 9],
-    ];
-    expect(clusterSpread(vectors)).toBeCloseTo(
-      computePairwiseMeanCosineDistance(vectors),
-      10,
-    );
   });
 });
 

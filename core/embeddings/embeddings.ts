@@ -1,6 +1,7 @@
 import { config } from '../../config.js';
 import { getGoogleMultimodalEmbedding, isMultimodalInput, MultimodalInput } from './google-multimodal.js';
 import { logger } from '../logger.js';
+import { validateOutboundUrl } from '../lib/url-validator.js';
 
 // Lazy-import transformers to avoid loading unless requested
 let transformersLocal: Promise<typeof import('./transformers-local.js')> | null = null;
@@ -48,7 +49,7 @@ function bundledModelId(): string {
  * Stamped into memories.embedding_model on writes so the reembed worker can
  * target rows produced by an older model.
  */
-export function getActiveEmbeddingModelId(): string {
+export function activeEmbeddingModel(): string {
   const provider = config.embeddingsProvider;
   if (provider === 'none') return 'none';
   if (provider === 'openai') return `openai:${config.openAiEmbeddingModel || 'text-embedding-3-small'}`;
@@ -74,7 +75,7 @@ function peekTransformersModule(): typeof import('./transformers-local.js') | nu
  * The TF-IDF boot provider hashes to 768 dims; bundled MiniLM-class models
  * produce 384-dim vectors.
  */
-export function getActiveEmbeddingDim(): number {
+export function embeddingDim(): number {
   if (bundledModelState === 'ready') {
     const dim = peekTransformersModule()?.getEmbeddingDimension() ?? 0;
     if (dim > 0) return dim;
@@ -523,6 +524,7 @@ async function getOpenAiEmbedding(input: string): Promise<number[] | null> {
   if (!config.openAiEmbeddingModel) return null;
   
   try {
+    validateOutboundUrl(config.openAiApiUrl);
     const response = await fetchWithRetryAndTimeout(config.openAiApiUrl, {
       method: 'POST',
       headers: {
@@ -554,7 +556,9 @@ async function getOllamaEmbedding(input: string): Promise<number[] | null> {
   if (!config.ollamaEmbeddingModel) return null;
 
   try {
-    const response = await fetchWithRetryAndTimeout(`${config.ollamaUrl}/api/embeddings`, {
+    const ollamaUrl = `${config.ollamaUrl}/api/embeddings`;
+    validateOutboundUrl(ollamaUrl, { allowLocalhost: true, allowHttp: true });
+    const response = await fetchWithRetryAndTimeout(ollamaUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -582,7 +586,9 @@ async function getLmStudioEmbedding(input: string): Promise<number[] | null> {
   if (!config.lmStudioEmbeddingModel) return null;
 
   try {
-    const response = await fetchWithRetryAndTimeout(`${config.lmStudioUrl}/v1/embeddings`, {
+    const lmStudioUrl = `${config.lmStudioUrl}/v1/embeddings`;
+    validateOutboundUrl(lmStudioUrl, { allowLocalhost: true, allowHttp: true });
+    const response = await fetchWithRetryAndTimeout(lmStudioUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

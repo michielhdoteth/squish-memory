@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm';
 import { config } from '../../config.js';
 import { logger } from '../logger.js';
 import { getOrCreateProject } from '../../core/projects.js';
-import { getEmbedding, getActiveEmbeddingModelId } from '../../core/embeddings.js';
+import { getEmbedding, activeEmbeddingModel } from '../../core/embeddings.js';
 import { enrichContent } from '../retrieval/contextual-enrichment.js';
 import { normalizeTags, serializeTags, serializeMetadata } from '../../core/memory/serialization.js';
 import { prepareEmbedding } from '../lib/utils.js';
@@ -23,7 +23,7 @@ import { estimateTokens } from '../context/context-window.js';
 import { getDbClient } from '../lib/db-client.js';
 import { extractBeliefs } from '../knowledge/extractor.js';
 import { upsertBeliefsForMemory, createKnowledge, createKnowledgeEdge } from '../knowledge/store.js';
-import { extractStrategiesFromConversation } from '../knowledge/extractor.js';
+import { extractConversationStrats } from '../knowledge/extractor.js';
 import type { CreateKnowledgeInput } from '../knowledge/types.js';
 import { buildMemoryPolicy, buildVisibilityScopes, serializeVisibilityScopes, recommendMemoryScope } from './policy.js';
 import { onMemoryStored } from '../graph/incremental-sync.js';
@@ -34,7 +34,7 @@ import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { withBusyRetry } from '../../db/busy-retry.js';
 import { computeInitialImportance } from './importance.js';
-import { normalizeMemory, getOrCreateUser } from './memory-crud.js';
+import { normalizeMemoryRecord, getOrCreateUser } from './memory-crud.js';
 import { emit } from '../event-bus.js';
 // Batch 7: every durable write feeds the session working set so wake-up
 // summaries reflect real project activity.
@@ -79,7 +79,8 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   // Batch 6b: bi-temporal fields - validFrom defaults to write time unless
   // explicitly provided; recordedAt is always the write time.
   const validFromDate = input.validFrom ? new Date(input.validFrom) : now;
-  const visibilityScope = 'project' as VisibilityScope;
+  // Team-scoped memories use 'team' scope; everything else defaults to 'project'
+  const visibilityScope: VisibilityScope = input.teamId ? 'team' : 'project';
   const policyRecommendation = recommendMemoryScope({
     content: input.content,
     type,
@@ -90,6 +91,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     usageCount: 0,
     isPinned: false,
     signals,
+    teamId: input.teamId,
   });
   const memoryPolicy = buildMemoryPolicy({
     content: input.content,
@@ -101,9 +103,10 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     usageCount: 0,
     isPinned: false,
     signals,
+    teamId: input.teamId,
   });
   memoryPolicy.recommendation = policyRecommendation;
-  const readWriteScopes = buildVisibilityScopes(visibilityScope, 'user', accessUser);
+  const readWriteScopes = buildVisibilityScopes(visibilityScope, 'user', accessUser, input.teamId);
   const serializedReadScope = serializeVisibilityScopes(readWriteScopes.readScope);
   const serializedWriteScope = serializeVisibilityScopes(readWriteScopes.writeScope);
 
@@ -129,7 +132,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   });
 
   // Batch 4: L2-normalized float32 blob (primary) + JSON compat + model stamp
-  const embeddingValues = prepareEmbedding(embedding, { model: getActiveEmbeddingModelId() });
+  const embeddingValues = prepareEmbedding(embedding, { model: activeEmbeddingModel() });
 
   const tokensEstimate = estimateTokens(input.content);
 
@@ -180,6 +183,8 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     // maintenance pass. Young memories are working-tier by definition;
     // recalculateTiers promotes/demotes from there.
     tier: 'working',
+    // Team memory: link to team if provided
+    ...(input.teamId ? { teamId: input.teamId } : {}),
   };
 
   // Add namespace if specified
@@ -238,7 +243,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
 
     // Extract strategies from memory content into unified knowledge table
     try {
-      const extractedStrategies = await extractStrategiesFromConversation(input.content, {
+      const extractedStrategies = await extractConversationStrats(input.content, {
         projectId: project.id,
         sourceType: 'memory',
         sourceId: id,
@@ -474,17 +479,27 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
 // ---------------------------------------------------------------------------
 
 /**
- * Extract slash-containing path-like tokens from memory content so
- * remember-writes contribute "files touched" signals to the working set.
+ * Extract file path signals from free-form text.
+ * Only matches realistic file paths (min 2 segments, each >=2 chars, with extension or common dir patterns).
+ * Used by remember-writes to contribute "files touched" signals to the working set.
  */
 function extractFilePathSignals(text: string): string[] {
   if (!text) return [];
-  const matches = text.match(/[A-Za-z0-9_.\-@\\/\[\](){}]+[/\\][A-Za-z0-9_.\-@\\/\[\](){}]+/g);
+  // Require: segment/segment with optional subdirectories
+  // Each segment: min 2 chars, alphanumeric + hyphens + dots + underscores
+  // Optional file extension at end
+  const matches = text.match(
+    /(?:^|[\s`'"@(,;]|^)([A-Za-z][A-Za-z0-9_-]{1,30}(?:\/[A-Za-z][A-Za-z0-9_._-]{1,30}){1,5}(?:\.[a-zA-Z]{1,10})?)(?:[\s`'"@),;]|$)/g
+  );
   if (!matches) return [];
   const seen = new Set<string>();
   for (const m of matches) {
-    seen.add(m);
-    if (seen.size >= 8) break;
+    // Trim whitespace and surrounding chars
+    const cleaned = m.replace(/^[\s`'"@(,;]+|[\s`'"@),;]+$/g, '').trim();
+    if (cleaned && cleaned.length >= 4) {
+      seen.add(cleaned);
+      if (seen.size >= 8) break;
+    }
   }
   return [...seen];
 }

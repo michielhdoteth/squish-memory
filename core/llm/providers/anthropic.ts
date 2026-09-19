@@ -7,6 +7,7 @@
 
 import { config } from '../../../config.js';
 import { logger } from '../../logger.js';
+import { validateOutboundUrl } from '../../lib/url-validator.js';
 import type { LLMProvider, LLMCallOptions, LLMContentPart } from '../types.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -71,7 +72,9 @@ export const anthropicProvider: LLMProvider = {
         body.system = options.systemPrompt;
       }
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const anthropicUrl = 'https://api.anthropic.com/v1/messages';
+      validateOutboundUrl(anthropicUrl);
+      const response = await fetch(anthropicUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

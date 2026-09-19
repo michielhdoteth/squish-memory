@@ -51,7 +51,6 @@ export async function updateAgentPreference(
   try {
     const db = await getDb();
     
-    // Check if preference exists
     const existing = await db.query.agentPreferences?.findFirst(
       and(
         eq(db.schema.agentPreferences.projectId, projectId),
@@ -60,7 +59,6 @@ export async function updateAgentPreference(
     ).catch(() => null);
     
     if (existing) {
-      // Update existing preference
       await db.update(db.schema.agentPreferences)
         .set({
           value: preference.value,
@@ -82,7 +80,6 @@ export async function updateAgentPreference(
         });
       logger.info(`[AgentPrefs] Updated preference: ${preference.key} = ${preference.value}`);
     } else {
-      // Insert new preference
       const id = `pref_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       await db.insert(db.schema.agentPreferences)
         .values({

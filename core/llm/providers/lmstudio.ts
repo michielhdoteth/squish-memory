@@ -7,6 +7,7 @@
 
 import { config } from '../../../config.js';
 import { logger } from '../../logger.js';
+import { validateOutboundUrl } from '../../lib/url-validator.js';
 import type { LLMProvider, LLMCallOptions } from '../types.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -49,7 +50,9 @@ export const lmstudioProvider: LLMProvider = {
 
       messages.push({ role: 'user', content: promptText });
 
-      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+      const lmStudioEndpoint = `${baseUrl}/v1/chat/completions`;
+      validateOutboundUrl(lmStudioEndpoint, { allowLocalhost: true, allowHttp: true });
+      const response = await fetch(lmStudioEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

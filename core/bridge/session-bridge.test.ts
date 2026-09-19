@@ -38,7 +38,7 @@ async function clearTables() {
     sqlite.exec('DELETE FROM memory_associations;');
     sqlite.exec('DELETE FROM entity_relations;');
     sqlite.exec('DELETE FROM entities;');
-    sqlite.exec('DELETE FROM strategies;');
+
     sqlite.exec('DELETE FROM places;');
     sqlite.exec('DELETE FROM projects;');
   }

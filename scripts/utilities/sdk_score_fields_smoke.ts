@@ -8,10 +8,10 @@ process.env.DATABASE_URL = '';
 process.env.SQUISH_RERANKER_ENABLED = 'false';
 process.env.SQUISH_MMR_ENABLED = 'false';
 
-const { SquishClient } = await import('../../packages/sdk/src/index.js');
+const { SquishRuntime } = await import('../../core/runtime/squish-runtime.js');
 const { closeAllDbs } = await import('../../db/index.js');
 
-const client = new SquishClient();
+const client = new SquishRuntime();
 await client.remember('Deploy checklist: verify migrations before shipping the API');
 const results = await client.search('deploy checklist api', { limit: 3 });
 

@@ -31,7 +31,7 @@ let resetDb: typeof import('../../../db/index.js').resetDb;
 let getDb: typeof import('../../../db/index.js').getDb;
 let getSchema: typeof import('../../../db/schema.js').getSchema;
 let createDatabaseClient: typeof import('../../../core/storage/database.js').createDatabaseClient;
-let sdk: typeof import('../../../packages/sdk/src/index.js');
+let sdk: typeof import('../../../core/runtime/squish-runtime.js');
 
 const PROJECT_ID = 'dedup-test-project-0000-000000000000';
 const DUP_CONTENT = 'User prefers dark mode for better readability at night';
@@ -86,7 +86,7 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
     getDb = dbMod.getDb;
     getSchema = (await import('../../../db/schema.js')).getSchema;
     createDatabaseClient = (await import('../../../core/storage/database.js')).createDatabaseClient;
-    sdk = await import('../../../packages/sdk/src/index.js');
+    sdk = await import('../../../core/runtime/squish-runtime.js');
 
     resetDb();
     dbRef = await getDb();
@@ -136,7 +136,7 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
   });
 
   test('scan finds seeded duplicates and creates proposals (no merges)', async () => {
-    const client = new sdk.SquishClient();
+    const client = new sdk.SquishRuntime();
     const result = await client.dedupScan({ projectId: PROJECT_ID });
 
     expect(result.ok).toBe(true);
@@ -151,7 +151,7 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
   });
 
   test('preview shows before/after for a proposal', async () => {
-    const client = new sdk.SquishClient();
+    const client = new sdk.SquishRuntime();
     const listing = await client.listMergeProposals({ projectId: PROJECT_ID, status: 'pending' });
     expect(listing.ok).toBe(true);
     const proposalId = listing.data!.proposals[0].id;
@@ -165,7 +165,7 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
   });
 
   test('reject leaves source memories intact', async () => {
-    const client = new sdk.SquishClient();
+    const client = new sdk.SquishRuntime();
     const listing = await client.listMergeProposals({ projectId: PROJECT_ID, status: 'pending' });
     const target = listing.data!.proposals[0];
 
@@ -181,7 +181,7 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
   });
 
   test('approve executes merge, records undo log, and reverse restores sources', async () => {
-    const client = new sdk.SquishClient();
+    const client = new sdk.SquishRuntime();
 
     // Fresh scan creates a new pending proposal for the duplicate pair
     const scan = await client.dedupScan({ projectId: PROJECT_ID });
@@ -228,7 +228,7 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
   });
 
   test('auto is gated behind SQUISH_DEDUP_AUTO=true by default', async () => {
-    const client = new sdk.SquishClient();
+    const client = new sdk.SquishRuntime();
     const result = await client.dedupAutoMerge({ threshold: 0.95, cap: 25 });
     expect(result.gated).toBe(true);
     expect(result.approved).toBe(0);
@@ -237,7 +237,7 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
 
   test('auto respects env gate, threshold filter, and per-invocation cap', async () => {
     process.env.SQUISH_DEDUP_AUTO = 'true';
-    const client = new sdk.SquishClient();
+    const client = new sdk.SquishRuntime();
 
     // Two independent duplicate pairs -> two qualifying proposals
     await insertMemory('pair-x1', 'Deploy happens every Tuesday via CI pipeline');
@@ -300,7 +300,7 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
   }
 
   test('reverse restores full source content from the stored snapshot', async () => {
-    const client = new sdk.SquishClient();
+    const client = new sdk.SquishRuntime();
     const SNAPSHOT_CONTENT = 'Snapshot integrity check: user brews kombucha every weekend';
 
     await insertMemory('snap-a', SNAPSHOT_CONTENT);
@@ -331,7 +331,7 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
   });
 
   test('reverse after re-merge skips stale sources and reports them', async () => {
-    const client = new sdk.SquishClient();
+    const client = new sdk.SquishRuntime();
     const STALE_CONTENT = 'Stale reverse check: user keeps notes in a paper journal';
 
     await insertMemory('stale-a', STALE_CONTENT);

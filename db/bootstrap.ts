@@ -544,18 +544,21 @@ CREATE INDEX IF NOT EXISTS place_rules_type_idx ON place_rules(place_type);
 CREATE TABLE IF NOT EXISTS knowledge (
   id TEXT PRIMARY KEY,
   project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
-  user_id TEXT,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   agent_id TEXT,
   session_id TEXT,
 
-  knowledge_kind TEXT NOT NULL,  -- 'memory' | 'belief' | 'strategy'
-  knowledge_type TEXT NOT NULL,  -- subtype per kind
+  knowledge_kind TEXT NOT NULL,
+  knowledge_type TEXT NOT NULL,
 
   content TEXT NOT NULL,
   summary TEXT,
 
   embedding_json TEXT,
   embedding BLOB,
+  embedding_blob BLOB,
+  embedding_model TEXT,
+  embedding_dim INTEGER,
 
   confidence REAL DEFAULT 0.5,
   confidence_level TEXT DEFAULT 'certain',
@@ -563,17 +566,16 @@ CREATE TABLE IF NOT EXISTS knowledge (
   importance_decay_rate REAL DEFAULT 30,
   last_importance_recalc INTEGER,
 
-  -- Belief fields
   normalized_key TEXT,
   reason TEXT,
   evidence_summary TEXT,
+  evidence TEXT,
   last_confirmed_at INTEGER,
   source_count INTEGER DEFAULT 1,
 
-  -- Strategy fields
   title TEXT,
   description TEXT,
-  steps TEXT,                    -- JSON array of strings
+  steps TEXT,
   success_criteria TEXT,
   failure_indicators TEXT,
   usage_count INTEGER DEFAULT 0,
@@ -584,23 +586,76 @@ CREATE TABLE IF NOT EXISTS knowledge (
   last_failure_at INTEGER,
 
   status TEXT DEFAULT 'active',
+  is_active INTEGER DEFAULT 1,
+  sector TEXT DEFAULT 'general',
+  tier TEXT DEFAULT 'episodic',
+  version INTEGER DEFAULT 1,
 
-  -- Self-referencing relationships
   superseded_by TEXT,
   contradicts_id TEXT,
   informed_by_id TEXT,
 
-  tags TEXT,                     -- JSON array
-  metadata TEXT,                 -- JSON object
+  tags TEXT,
+  metadata TEXT,
 
-  -- Place routing
   place_id TEXT,
   primary_place TEXT,
 
-  -- Memory lifecycle
-  sector TEXT DEFAULT 'general',
-  tier TEXT DEFAULT 'episodic',
-  is_active INTEGER DEFAULT 1,
+  is_private INTEGER DEFAULT 0,
+  is_protected INTEGER DEFAULT 0,
+  is_pinned INTEGER DEFAULT 0,
+  is_immutable INTEGER DEFAULT 0,
+  write_scope TEXT,
+  read_scope TEXT,
+
+  scope TEXT DEFAULT 'company',
+  visibility_scope TEXT DEFAULT 'private',
+
+  actor_user TEXT,
+  actor_agent TEXT,
+  agent_role TEXT,
+  triggered_by TEXT,
+  capture_reason TEXT,
+
+  valid_from INTEGER,
+  valid_to INTEGER,
+  recorded_at INTEGER DEFAULT (strftime('%s','now')),
+
+  access_count INTEGER DEFAULT 0,
+  last_accessed_at INTEGER,
+
+  is_merged INTEGER DEFAULT 0,
+  merged_into_id TEXT,
+  merged_at INTEGER,
+
+  consolidated_from TEXT,
+  consolidated_at INTEGER,
+  is_consolidated INTEGER DEFAULT 0,
+
+  encrypted_content TEXT,
+  encryption_nonce TEXT,
+  is_encrypted INTEGER DEFAULT 0,
+
+  compression_level INTEGER,
+  relevance_score INTEGER DEFAULT 50,
+  tokens_estimate INTEGER DEFAULT 0,
+
+  decay_rate INTEGER DEFAULT 30,
+  coactivation_score INTEGER DEFAULT 0,
+  last_decay_at INTEGER DEFAULT (strftime('%s','now')),
+
+  has_l0_abstract INTEGER DEFAULT 0,
+  has_l1_overview INTEGER DEFAULT 0,
+  last_layer_update INTEGER,
+
+  media_type TEXT,
+  media_path TEXT,
+  media_metadata TEXT,
+
+  namespace_id TEXT,
+  namespace_path TEXT,
+
+  employee_id TEXT,
 
   created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
   updated_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
@@ -692,109 +747,11 @@ CREATE INDEX IF NOT EXISTS session_summaries_project_idx ON session_summaries(pr
 CREATE INDEX IF NOT EXISTS session_summaries_type_idx ON session_summaries(summary_type);
 CREATE INDEX IF NOT EXISTS session_summaries_created_idx ON session_summaries(created_at);
 
--- Belief Systems - Derived Beliefs from Memory (v1.3.0+)
-CREATE TABLE IF NOT EXISTS beliefs (
-  id TEXT PRIMARY KEY,
-  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
-  belief_type TEXT NOT NULL,
-  statement TEXT NOT NULL,
-  normalized_key TEXT NOT NULL,
-  confidence REAL DEFAULT 0.5,
-  belief_decay_rate INTEGER DEFAULT 30,
-  last_confirmed_at INTEGER,
-  source_count INTEGER DEFAULT 1,
-  status TEXT DEFAULT 'active',
-  reason TEXT,
-  context TEXT,
-  evidence_summary TEXT,
-  metadata TEXT,
-  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
-  updated_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
-  UNIQUE(project_id, normalized_key)
-);
-CREATE INDEX IF NOT EXISTS beliefs_project_idx ON beliefs(project_id);
-CREATE INDEX IF NOT EXISTS beliefs_type_idx ON beliefs(belief_type);
-CREATE INDEX IF NOT EXISTS beliefs_status_idx ON beliefs(status);
-CREATE INDEX IF NOT EXISTS beliefs_confidence_idx ON beliefs(confidence);
-
-CREATE TABLE IF NOT EXISTS belief_memory_sources (
-  id TEXT PRIMARY KEY,
-  belief_id TEXT REFERENCES beliefs(id) ON DELETE CASCADE,
-  memory_id TEXT REFERENCES memories(id) ON DELETE CASCADE,
-  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
-  UNIQUE(belief_id, memory_id)
-);
-CREATE INDEX IF NOT EXISTS belief_sources_belief_idx ON belief_memory_sources(belief_id);
-CREATE INDEX IF NOT EXISTS belief_sources_memory_idx ON belief_memory_sources(memory_id);
-
-CREATE TABLE IF NOT EXISTS belief_edges (
-  id TEXT PRIMARY KEY,
-  from_belief_id TEXT REFERENCES beliefs(id) ON DELETE CASCADE,
-  to_belief_id TEXT REFERENCES beliefs(id) ON DELETE CASCADE,
-  edge_type TEXT NOT NULL,
-  metadata TEXT,
-  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
-  UNIQUE(from_belief_id, to_belief_id, edge_type)
-);
-CREATE INDEX IF NOT EXISTS belief_edges_from_idx ON belief_edges(from_belief_id);
-CREATE INDEX IF NOT EXISTS belief_edges_to_idx ON belief_edges(to_belief_id);
-
-CREATE TABLE IF NOT EXISTS strategies (
-  id TEXT PRIMARY KEY,
-  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
-  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
-  agent_id TEXT,
-  strategy_type TEXT NOT NULL,
-  title TEXT NOT NULL,
-  description TEXT NOT NULL,
-  context TEXT,
-  steps TEXT,
-  success_criteria TEXT,
-  failure_indicators TEXT,
-  confidence REAL DEFAULT 0.5,
-  usage_count INTEGER DEFAULT 0,
-  success_count INTEGER DEFAULT 0,
-  failure_count INTEGER DEFAULT 0,
-  last_used_at INTEGER,
-  last_success_at INTEGER,
-  last_failure_at INTEGER,
-  status TEXT DEFAULT 'active',
-  superseded_by TEXT,
-  tags TEXT,
-  metadata TEXT,
-  visibility_scope TEXT DEFAULT 'private',
-  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
-  updated_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
-);
-CREATE INDEX IF NOT EXISTS strategies_project_idx ON strategies(project_id);
-CREATE INDEX IF NOT EXISTS strategies_type_idx ON strategies(strategy_type);
-CREATE INDEX IF NOT EXISTS strategies_status_idx ON strategies(status);
-CREATE INDEX IF NOT EXISTS strategies_confidence_idx ON strategies(confidence);
-CREATE INDEX IF NOT EXISTS strategies_user_idx ON strategies(user_id);
-
-CREATE TABLE IF NOT EXISTS strategy_edges (
-  id TEXT PRIMARY KEY,
-  from_strategy_id TEXT REFERENCES strategies(id) ON DELETE CASCADE,
-  to_strategy_id TEXT REFERENCES strategies(id) ON DELETE CASCADE,
-  edge_type TEXT NOT NULL,
-  metadata TEXT,
-  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
-  UNIQUE(from_strategy_id, to_strategy_id, edge_type)
-);
-CREATE INDEX IF NOT EXISTS strategy_edges_from_idx ON strategy_edges(from_strategy_id);
-CREATE INDEX IF NOT EXISTS strategy_edges_to_idx ON strategy_edges(to_strategy_id);
-
-CREATE TABLE IF NOT EXISTS strategy_belief_edges (
-  id TEXT PRIMARY KEY,
-  strategy_id TEXT REFERENCES strategies(id) ON DELETE CASCADE,
-  belief_id TEXT REFERENCES beliefs(id) ON DELETE CASCADE,
-  edge_type TEXT NOT NULL,
-  metadata TEXT,
-  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
-  UNIQUE(strategy_id, belief_id, edge_type)
-);
-CREATE INDEX IF NOT EXISTS strategy_belief_edges_strategy_idx ON strategy_belief_edges(strategy_id);
-CREATE INDEX IF NOT EXISTS strategy_belief_edges_belief_idx ON strategy_belief_edges(belief_id);
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- DEPRECATED TABLES (superseded by knowledge + knowledge_edges above)
+-- These are kept temporarily for foreign key compatibility and data migration.
+-- Drop once all code paths use the knowledge tables exclusively.
+-- ═══════════════════════════════════════════════════════════════════════════════
 
 -- Skills System (v2.1.0) - Reusable SOPs with versions, triggers, steps
 -- ============================================================================

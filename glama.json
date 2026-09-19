@@ -2,7 +2,7 @@
   "$schema": "https://glama.ai/mcp/schemas/server.json",
   "name": "squish-memory",
   "description": "Local-first memory runtime for AI agents via MCP. Provides 7 tools for durable memory storage, semantic recall, graph linking, project context, system health, and memory inspection. Supports multimodal ingestion (images, audio, video, documents) and optional LLM consolidation.",
-  "repository": "https://github.com/michielhdoteth/squish",
+  "repository": "https://github.com/michielhdoteth/squish-memory",
   "categories": ["memory", "ai-agents", "mcp", "local-first"],
   "keywords": ["memory", "mcp", "ai-agent", "recall", "knowledge-graph", "local-first", "sqlite", "multimodal", "consolidation"],
   "tools": [

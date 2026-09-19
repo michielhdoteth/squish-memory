@@ -118,7 +118,7 @@ export async function handleReverseMerge(input: ReverseMergeInput): Promise<Reve
       .select({ id: schema.memories.id, mergedIntoId: schema.memories.mergedIntoId })
       .from(schema.memories)
       .where(eq(schema.memories.mergedIntoId, history.canonicalMemoryId));
-    const restorableIds = new Set(currentStates.map((row) => row.id));
+    const restorableIds = new Set(currentStates.map((row: { id: string }) => row.id));
 
     const skippedMemoryIds: string[] = [];
     for (const id of candidateIds) {

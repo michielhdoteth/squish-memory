@@ -1,0 +1,3728 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-25T19:51:17.087Z",
+    "gitSha": "87df1fc",
+    "gitDirty": true,
+    "corpusSize": 60,
+    "queryCount": 46,
+    "topK": 10,
+    "embeddingsProvider": "local",
+    "bundledModel": "off",
+    "precisionStack": {
+      "reranker": false,
+      "queryExpansion": true,
+      "graphBoostLegacy": false,
+      "temporalValidity": true,
+      "scoringServeV2": true
+    },
+    "envPinned": true,
+    "durationMs": 2614,
+    "deterministic": true
+  },
+  "thresholds": {
+    "recallAt5": 0.85,
+    "mrr": 0.82,
+    "hitAt1": 0.78,
+    "maxEce": 0.15
+  },
+  "overall": {
+    "count": 46,
+    "recallAt5": 0.9347826086956522,
+    "mrr": 0.9043478260869565,
+    "hitAt1": 0.8695652173913043
+  },
+  "byCategory": {
+    "paraphrase": {
+      "count": 9,
+      "recallAt5": 0.8888888888888888,
+      "mrr": 0.8888888888888888,
+      "hitAt1": 0.8888888888888888
+    },
+    "entity": {
+      "count": 9,
+      "recallAt5": 1,
+      "mrr": 0.9444444444444444,
+      "hitAt1": 0.8888888888888888
+    },
+    "temporal": {
+      "count": 8,
+      "recallAt5": 1,
+      "mrr": 1,
+      "hitAt1": 1
+    },
+    "negation": {
+      "count": 8,
+      "recallAt5": 0.875,
+      "mrr": 0.75,
+      "hitAt1": 0.625
+    },
+    "procedural": {
+      "count": 8,
+      "recallAt5": 0.875,
+      "mrr": 0.8875,
+      "hitAt1": 0.875
+    },
+    "multi-hop": {
+      "count": 4,
+      "recallAt5": 1,
+      "mrr": 1,
+      "hitAt1": 1
+    }
+  },
+  "calibration": {
+    "ece": 0.05503057177142916,
+    "brier": 0.12680008193357442,
+    "count": 46,
+    "maxEceThreshold": 0.15,
+    "reliability": [
+      {
+        "band": 2,
+        "low": 0.2,
+        "high": 0.3,
+        "count": 1,
+        "avgConfidence": 0.21523795069078278,
+        "hitRate": 1
+      },
+      {
+        "band": 8,
+        "low": 0.8,
+        "high": 0.9,
+        "count": 38,
+        "avgConfidence": 0.8390135150473715,
+        "hitRate": 0.868421052631579
+      },
+      {
+        "band": 9,
+        "low": 0.9,
+        "high": 1,
+        "count": 7,
+        "avgConfidence": 0.9470225462823773,
+        "hitRate": 0.8571428571428571
+      }
+    ],
+    "selective": [
+      {
+        "threshold": 0.5,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.8666666666666667
+      },
+      {
+        "threshold": 0.55,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.8666666666666667
+      },
+      {
+        "threshold": 0.6,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.8666666666666667
+      },
+      {
+        "threshold": 0.65,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.8666666666666667
+      },
+      {
+        "threshold": 0.7,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.8666666666666667
+      },
+      {
+        "threshold": 0.75,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.8666666666666667
+      },
+      {
+        "threshold": 0.8,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.8666666666666667
+      },
+      {
+        "threshold": 0.85,
+        "coverage": 0.15217391304347827,
+        "accuracy": 0.8571428571428571
+      },
+      {
+        "threshold": 0.9,
+        "coverage": 0.15217391304347827,
+        "accuracy": 0.8571428571428571
+      },
+      {
+        "threshold": 0.95,
+        "coverage": 0.043478260869565216,
+        "accuracy": 1
+      }
+    ],
+    "precisionAtConf90": 0.8571428571428571,
+    "freshnessAblation": {
+      "signal": "SQUISH_EVIDENCE_FRESHNESS",
+      "on": {
+        "ece": 0.05503057177142916,
+        "brier": 0.12680008193357442,
+        "count": 46
+      },
+      "off": {
+        "ece": 0.044282065217391184,
+        "brier": 0.12767276957880427,
+        "count": 46
+      },
+      "note": "canonical metrics gate on the freshness-on run; off-run reruns identical deterministic retrieval with the signal nulled"
+    }
+  },
+  "queries": [
+    {
+      "id": "q_paraphrase_01",
+      "category": "paraphrase",
+      "query": "Why did we pick a relational database over a document store for experiment metadata?",
+      "mustHit": [
+        "golden_001"
+      ],
+      "mayHit": [
+        "golden_040"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_001",
+          "score": 1,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.9587,
+          "recallConfidence": 0.8248,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.9144,
+          "recallConfidence": 0.6518,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8857,
+          "recallConfidence": 0.611,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8524,
+          "recallConfidence": 0.7521,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8472,
+          "recallConfidence": 0.7501,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.8089,
+          "recallConfidence": 0.6266,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.8084,
+          "recallConfidence": 0.6141,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.788,
+          "recallConfidence": 0.6139,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8495,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_02",
+      "category": "paraphrase",
+      "query": "Which package manager won out and what was the reason?",
+      "mustHit": [
+        "golden_002"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_013",
+          "score": 1,
+          "recallConfidence": 0.9205,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.9472,
+          "recallConfidence": 0.9439,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9414,
+          "recallConfidence": 0.8943,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.9328,
+          "recallConfidence": 0.8942,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.915,
+          "recallConfidence": 0.7241,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.9056,
+          "recallConfidence": 0.886,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.9054,
+          "recallConfidence": 0.8942,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.8923,
+          "recallConfidence": 0.9364,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.8483,
+          "recallConfidence": 0.8671,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.8432,
+          "recallConfidence": 0.9246,
+          "confidenceTier": "HIGH"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9205,
+      "recallAtK": 0,
+      "rr": 0,
+      "hitAt1": false
+    },
+    {
+      "id": "q_paraphrase_03",
+      "category": "paraphrase",
+      "query": "What framework ended up powering the labeling backend?",
+      "mustHit": [
+        "golden_003"
+      ],
+      "mayHit": [
+        "golden_019"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_003",
+          "score": 1,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9541,
+          "recallConfidence": 0.8071,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.9534,
+          "recallConfidence": 0.8285,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9186,
+          "recallConfidence": 0.8004,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.9081,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.8781,
+          "recallConfidence": 0.6321,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.8778,
+          "recallConfidence": 0.8049,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 0.8664,
+          "recallConfidence": 0.8013,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.8619,
+          "recallConfidence": 0.6281,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8044,
+          "recallConfidence": 0.7618,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8495,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_04",
+      "category": "paraphrase",
+      "query": "How do events move between ingestion services?",
+      "mustHit": [
+        "golden_004"
+      ],
+      "mayHit": [
+        "golden_041"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_004",
+          "score": 1,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.9839,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9318,
+          "recallConfidence": 0.8031,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.8752,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4842,
+          "recallConfidence": 0.3978,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4766,
+          "recallConfidence": 0.385,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4693,
+          "recallConfidence": 0.3635,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.4622,
+          "recallConfidence": 0.3586,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.4486,
+          "recallConfidence": 0.3301,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.4421,
+          "recallConfidence": 0.3107,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8495,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_05",
+      "category": "paraphrase",
+      "query": "Do embeddings get recomputed on every lookup?",
+      "mustHit": [
+        "golden_035",
+        "golden_036"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_036",
+          "score": 1,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 1,
+          "recallConfidence": 0.8285,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.9764,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.952,
+          "recallConfidence": 0.8235,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9403,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.906,
+          "recallConfidence": 0.7923,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.7997,
+          "recallConfidence": 0.7675,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.4881,
+          "recallConfidence": 0.4045,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4731,
+          "recallConfidence": 0.3791,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.4659,
+          "recallConfidence": 0.3671,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8048,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_06",
+      "category": "paraphrase",
+      "query": "What is the team's stance on Python code linting tools?",
+      "mustHit": [
+        "golden_008"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_008",
+          "score": 1,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.9885,
+          "recallConfidence": 0.8299,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9434,
+          "recallConfidence": 0.8053,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.9153,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9123,
+          "recallConfidence": 0.814,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8978,
+          "recallConfidence": 0.7955,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.8871,
+          "recallConfidence": 0.8076,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.8773,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.8483,
+          "recallConfidence": 0.636,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.82,
+          "recallConfidence": 0.6152,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.8495,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_07",
+      "category": "paraphrase",
+      "query": "What format do status summaries need to follow?",
+      "mustHit": [
+        "golden_007"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_007",
+          "score": 1,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9962,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.9664,
+          "recallConfidence": 0.8285,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.8616,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.496,
+          "recallConfidence": 0.4178,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4805,
+          "recallConfidence": 0.3819,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4731,
+          "recallConfidence": 0.3697,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.459,
+          "recallConfidence": 0.3533,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4522,
+          "recallConfidence": 0.3445,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4457,
+          "recallConfidence": 0.3338,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8495,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_08",
+      "category": "paraphrase",
+      "query": "What happens to the staging database overnight?",
+      "mustHit": [
+        "golden_054",
+        "golden_055"
+      ],
+      "mayHit": [
+        "golden_056"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_055",
+          "score": 1,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_054",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9735,
+          "recallConfidence": 0.8222,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.9603,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9537,
+          "recallConfidence": 0.8035,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_031",
+          "score": 0.9017,
+          "recallConfidence": 0.8114,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8915,
+          "recallConfidence": 0.8139,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8905,
+          "recallConfidence": 0.7653,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.8787,
+          "recallConfidence": 0.6323,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.8732,
+          "recallConfidence": 0.8019,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8048,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_01",
+      "category": "entity",
+      "query": "Who leads Project Aurora?",
+      "mustHit": [
+        "golden_024",
+        "golden_048"
+      ],
+      "mayHit": [
+        "golden_058"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_024",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.9387,
+          "recallConfidence": 0.8154,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.9248,
+          "recallConfidence": 0.822,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.4805,
+          "recallConfidence": 0.3916,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 0.4804,
+          "recallConfidence": 0.3891,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4731,
+          "recallConfidence": 0.3697,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4659,
+          "recallConfidence": 0.358,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.4522,
+          "recallConfidence": 0.0832,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "top1RecallConfidence": 0.844,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_02",
+      "category": "entity",
+      "query": "Who is Elena Vasquez?",
+      "mustHit": [
+        "golden_026"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_026",
+          "score": 1,
+          "recallConfidence": 0.9378,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 0.8933,
+          "recallConfidence": 0.9378,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.492,
+          "recallConfidence": 0.4454,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4842,
+          "recallConfidence": 0.4311,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4766,
+          "recallConfidence": 0.4251,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.4693,
+          "recallConfidence": 0.4141,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_045",
+          "score": 0.4622,
+          "recallConfidence": 0.3984,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.4553,
+          "recallConfidence": 0.3858,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4486,
+          "recallConfidence": 0.0959,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.4421,
+          "recallConfidence": 0.3621,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9378,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_03",
+      "category": "entity",
+      "query": "What does Nordwind Energy do for us?",
+      "mustHit": [
+        "golden_047",
+        "golden_025"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_047",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.9135,
+          "recallConfidence": 0.6556,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.8853,
+          "recallConfidence": 0.807,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8777,
+          "recallConfidence": 0.648,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.8727,
+          "recallConfidence": 0.8085,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.8725,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.8689,
+          "recallConfidence": 0.8021,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.8601,
+          "recallConfidence": 0.762,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.8493,
+          "recallConfidence": 0.6404,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_04",
+      "category": "entity",
+      "query": "What is PaperTrail?",
+      "mustHit": [
+        "golden_029",
+        "golden_058"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_058",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4881,
+          "recallConfidence": 0.3945,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.4805,
+          "recallConfidence": 0.371,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4731,
+          "recallConfidence": 0.3697,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4659,
+          "recallConfidence": 0.358,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.459,
+          "recallConfidence": 0.3556,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.4522,
+          "recallConfidence": 0.3423,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4457,
+          "recallConfidence": 0.3338,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.4393,
+          "recallConfidence": 0.3215,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_05",
+      "category": "entity",
+      "query": "What are Tomas Lindqvist's responsibilities?",
+      "mustHit": [
+        "golden_027",
+        "golden_053"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_053",
+          "score": 1,
+          "recallConfidence": 0.2152,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.8118,
+          "recallConfidence": 0.7847,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.801,
+          "recallConfidence": 0.7383,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.7774,
+          "recallConfidence": 0.7259,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4842,
+          "recallConfidence": 0.388,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.4841,
+          "recallConfidence": 0.4658,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.4766,
+          "recallConfidence": 0.3755,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.4693,
+          "recallConfidence": 0.3704,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4622,
+          "recallConfidence": 0.3609,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.2152,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_06",
+      "category": "entity",
+      "query": "Why did we end up on Qdrant?",
+      "mustHit": [
+        "golden_030",
+        "golden_017"
+      ],
+      "mayHit": [
+        "golden_042",
+        "golden_016"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_058",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.993,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.8357,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.5123,
+          "recallConfidence": 0.3564,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.504,
+          "recallConfidence": 0.3452,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4883,
+          "recallConfidence": 0.4022,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4735,
+          "recallConfidence": 0.3704,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4664,
+          "recallConfidence": 0.368,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.4596,
+          "recallConfidence": 0.3543,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.4529,
+          "recallConfidence": 0.3274,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 0.5,
+      "hitAt1": false
+    },
+    {
+      "id": "q_entity_07",
+      "category": "entity",
+      "query": "Tell me about Helios Research Lab.",
+      "mustHit": [
+        "golden_028"
+      ],
+      "mayHit": [
+        "golden_059"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_028",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 0.9734,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.9663,
+          "recallConfidence": 0.8262,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.9612,
+          "recallConfidence": 0.8235,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.9518,
+          "recallConfidence": 0.8182,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 0.4919,
+          "recallConfidence": 0.476,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.4766,
+          "recallConfidence": 0.3648,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4622,
+          "recallConfidence": 0.3586,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.4486,
+          "recallConfidence": 0.3385,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4421,
+          "recallConfidence": 0.328,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_08",
+      "category": "entity",
+      "query": "What role does MLflow play here?",
+      "mustHit": [
+        "golden_031"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_031",
+          "score": 1,
+          "recallConfidence": 0.9847,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.614,
+          "recallConfidence": 0.5655,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.6041,
+          "recallConfidence": 0.5388,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.5945,
+          "recallConfidence": 0.5261,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.5852,
+          "recallConfidence": 0.1342,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.5762,
+          "recallConfidence": 0.1301,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.5675,
+          "recallConfidence": 0.1277,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.559,
+          "recallConfidence": 0.4761,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.5508,
+          "recallConfidence": 0.4727,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.5428,
+          "recallConfidence": 0.4635,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9847,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_01",
+      "category": "temporal",
+      "query": "What did we use for vector search before Qdrant?",
+      "mustHit": [
+        "golden_017",
+        "golden_016"
+      ],
+      "mayHit": [
+        "golden_042",
+        "golden_030"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_017",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.963,
+          "recallConfidence": 0.7141,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.9387,
+          "recallConfidence": 0.8196,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.9113,
+          "recallConfidence": 0.819,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.9107,
+          "recallConfidence": 0.8188,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9038,
+          "recallConfidence": 0.8171,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8657,
+          "recallConfidence": 0.8062,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.8206,
+          "recallConfidence": 0.5978,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.844,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_02",
+      "category": "temporal",
+      "query": "Which annotation platform did the team switch away from in spring 2026?",
+      "mustHit": [
+        "golden_018",
+        "golden_019"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_018",
+          "score": 1,
+          "recallConfidence": 0.9378,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.9805,
+          "recallConfidence": 0.9378,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.9451,
+          "recallConfidence": 0.9134,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.925,
+          "recallConfidence": 0.8858,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.8874,
+          "recallConfidence": 0.8907,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.8799,
+          "recallConfidence": 0.8936,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.8588,
+          "recallConfidence": 0.9439,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.8481,
+          "recallConfidence": 0.8744,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.8318,
+          "recallConfidence": 0.8663,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 0.8257,
+          "recallConfidence": 0.6987,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9378,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_03",
+      "category": "temporal",
+      "query": "When is the weekly sync held now?",
+      "mustHit": [
+        "golden_021",
+        "golden_020"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_021",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 1,
+          "recallConfidence": 0.6036,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.9766,
+          "recallConfidence": 0.5805,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.975,
+          "recallConfidence": 0.5794,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9734,
+          "recallConfidence": 0.8071,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.9732,
+          "recallConfidence": 0.8274,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_023",
+          "score": 0.955,
+          "recallConfidence": 0.7069,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9245,
+          "recallConfidence": 0.8016,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_022",
+          "score": 0.9137,
+          "recallConfidence": 0.5317,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.844,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_04",
+      "category": "temporal",
+      "query": "How has the GPU cluster size changed this year?",
+      "mustHit": [
+        "golden_022",
+        "golden_023"
+      ],
+      "mayHit": [
+        "golden_053"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_022",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_023",
+          "score": 0.9961,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 0.9761,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.9179,
+          "recallConfidence": 0.8104,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.9106,
+          "recallConfidence": 0.8137,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.8989,
+          "recallConfidence": 0.7677,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.8979,
+          "recallConfidence": 0.7955,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8789,
+          "recallConfidence": 0.6322,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.8779,
+          "recallConfidence": 0.6321,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.8274,
+          "recallConfidence": 0.7825,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.844,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_05",
+      "category": "temporal",
+      "query": "Did anything change with documentation hosting?",
+      "mustHit": [
+        "golden_032"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_032",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.9734,
+          "recallConfidence": 0.8222,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.934,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.9173,
+          "recallConfidence": 0.8155,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.911,
+          "recallConfidence": 0.8086,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_054",
+          "score": 0.9108,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.8405,
+          "recallConfidence": 0.7887,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.8357,
+          "recallConfidence": 0.6137,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.8281,
+          "recallConfidence": 0.7779,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.8066,
+          "recallConfidence": 0.7716,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_06",
+      "category": "temporal",
+      "query": "How often are budget reviews held these days?",
+      "mustHit": [
+        "golden_034"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_034",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 1,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.8615,
+          "recallConfidence": 0.7997,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.8555,
+          "recallConfidence": 0.8027,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.8353,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8165,
+          "recallConfidence": 0.7455,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8164,
+          "recallConfidence": 0.7455,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.512,
+          "recallConfidence": 0.3473,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.5038,
+          "recallConfidence": 0.3363,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.4958,
+          "recallConfidence": 0.4148,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_07",
+      "category": "temporal",
+      "query": "When did external users start participating in studies?",
+      "mustHit": [
+        "golden_033"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_033",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.9883,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.9416,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.6514,
+          "recallConfidence": 0.2636,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.6411,
+          "recallConfidence": 0.2489,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.492,
+          "recallConfidence": 0.411,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4766,
+          "recallConfidence": 0.3755,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4693,
+          "recallConfidence": 0.3635,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4622,
+          "recallConfidence": 0.3609,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4553,
+          "recallConfidence": 0.3495,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_08",
+      "category": "temporal",
+      "query": "Where did config files live before the July change?",
+      "mustHit": [
+        "golden_057"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_057",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 1,
+          "recallConfidence": 0.8255,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.9867,
+          "recallConfidence": 0.5869,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.9867,
+          "recallConfidence": 0.5868,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9812,
+          "recallConfidence": 0.8083,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_023",
+          "score": 0.962,
+          "recallConfidence": 0.7132,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 0.9484,
+          "recallConfidence": 0.5606,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.934,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9262,
+          "recallConfidence": 0.8177,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.9243,
+          "recallConfidence": 0.8016,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_01",
+      "category": "negation",
+      "query": "Do we still use MongoDB anywhere?",
+      "mustHit": [
+        "golden_040",
+        "golden_001"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_001",
+          "score": 1,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.9961,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.9734,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.9174,
+          "recallConfidence": 0.8203,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.9113,
+          "recallConfidence": 0.819,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.8676,
+          "recallConfidence": 0.8408,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.492,
+          "recallConfidence": 0.4084,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.4766,
+          "recallConfidence": 0.385,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4622,
+          "recallConfidence": 0.3609,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4486,
+          "recallConfidence": 0.3301,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8495,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_02",
+      "category": "negation",
+      "query": "Is FAISS still part of our stack?",
+      "mustHit": [
+        "golden_042",
+        "golden_017"
+      ],
+      "mayHit": [
+        "golden_016",
+        "golden_030"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_042",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.9961,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.9732,
+          "recallConfidence": 0.8221,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.9394,
+          "recallConfidence": 0.8197,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.9098,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.8198,
+          "recallConfidence": 0.7834,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8074,
+          "recallConfidence": 0.7825,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.7702,
+          "recallConfidence": 0.7569,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4693,
+          "recallConfidence": 0.3635,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.4622,
+          "recallConfidence": 0.3609,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_03",
+      "category": "negation",
+      "query": "Are we still considering Kafka?",
+      "mustHit": [
+        "golden_041",
+        "golden_004"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_042",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.9843,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_041",
+          "score": 0.9587,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.926,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.9136,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.8762,
+          "recallConfidence": 0.8044,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.8138,
+          "recallConfidence": 0.8196,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.7933,
+          "recallConfidence": 0.8092,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.5123,
+          "recallConfidence": 0.3377,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.504,
+          "recallConfidence": 0.3367,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 0.5,
+      "hitAt1": false
+    },
+    {
+      "id": "q_negation_04",
+      "category": "negation",
+      "query": "Does the team still meet Thursday mornings?",
+      "mustHit": [
+        "golden_020",
+        "golden_021"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_018",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.9981,
+          "recallConfidence": 0.8285,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.9466,
+          "recallConfidence": 0.821,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.9408,
+          "recallConfidence": 0.6438,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.94,
+          "recallConfidence": 0.8046,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9304,
+          "recallConfidence": 0.8029,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.9063,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.9011,
+          "recallConfidence": 0.6188,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8809,
+          "recallConfidence": 0.6146,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8807,
+          "recallConfidence": 0.7908,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.844,
+      "recallAtK": 0,
+      "rr": 0,
+      "hitAt1": false
+    },
+    {
+      "id": "q_negation_05",
+      "category": "negation",
+      "query": "Is Label Studio deprecated?",
+      "mustHit": [
+        "golden_018",
+        "golden_019"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_018",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4842,
+          "recallConfidence": 0.3978,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4766,
+          "recallConfidence": 0.3755,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.4693,
+          "recallConfidence": 0.3727,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 0.4622,
+          "recallConfidence": 0.3586,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.4553,
+          "recallConfidence": 0.3495,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.4486,
+          "recallConfidence": 0.3363,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4421,
+          "recallConfidence": 0.328,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_049",
+          "score": 0.4358,
+          "recallConfidence": 0.3158,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.844,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_06",
+      "category": "negation",
+      "query": "Was Redis rejected for anything?",
+      "mustHit": [
+        "golden_039"
+      ],
+      "mayHit": [
+        "golden_035",
+        "golden_036"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_040",
+          "score": 1,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 1,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.9611,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.952,
+          "recallConfidence": 0.8235,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.9327,
+          "recallConfidence": 0.8184,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.912,
+          "recallConfidence": 0.8141,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.9071,
+          "recallConfidence": 0.77,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.8874,
+          "recallConfidence": 0.6461,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.8509,
+          "recallConfidence": 0.796,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8371,
+          "recallConfidence": 0.6032,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8048,
+      "recallAtK": 1,
+      "rr": 0.5,
+      "hitAt1": false
+    },
+    {
+      "id": "q_procedural_01",
+      "category": "procedural",
+      "query": "How do we deploy a service to production?",
+      "mustHit": [
+        "golden_011"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_011",
+          "score": 1,
+          "recallConfidence": 0.8285,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.963,
+          "recallConfidence": 0.8238,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.9603,
+          "recallConfidence": 0.7817,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.9535,
+          "recallConfidence": 0.8222,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.929,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9261,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.9252,
+          "recallConfidence": 0.8175,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_037",
+          "score": 0.913,
+          "recallConfidence": 0.8092,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.8453,
+          "recallConfidence": 0.7858,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 0.8318,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8285,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_02",
+      "category": "procedural",
+      "query": "What are the steps for onboarding a new dataset?",
+      "mustHit": [
+        "golden_012"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_012",
+          "score": 1,
+          "recallConfidence": 0.8285,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.9685,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9405,
+          "recallConfidence": 0.8047,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.9137,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.8536,
+          "recallConfidence": 0.6375,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8514,
+          "recallConfidence": 0.7591,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.8434,
+          "recallConfidence": 0.7932,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8192,
+          "recallConfidence": 0.5973,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.8157,
+          "recallConfidence": 0.6252,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.8118,
+          "recallConfidence": 0.7847,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.8285,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_03",
+      "category": "procedural",
+      "query": "Walk me through rotating API credentials.",
+      "mustHit": [
+        "golden_013"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_013",
+          "score": 1,
+          "recallConfidence": 0.8285,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_045",
+          "score": 0.983,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.496,
+          "recallConfidence": 0.4178,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.4881,
+          "recallConfidence": 0.4019,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4805,
+          "recallConfidence": 0.3891,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4731,
+          "recallConfidence": 0.3791,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4659,
+          "recallConfidence": 0.3671,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4522,
+          "recallConfidence": 0.3445,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4457,
+          "recallConfidence": 0.3255,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4393,
+          "recallConfidence": 0.3155,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8285,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_04",
+      "category": "procedural",
+      "query": "What is the protocol during a production outage?",
+      "mustHit": [
+        "golden_014"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_030",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9767,
+          "recallConfidence": 0.8106,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9469,
+          "recallConfidence": 0.8059,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.9285,
+          "recallConfidence": 0.654,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.9254,
+          "recallConfidence": 0.8018,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.9224,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.9088,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 0.8971,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.8611,
+          "recallConfidence": 0.6279,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.8453,
+          "recallConfidence": 0.6234,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 0,
+      "rr": 0.1,
+      "hitAt1": false
+    },
+    {
+      "id": "q_procedural_05",
+      "category": "procedural",
+      "query": "What needs checking before submitting a paper?",
+      "mustHit": [
+        "golden_015"
+      ],
+      "mayHit": [
+        "golden_043"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_015",
+          "score": 1,
+          "recallConfidence": 0.9666,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.6736,
+          "recallConfidence": 0.3464,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.6567,
+          "recallConfidence": 0.3166,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.5889,
+          "recallConfidence": 0.2127,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.492,
+          "recallConfidence": 0.4677,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4842,
+          "recallConfidence": 0.4641,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.4766,
+          "recallConfidence": 0.4464,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4693,
+          "recallConfidence": 0.4241,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4622,
+          "recallConfidence": 0.421,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4553,
+          "recallConfidence": 0.4077,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.9666,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_06",
+      "category": "procedural",
+      "query": "How do we release a new SDK version?",
+      "mustHit": [
+        "golden_051"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_051",
+          "score": 1,
+          "recallConfidence": 0.8285,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.984,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9611,
+          "recallConfidence": 0.8285,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9594,
+          "recallConfidence": 0.8045,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.8886,
+          "recallConfidence": 0.793,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.5041,
+          "recallConfidence": 0.3368,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.4805,
+          "recallConfidence": 0.3916,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.4659,
+          "recallConfidence": 0.3648,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4522,
+          "recallConfidence": 0.3445,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.4457,
+          "recallConfidence": 0.3162,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8285,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_01",
+      "category": "multi-hop",
+      "query": "Which project depends on PaperTrail and why?",
+      "mustHit": [
+        "golden_058",
+        "golden_029"
+      ],
+      "mayHit": [
+        "golden_024"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_058",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.9812,
+          "recallConfidence": 0.8235,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9144,
+          "recallConfidence": 0.8095,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.8973,
+          "recallConfidence": 0.8155,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.8943,
+          "recallConfidence": 0.8038,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.863,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.8547,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4842,
+          "recallConfidence": 0.388,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4766,
+          "recallConfidence": 0.3755,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4693,
+          "recallConfidence": 0.3727,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_02",
+      "category": "multi-hop",
+      "query": "Who maintains the machines our training runs depend on?",
+      "mustHit": [
+        "golden_053",
+        "golden_027"
+      ],
+      "mayHit": [
+        "golden_022",
+        "golden_023"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_053",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_023",
+          "score": 0.922,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.8906,
+          "recallConfidence": 0.8085,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8743,
+          "recallConfidence": 0.6312,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.8731,
+          "recallConfidence": 0.6309,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.8676,
+          "recallConfidence": 0.6296,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8624,
+          "recallConfidence": 0.7979,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8592,
+          "recallConfidence": 0.6432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.8359,
+          "recallConfidence": 0.7816,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_03",
+      "category": "multi-hop",
+      "query": "How does Nordwind Energy connect to our forecasting benchmark?",
+      "mustHit": [
+        "golden_025",
+        "golden_047"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_047",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9611,
+          "recallConfidence": 0.8235,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.9403,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.8798,
+          "recallConfidence": 0.8106,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8207,
+          "recallConfidence": 0.7888,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.8076,
+          "recallConfidence": 0.7776,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.4805,
+          "recallConfidence": 0.371,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4731,
+          "recallConfidence": 0.3697,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4659,
+          "recallConfidence": 0.358,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_04",
+      "category": "multi-hop",
+      "query": "Which vector store backs Project Aurora's retrieval index, and what preceded it?",
+      "mustHit": [
+        "golden_058",
+        "golden_017"
+      ],
+      "mayHit": [
+        "golden_030",
+        "golden_016"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_058",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 1,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.9718,
+          "recallConfidence": 0.2086,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.9663,
+          "recallConfidence": 0.821,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.9313,
+          "recallConfidence": 0.1978,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.9173,
+          "recallConfidence": 0.8155,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.8961,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8732,
+          "recallConfidence": 0.1636,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.8451,
+          "recallConfidence": 0.7857,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.8218,
+          "recallConfidence": 0.7893,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8441,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_09",
+      "category": "paraphrase",
+      "query": "Why is there a cap on database connections per service?",
+      "mustHit": [
+        "golden_037",
+        "golden_038"
+      ],
+      "mayHit": [
+        "golden_001"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_038",
+          "score": 1,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_037",
+          "score": 1,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.9883,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9374,
+          "recallConfidence": 0.8151,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.9107,
+          "recallConfidence": 0.8136,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8929,
+          "recallConfidence": 0.6514,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8781,
+          "recallConfidence": 0.6481,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_041",
+          "score": 0.8676,
+          "recallConfidence": 0.7644,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8594,
+          "recallConfidence": 0.8041,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.8566,
+          "recallConfidence": 0.798,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8048,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_09",
+      "category": "entity",
+      "query": "What do we use for tracing across services?",
+      "mustHit": [
+        "golden_046"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_046",
+          "score": 1,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9961,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.9394,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.9387,
+          "recallConfidence": 0.8248,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9245,
+          "recallConfidence": 0.8016,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9179,
+          "recallConfidence": 0.8104,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8781,
+          "recallConfidence": 0.8101,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8627,
+          "recallConfidence": 0.6442,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.8363,
+          "recallConfidence": 0.6323,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.7977,
+          "recallConfidence": 0.6221,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8495,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_07",
+      "category": "negation",
+      "query": "Are we still on Confluence for the wiki?",
+      "mustHit": [
+        "golden_049"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_049",
+          "score": 1,
+          "recallConfidence": 0.9379,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.883,
+          "recallConfidence": 0.7214,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.8794,
+          "recallConfidence": 0.9378,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8752,
+          "recallConfidence": 0.8942,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8702,
+          "recallConfidence": 0.7179,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8619,
+          "recallConfidence": 0.6779,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.8531,
+          "recallConfidence": 0.8853,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.8109,
+          "recallConfidence": 0.6971,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.8082,
+          "recallConfidence": 0.8699,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.7991,
+          "recallConfidence": 0.8593,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9379,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_08",
+      "category": "negation",
+      "query": "Do we send customer text to GPT-4 for classification?",
+      "mustHit": [
+        "golden_005"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_005",
+          "score": 1,
+          "recallConfidence": 0.9438,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.9243,
+          "recallConfidence": 0.8651,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.8963,
+          "recallConfidence": 0.9379,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8855,
+          "recallConfidence": 0.722,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8715,
+          "recallConfidence": 0.8506,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.8619,
+          "recallConfidence": 0.7155,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.8599,
+          "recallConfidence": 0.7149,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.8447,
+          "recallConfidence": 0.71,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.8309,
+          "recallConfidence": 0.7051,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_010",
+          "score": 0.8201,
+          "recallConfidence": 0.9409,
+          "confidenceTier": "HIGH"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9438,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_07",
+      "category": "procedural",
+      "query": "How does the weekly model evaluation work?",
+      "mustHit": [
+        "golden_044"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_044",
+          "score": 1,
+          "recallConfidence": 0.8285,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.9741,
+          "recallConfidence": 0.8223,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 0.9658,
+          "recallConfidence": 0.8208,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9445,
+          "recallConfidence": 0.8167,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.922,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9199,
+          "recallConfidence": 0.8006,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.9043,
+          "recallConfidence": 0.8119,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.9042,
+          "recallConfidence": 0.797,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.9041,
+          "recallConfidence": 0.844,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.8592,
+          "recallConfidence": 0.6273,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8285,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_08",
+      "category": "procedural",
+      "query": "What are the rules for reviewing pull requests?",
+      "mustHit": [
+        "golden_050"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_050",
+          "score": 1,
+          "recallConfidence": 0.8495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9809,
+          "recallConfidence": 0.8083,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.9611,
+          "recallConfidence": 0.8441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8902,
+          "recallConfidence": 0.8048,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.8612,
+          "recallConfidence": 0.7996,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.8483,
+          "recallConfidence": 0.636,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8482,
+          "recallConfidence": 0.6401,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.8481,
+          "recallConfidence": 0.8,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.8258,
+          "recallConfidence": 0.6288,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.8227,
+          "recallConfidence": 0.7847,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.8495,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    }
+  ]
+}

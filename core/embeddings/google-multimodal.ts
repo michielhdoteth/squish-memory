@@ -1,5 +1,6 @@
 import { logger } from '../logger.js';
 import { config } from '../../config.js';
+import { validateOutboundUrl } from '../lib/url-validator.js';
 
 export interface MultimodalInput {
   text?: string;
@@ -62,6 +63,7 @@ export async function getGoogleMultimodalEmbedding(
       return null;
     }
 
+    validateOutboundUrl(endpoint);
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {

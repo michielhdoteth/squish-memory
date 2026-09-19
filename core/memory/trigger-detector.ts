@@ -14,7 +14,7 @@ export interface MemorySignals {
     todo: boolean;
     fixme: boolean;
   };
-  suggestedType: 'observation' | 'fact' | 'decision' | 'context' | 'preference' | 'task';
+  suggestedType: 'observation' | 'fact' | 'decision' | 'context' | 'preference' | 'note';
   priority: 'normal' | 'high';
   // New: Confidence indicator
   confidence: 'certain' | 'speculative' | 'inferred';
@@ -71,13 +71,13 @@ export function detectMemorySignals(content: string): MemorySignals {
   if (implicit.decision) suggestedType = 'decision';
   else if (implicit.preference) suggestedType = 'preference';
   else if (implicit.workflowRule || implicit.lesson) suggestedType = 'context';
-  else if (implicit.todo) suggestedType = 'task';
+  else if (implicit.todo) suggestedType = 'fact';
   else if (!implicit.decision && !implicit.preference && /\b(?:is|are|was|were|uses|has|have)\b/i.test(text)) {
     suggestedType = 'fact';
   }
   
   // Override for specific rationale markers
-  if (implicit.note || implicit.important) suggestedType = 'observation';
+  if (implicit.note || implicit.important) suggestedType = 'note';
   if (implicit.why) suggestedType = 'context';
 
   // Determine confidence based on signal strength

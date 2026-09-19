@@ -1,40 +1,22 @@
 /** Cron Scheduler - Persistent cron-based job scheduling with fallback support */
 
 import cron from 'node-cron';
-import { selfIterationHandler } from '../session/self-iteration-job.js';
-import { updateAllDecayScores } from '../decay/decay-engine.js';
 import { logger } from '../logger.js';
 import { config } from '../../config.js';
 import { getDb } from '../../db/index.js';
 import { maintenanceJobs, maintenanceJobHistory } from '../../db/drizzle/schema-sqlite.js';
 import { eq } from 'drizzle-orm';
+import { getAllJobHandlers } from './handlers/index.js';
 
-export type JobType = 'nightly' | 'weekly' | 'hourly' | 'daily';
-export type JobStatus = 'success' | 'failed' | 'skipped';
-
-export interface ScheduledJob {
-  id: string;
-  jobName: string;
-  jobType: JobType;
-  cronExpression: string;
-  enabled: boolean;
-  lastRunAt: Date | null;
-  nextRunAt: Date | null;
-  jobConfig: Record<string, unknown>;
-}
-
-export interface JobExecutionContext {
-  jobId: string;
-  jobName: string;
-  jobType: JobType;
-  config: Record<string, unknown>;
-  startedAt: Date;
-}
-
-export type JobHandler = (context: JobExecutionContext) => Promise<{ recordsProcessed: number; summary: Record<string, unknown> }>;
+// Re-export types for external consumers
+export type { JobType, JobStatus, JobHandler, ScheduledJob, JobExecutionContext } from './types.js';
+import type { JobType, JobStatus, JobHandler, ScheduledJob, JobExecutionContext } from './types.js';
 
 const jobHandlers = new Map<string, JobHandler>();
 const activeTasks = new Map<string, any>(); // node-cron ScheduledTask type
+let shuttingDown = false;
+const inFlightJobs = new Map<string, Promise<void>>();
+const runningJobs = new Set<string>(); // Per-job lock to prevent concurrent execution
 
 // Job interval by type (in ms) - used for catch-up detection
 const JOB_INTERVALS: Record<JobType, number> = {
@@ -49,371 +31,10 @@ export function registerJobHandler(jobName: string, handler: JobHandler): void {
   logger.info(`[Scheduler] Registered handler for job: ${jobName}`);
 }
 
-// Register self-iteration job handler
-registerJobHandler('self_iteration', selfIterationHandler);
-
-// Decay job handler - uses Ebbinghaus power-law decay engine
-// Replaces sector-based decay with Ebbinghaus forgetting curve
-const decayHandler = async (context: JobExecutionContext) => {
-  const stats = await updateAllDecayScores();
-  return {
-    recordsProcessed: stats.updated,
-    summary: {
-      processed: stats.processed,
-      updated: stats.updated,
-      errors: stats.errors,
-    },
-  };
-};
-registerJobHandler('decay_maintenance', decayHandler);
-
-// Knowledge belief decay handler - applies confidence decay to beliefs via unified knowledge table
-const beliefDecayHandler = async (context: JobExecutionContext) => {
-  const { runDecayCycle } = await import('../knowledge/decay.js');
-  const stats = await runDecayCycle();
-  return {
-    recordsProcessed: stats.beliefs.decayed + stats.beliefs.deprecated,
-    summary: {
-      beliefDecayed: stats.beliefs.decayed,
-      beliefDeprecated: stats.beliefs.deprecated,
-      errors: [],
-    },
-  };
-};
-registerJobHandler('belief_decay', beliefDecayHandler);
-
-// Batch 6b: expire memories whose valid_to has passed (bi-temporal lifecycle).
-const temporalCleanupHandler = async (context: JobExecutionContext) => {
-  const { cleanupExpiredTemporalFacts } = await import('../memory/temporal-facts.js');
-  const jobConfig = context.config as { projectId?: string; enabled?: boolean };
-  if (jobConfig.enabled === false) {
-    return { recordsProcessed: 0, summary: { skipped: true, reason: 'temporal cleanup disabled' } };
-  }
-  const expiredCount = await cleanupExpiredTemporalFacts(jobConfig.projectId);
-  return {
-    recordsProcessed: expiredCount,
-    summary: { expiredMemories: expiredCount },
-  };
-};
-registerJobHandler('temporal_cleanup', temporalCleanupHandler);
-
-// Auto-clean handler - deletes stale memories automatically
-const autoCleanHandler = async (context: JobExecutionContext) => {
-  const { getStaleMemories, deleteMemoryPermanently } = await import('../memory/stale-cleaner.js');
-  const { getAllProjects } = await import('../projects.js');
-  
-  const jobConfig = context.config as {
-    enabled?: boolean;
-    olderThanDays?: number;
-    confidenceLevel?: string[];
-    minImportance?: number;
-    dryRun?: boolean;
-  };
-  
-  if (jobConfig.enabled === false) {
-    return { recordsProcessed: 0, summary: { skipped: true, reason: 'auto-clean disabled' } };
-  }
-  
-  const olderThanDays = jobConfig.olderThanDays || 30;
-  const confidenceLevels = jobConfig.confidenceLevel || ['outdated', 'speculative'];
-  const minImportance = jobConfig.minImportance || 40;
-  const dryRun = jobConfig.dryRun !== undefined ? jobConfig.dryRun : false; // Default to actual delete for safety
-  
-  const projects = await getAllProjects();
-  let totalStale = 0;
-  let totalDeleted = 0;
-  
-  for (const project of projects) {
-    const stale = await getStaleMemories({
-      olderThanDays,
-      confidenceLevels,
-      minImportance,
-      projectId: project.id,
-    });
-    
-    totalStale += stale.length;
-    
-    if (dryRun) {
-      logger.info(`[AutoClean] Would delete ${stale.length} stale memories in ${project.path}`);
-    } else {
-      for (const memory of stale) {
-        if (!memory.isPinned) {
-          await deleteMemoryPermanently(memory.id);
-          totalDeleted++;
-        }
-      }
-      logger.info(`[AutoClean] Deleted ${stale.length} stale memories in ${project.path}`);
-    }
-  }
-  
-  return {
-    recordsProcessed: dryRun ? totalStale : totalDeleted,
-    summary: {
-      mode: dryRun ? 'dry-run' : 'deleted',
-      projectsScanned: projects.length,
-      memoriesAffected: dryRun ? totalStale : totalDeleted,
-      criteria: { olderThanDays, confidenceLevels, minImportance },
-    },
-  };
-};
-registerJobHandler('auto_clean', autoCleanHandler);
-
-// Inbox triage handler - processes inbox memories and moves them to appropriate places
-const inboxTriageHandler = async (context: JobExecutionContext) => {
-  const { processInboxForAllProjects } = await import('../places/memory-places.js');
-  const result = await processInboxForAllProjects();
-  return {
-    recordsProcessed: result.totalMoved,
-    summary: {
-      processed: result.totalProcessed,
-      moved: result.totalMoved,
-      errors: result.totalErrors,
-    },
-  };
-};
-registerJobHandler('inbox_triage', inboxTriageHandler);
-
-// Phase 6: Auto-maintenance handler - runs runFullMaintenance for nightly dry-run
-const autoMaintenanceHandler = async (context: JobExecutionContext) => {
-  const { runFullMaintenance } = await import('../consolidation.js');
-  const jobConfig = context.config as {
-    enabled?: boolean;
-    dryRun?: boolean;
-    steps?: string[];
-    age?: number;
-    llmEnabled?: boolean;
-  };
-
-  if (jobConfig.enabled === false) {
-    return { recordsProcessed: 0, summary: { skipped: true, reason: 'auto-maintenance disabled' } };
-  }
-
-  const result = await runFullMaintenance({
-    dryRun: jobConfig.dryRun !== undefined ? jobConfig.dryRun : true,
-    steps: (jobConfig.steps as any) || ['dedup', 'stale'],
-    age: jobConfig.age || 30,
-    llmEnabled: jobConfig.llmEnabled,
-  });
-
-  const totalCount = Object.values(result.steps).reduce((sum, s) => sum + (s.count || 0), 0);
-
-  return {
-    recordsProcessed: totalCount,
-    summary: {
-      mode: result.dryRun ? 'dry-run' : 'completed',
-      steps: Object.keys(result.steps),
-      details: result.steps,
-    },
-  };
-};
-registerJobHandler('auto_maintenance', autoMaintenanceHandler);
-
-// Phase 6: Weekly consolidation handler - runs consolidate + inbox
-const weeklyConsolidationHandler = async (context: JobExecutionContext) => {
-  const { runFullMaintenance } = await import('../consolidation.js');
-  const jobConfig = context.config as {
-    enabled?: boolean;
-    dryRun?: boolean;
-    age?: number;
-  };
-
-  if (jobConfig.enabled === false) {
-    return { recordsProcessed: 0, summary: { skipped: true, reason: 'weekly consolidation disabled' } };
-  }
-
-  const result = await runFullMaintenance({
-    dryRun: jobConfig.dryRun !== undefined ? jobConfig.dryRun : false,
-    steps: ['consolidate', 'inbox'],
-    age: jobConfig.age || 60,
-  });
-
-  const totalCount = Object.values(result.steps).reduce((sum, s) => sum + (s.count || 0), 0);
-
-  return {
-    recordsProcessed: totalCount,
-    summary: {
-      mode: result.dryRun ? 'dry-run' : 'completed',
-      steps: Object.keys(result.steps),
-      details: result.steps,
-    },
-  };
-};
-registerJobHandler('weekly_consolidation', weeklyConsolidationHandler);
-
-// Phase 6: Deep maintenance handler - runs full maintenance with LLM
-const deepMaintenanceHandler = async (context: JobExecutionContext) => {
-  const { config: squishConfig } = await import('../../config.js');
-  const jobConfig = context.config as {
-    enabled?: boolean;
-    dryRun?: boolean;
-    age?: number;
-  };
-
-  // Monthly deep maintenance only runs if LLM is enabled
-  if (!squishConfig.llmEnabled) {
-    return { recordsProcessed: 0, summary: { skipped: true, reason: 'LLM not enabled, skipping deep maintenance' } };
-  }
-
-  if (jobConfig.enabled === false) {
-    return { recordsProcessed: 0, summary: { skipped: true, reason: 'deep maintenance disabled' } };
-  }
-
-  const { runFullMaintenance } = await import('../consolidation.js');
-  const result = await runFullMaintenance({
-    dryRun: jobConfig.dryRun !== undefined ? jobConfig.dryRun : false,
-    steps: ['consolidate', 'inbox'],
-    age: jobConfig.age || 90,
-    llmEnabled: true,
-  });
-
-  const totalCount = Object.values(result.steps).reduce((sum, s) => sum + (s.count || 0), 0);
-
-  return {
-    recordsProcessed: totalCount,
-    summary: {
-      mode: 'deep-maintenance',
-      llmEnabled: true,
-      steps: Object.keys(result.steps),
-      details: result.steps,
-    },
-  };
-};
-registerJobHandler('deep_maintenance', deepMaintenanceHandler);
-
-// Tier maintenance handler - recalculates memory tiers based on access patterns
-const tierMaintenanceHandler = async (context: JobExecutionContext) => {
-  const { recalculateTiers } = await import('../memory/tiers.js');
-  const result = await recalculateTiers();
-  return {
-    recordsProcessed: result.updated,
-    summary: {
-      updated: result.updated,
-      tiers: result.tiers,
-    },
-  };
-};
-registerJobHandler('tier_maintenance', tierMaintenanceHandler);
-
-// Dedup maintenance handler - scans for duplicate memories and creates merge
-// proposals for review. Executes auto-merges ONLY when SQUISH_DEDUP_AUTO=true,
-// above the configured similarity threshold and capped per run. Every executed
-// merge is recorded in memory_merge_history (undo log) so reverse works.
-const dedupMaintenanceHandler = async (context: JobExecutionContext) => {
-  const jobConfig = context.config as {
-    enabled?: boolean;
-    threshold?: number;
-    cap?: number;
-  };
-
-  if (jobConfig.enabled === false) {
-    return { recordsProcessed: 0, summary: { skipped: true, reason: 'dedup maintenance disabled' } };
-  }
-
-  const { getAllProjects } = await import('../projects.js');
-  const { handleDetectDuplicates } = await import('../algorithms/handlers/detect-duplicates.js');
-
-  const projects = await getAllProjects();
-  let totalProposals = 0;
-  let scanErrors = 0;
-
-  for (const project of projects) {
-    try {
-      const result = await handleDetectDuplicates({ projectId: project.id });
-      if (result.ok && result.data) {
-        totalProposals += result.data.proposalsCreated;
-      }
-    } catch (err) {
-      scanErrors++;
-      logger.error(`[Dedup] Scan failed for project ${project.id}:`, err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  // Auto-merge phase - strictly gated, capped, high-confidence only
-  const autoEnabled = process.env.SQUISH_DEDUP_AUTO === 'true';
-  const threshold = jobConfig.threshold ?? 0.95;
-  const cap = Math.max(1, jobConfig.cap ?? 25);
-  let autoApproved = 0;
-  let remaining = cap;
-
-  if (autoEnabled && totalProposals >= 0 && remaining > 0) {
-    try {
-      const { getDbClient } = await import('../lib/db-client.js');
-      const { eq, desc } = await import('drizzle-orm');
-      const { handleApproveMerge } = await import('../algorithms/handlers/approve-merge.js');
-      const { db, schema } = await getDbClient();
-
-      const pending = await db
-        .select()
-        .from(schema.memoryMergeProposals)
-        .where(eq(schema.memoryMergeProposals.status, 'pending'))
-        .orderBy(desc(schema.memoryMergeProposals.similarityScore));
-
-      for (const proposal of pending) {
-        if (remaining <= 0) break;
-        const score = parseFloat(String(proposal.similarityScore));
-        if (!(score >= threshold)) continue;
-
-        const result = await handleApproveMerge({
-          proposalId: proposal.id,
-          reviewNotes: `auto-merge (scheduler): similarity=${score.toFixed(3)} >= ${threshold}`,
-        });
-        if (result.ok) {
-          autoApproved++;
-          remaining--;
-        }
-      }
-    } catch (err) {
-      logger.error('[Dedup] Auto-merge phase failed:', err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  logger.info(`[Dedup] Maintenance complete: ${totalProposals} new proposals, ${autoApproved} auto-merged (gated=${!autoEnabled})`);
-
-  return {
-    recordsProcessed: totalProposals + autoApproved,
-    summary: {
-      projectsScanned: projects.length,
-      proposalsCreated: totalProposals,
-      scanErrors,
-      autoEnabled,
-      threshold,
-      cap,
-      autoMerged: autoApproved,
-    },
-  };
-};
-registerJobHandler('dedup_maintenance', dedupMaintenanceHandler);
-
-// LLM Consolidation handler - finds creative cross-connections using LLM
-const llmConsolidationHandler = async (context: JobExecutionContext) => {
-  const { runLLMConsolidation } = await import('../consolidation/llm-consolidator.js');
-  const jobConfig = context.config as {
-    enabled?: boolean;
-    maxMemories?: number;
-    batchSize?: number;
-    projectId?: string;
-  };
-
-  if (jobConfig.enabled === false) {
-    return { recordsProcessed: 0, summary: { skipped: true, reason: 'llm-consolidation disabled' } };
-  }
-
-  const result = await runLLMConsolidation(jobConfig.projectId, {
-    maxMemories: jobConfig.maxMemories || 50,
-    batchSize: jobConfig.batchSize || 20,
-  });
-
-  return {
-    recordsProcessed: result.memoriesProcessed,
-    summary: {
-      insightsCreated: result.insightsCreated,
-      edgesCreated: result.edgesCreated,
-      memoriesProcessed: result.memoriesProcessed,
-      errors: result.errors,
-    },
-  };
-};
-registerJobHandler('llm_consolidation', llmConsolidationHandler);
+// Register all job handlers from extracted modules
+for (const [name, handler] of getAllJobHandlers()) {
+  registerJobHandler(name, handler);
+}
 
 export async function initializeScheduler(): Promise<void> {
   if (!config.cronEnabled) {
@@ -471,12 +92,21 @@ async function checkMissedJobs(): Promise<void> {
       if (!intervalMs) continue;
       
       const lastRun = job.lastRunAt ? new Date(job.lastRunAt).getTime() : 0;
-      const elapsed = lastRun > 0 ? now - lastRun : intervalMs * 2; // If never run, treat as overdue
+      if (lastRun === 0) continue; // Never run yet -- not missed, let cron schedule it normally
+
+      const elapsed = now - lastRun;
       const gracePeriod = intervalMs * 1.5; // 1.5x interval grace
-      
+
       if (elapsed > gracePeriod) {
         logger.info(`[Scheduler] Catch-up needed for ${job.jobName}, elapsed ${Math.round(elapsed / (60 * 60 * 1000))}h (grace: ${Math.round(gracePeriod / (60 * 60 * 1000))}h)`);
         
+        // Random jitter (0-30s) to prevent multiple instances from firing simultaneously
+        const jitterMs = Math.floor(Math.random() * 30000);
+        if (jitterMs > 0) {
+          logger.debug(`[Scheduler] Catch-up jitter for ${job.jobName}: ${jitterMs}ms`);
+          await new Promise(resolve => setTimeout(resolve, jitterMs));
+        }
+
         // Execute catch-up
         const handler = jobHandlers.get(job.jobName);
         if (handler) {
@@ -530,77 +160,8 @@ async function checkMissedJobs(): Promise<void> {
 
 async function ensureDefaultJobs(db: any): Promise<void> {
   const defaultJobs = [
-    {
-      jobName: 'decay_maintenance',
-      jobType: 'hourly' as JobType,
-      cronExpression: '0 * * * *', // Run every hour at :00
-      enabled: true,
-      jobConfig: { applyDecay: true, updateTiers: true, evictOld: true },
-    },
-    {
-      jobName: 'belief_decay',
-      jobType: 'daily' as JobType,
-      cronExpression: '0 4 * * *', // Run daily at 4 AM
-      enabled: true,
-      jobConfig: { applyBeliefDecay: true },
-    },
-    // Batch 6b: bi-temporal lifecycle - expire memories past valid_to
-    {
-      jobName: 'temporal_cleanup',
-      jobType: 'daily' as JobType,
-      cronExpression: '15 4 * * *', // Run daily at 4:15 AM (after belief decay)
-      enabled: true,
-      jobConfig: {},
-    },
-    {
-      jobName: 'self_iteration',
-      jobType: 'hourly' as JobType,
-      cronExpression: '30 * * * *', // Run every hour at :30
-      enabled: true,
-      jobConfig: { minMessageCount: 5, maxMessagesToProcess: 50 },
-    },
-    {
-      jobName: 'tier_maintenance',
-      jobType: 'daily' as JobType,
-      cronExpression: '0 2 * * *', // Run daily at 2 AM
-      enabled: true,
-      jobConfig: { recalculateTiers: true },
-    },
-    {
-      jobName: 'auto_clean',
-      jobType: 'daily' as JobType,
-      cronExpression: '0 3 * * *', // Run daily at 3 AM
-      enabled: true,
-      jobConfig: { 
-        enabled: true,
-        olderThanDays: 30,
-        confidenceLevel: ['outdated', 'speculative'],
-        minImportance: 40,
-        dryRun: true, // Start with dry-run for safety
-      },
-    },
-    // LLM Consolidation - creative cross-connection finding
-    {
-      jobName: 'llm_consolidation',
-      jobType: 'daily' as JobType,
-      cronExpression: '30 3 * * *', // Run daily at 3:30 AM (LLM cross-connection pass; no-op without an LLM provider)
-      enabled: true,
-      jobConfig: {
-        enabled: true,
-        maxMemories: 50,
-        batchSize: 20,
-      },
-    },
-    {
-      jobName: 'inbox_triage',
-      jobType: 'daily' as JobType,
-      cronExpression: '0 */6 * * *', // Run every 6 hours
-      enabled: true,
-      jobConfig: {
-        enabled: true,
-      },
-    },
-    // Phase 6: Nightly auto-maintenance (dry-run for safety)
+    // === UNIFIED MAINTENANCE ===
+    // Nightly: decay → score → tiers → dedup → prune-links → stale (dry-run)
     {
       jobName: 'auto_maintenance',
       jobType: 'nightly' as JobType,
@@ -608,23 +169,12 @@ async function ensureDefaultJobs(db: any): Promise<void> {
       enabled: true,
       jobConfig: {
         enabled: true,
-        dryRun: true,
-        steps: ['dedup', 'stale'],
+        dryRun: false,
+        steps: ['decay', 'score', 'tiers', 'dedup', 'prune-links', 'stale'],
         age: 30,
       },
     },
-    {
-      jobName: 'dedup_maintenance',
-      jobType: 'nightly' as JobType,
-      cronExpression: '45 3 * * *', // Nightly at 3:45 AM (after auto_maintenance)
-      enabled: true,
-      jobConfig: {
-        enabled: true,
-        threshold: 0.95,
-        cap: 25,
-      },
-    },
-    // Phase 6: Weekly consolidation
+    // Weekly: full lifecycle + consolidation + inbox
     {
       jobName: 'weekly_consolidation',
       jobType: 'weekly' as JobType,
@@ -633,11 +183,11 @@ async function ensureDefaultJobs(db: any): Promise<void> {
       jobConfig: {
         enabled: true,
         dryRun: false,
-        steps: ['consolidate', 'inbox'],
+        steps: ['decay', 'score', 'tiers', 'dedup', 'prune-links', 'stale', 'consolidate', 'inbox'],
         age: 60,
       },
     },
-    // Phase 6: Monthly deep maintenance (LLM only)
+    // Monthly: full lifecycle + LLM cross-connections
     {
       jobName: 'deep_maintenance',
       jobType: 'weekly' as JobType,
@@ -646,8 +196,59 @@ async function ensureDefaultJobs(db: any): Promise<void> {
       jobConfig: {
         enabled: true,
         dryRun: false,
+        steps: ['decay', 'score', 'tiers', 'dedup', 'prune-links', 'stale', 'consolidate', 'inbox'],
         age: 90,
       },
+    },
+
+    // === SPECIALIZED JOBS (not covered by unified pipeline) ===
+    // Self-iteration: extract facts from ended conversations
+    {
+      jobName: 'self_iteration',
+      jobType: 'hourly' as JobType,
+      cronExpression: '30 * * * *', // Every hour at :30
+      enabled: true,
+      jobConfig: { minMessageCount: 5, maxMessagesToProcess: 50 },
+    },
+    // Knowledge decay: belief/strategy confidence decay (different table from memories)
+    {
+      jobName: 'belief_decay',
+      jobType: 'daily' as JobType,
+      cronExpression: '0 4 * * *', // Daily at 4 AM
+      enabled: true,
+      jobConfig: { applyBeliefDecay: true },
+    },
+    // Temporal cleanup: expire memories past valid_to
+    {
+      jobName: 'temporal_cleanup',
+      jobType: 'daily' as JobType,
+      cronExpression: '15 4 * * *', // Daily at 4:15 AM
+      enabled: true,
+      jobConfig: {},
+    },
+    // Proposal expiry: expire stale edit proposals
+    {
+      jobName: 'proposal_expiry',
+      jobType: 'daily' as JobType,
+      cronExpression: '45 4 * * *', // Daily at 4:45 AM
+      enabled: true,
+      jobConfig: { enabled: true, days: 14 },
+    },
+    // Dedup maintenance: detect + auto-merge high-confidence duplicates
+    {
+      jobName: 'dedup_maintenance',
+      jobType: 'nightly' as JobType,
+      cronExpression: '45 3 * * *', // Nightly at 3:45 AM (after auto_maintenance)
+      enabled: true,
+      jobConfig: { enabled: true, threshold: 0.95, cap: 25 },
+    },
+    // LLM consolidation: creative cross-connection finding
+    {
+      jobName: 'llm_consolidation',
+      jobType: 'daily' as JobType,
+      cronExpression: '30 3 * * *', // Daily at 3:30 AM
+      enabled: true,
+      jobConfig: { enabled: true, maxMemories: 50, batchSize: 20 },
     },
   ];
 
@@ -715,11 +316,6 @@ async function ensureDefaultJobs(db: any): Promise<void> {
         }
       }
       logger.info(`[Scheduler] Created default job: ${job.jobName}`);
-
-      // Register self-iteration handler
-      if (job.jobName === 'self_iteration') {
-        registerJobHandler('self_iteration', selfIterationHandler);
-      }
     }
   }
 }
@@ -763,16 +359,22 @@ export async function scheduleJob(job: ScheduledJob): Promise<void> {
   logger.info(`[Scheduler] Scheduled ${job.jobName} with cron: ${job.cronExpression}${nextRunStr}`);
 }
 
-export async function executeJob(job: ScheduledJob): Promise<void> {
-  const db = await getDb();
-  const handler = jobHandlers.get(job.jobName);
+interface JobResult {
+  status: JobStatus;
+  error: string | null;
+  recordsProcessed: number;
+  summary: Record<string, unknown>;
+}
 
-  if (!handler) {
-    logger.warn(`[Scheduler] No handler registered for job: ${job.jobName}`);
-    return;
-  }
-
-  const startedAt = new Date();
+/**
+ * Core job execution body, separated for in-flight tracking.
+ */
+async function executeJobBody(
+  handler: JobHandler,
+  job: ScheduledJob,
+  startedAt: Date,
+  db: any
+): Promise<JobResult> {
   let status: JobStatus = 'success';
   let error: string | null = null;
   let recordsProcessed = 0;
@@ -833,6 +435,55 @@ export async function executeJob(job: ScheduledJob): Promise<void> {
       resultSummary: summary,
     });
   }
+
+  return { status, error, recordsProcessed, summary };
+}
+
+export async function executeJob(job: ScheduledJob): Promise<void> {
+  // Reject new jobs once shutdown is requested
+  if (shuttingDown) {
+    logger.info(`[Scheduler] Skipping job ${job.jobName} -- shutting down`);
+    return;
+  }
+
+  // Per-job lock: skip if this job is already in-flight
+  if (runningJobs.has(job.jobName)) {
+    logger.debug(`[Scheduler] Skipping ${job.jobName} -- already in progress`);
+    return;
+  }
+
+  const db = await getDb();
+  const handler = jobHandlers.get(job.jobName);
+
+  if (!handler) {
+    logger.warn(`[Scheduler] No handler registered for job: ${job.jobName}`);
+    return;
+  }
+
+  runningJobs.add(job.jobName);
+
+  const startedAt = new Date();
+  let status: JobStatus = 'success';
+  let error: string | null = null;
+  let recordsProcessed = 0;
+  let summary: Record<string, unknown> = {};
+
+  // Track in-flight job for shutdown grace period
+  const jobKey = job.jobName;
+  const jobPromise = executeJobBody(handler, job, startedAt, db)
+    .then(result => {
+      status = result.status;
+      error = result.error;
+      recordsProcessed = result.recordsProcessed;
+      summary = result.summary;
+    })
+    .finally(() => {
+      runningJobs.delete(job.jobName);
+      inFlightJobs.delete(jobKey);
+    });
+
+  inFlightJobs.set(jobKey, jobPromise);
+  await jobPromise;
 }
 
 /**
@@ -965,4 +616,42 @@ export function stopAllJobs(): void {
     logger.info(`[Scheduler] Stopped job: ${name}`);
   }
   activeTasks.clear();
+}
+
+const SHUTDOWN_TIMEOUT_MS = 30_000;
+
+/**
+ * Graceful shutdown: stops the cron trigger, rejects new jobs, and waits
+ * for all in-flight jobs to finish (with a 30-second timeout).
+ *
+ * @returns true if all jobs completed, false if the timeout was reached.
+ */
+export async function shutdown(): Promise<boolean> {
+  logger.info('[Scheduler] Shutdown initiated');
+  shuttingDown = true;
+
+  // 1. Stop all cron triggers so no new jobs fire
+  stopAllJobs();
+
+  // 2. Wait for in-flight jobs with a hard timeout
+  const pending = Array.from(inFlightJobs.values());
+  if (pending.length === 0) {
+    logger.info('[Scheduler] No in-flight jobs -- shutdown complete');
+    return true;
+  }
+
+  logger.info(`[Scheduler] Waiting for ${pending.length} in-flight job(s)...`);
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('Shutdown timeout exceeded')), SHUTDOWN_TIMEOUT_MS);
+  });
+
+  try {
+    await Promise.race([Promise.allSettled(pending), timeoutPromise]);
+    logger.info('[Scheduler] All in-flight jobs completed');
+    return true;
+  } catch {
+    logger.warn(`[Scheduler] Shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms -- proceeding anyway`);
+    return false;
+  }
 }

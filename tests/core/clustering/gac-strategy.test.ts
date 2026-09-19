@@ -4,39 +4,12 @@ import {
   findMedoid,
   computeMedoidWithResiduals,
   pruneDiverseCluster,
-  getTaskAdaptiveTheta,
 } from '../../../core/clustering/gac-strategy.js';
 
 // Helper to create a mock memory with embedding
 function makeMemory(id: string, embedding: number[]): any {
   return { id, embedding, content: `Memory ${id}` };
 }
-
-describe('getTaskAdaptiveTheta', () => {
-  test('returns 0.75 for classification task', () => {
-    expect(getTaskAdaptiveTheta('classification')).toBe(0.75);
-  });
-
-  test('returns 0.75 for clustering task', () => {
-    expect(getTaskAdaptiveTheta('clustering')).toBe(0.75);
-  });
-
-  test('returns 0.85 for retrieval task', () => {
-    expect(getTaskAdaptiveTheta('retrieval')).toBe(0.85);
-  });
-
-  test('returns 0.85 for sts task', () => {
-    expect(getTaskAdaptiveTheta('sts')).toBe(0.85);
-  });
-
-  test('returns 0.80 for undefined task', () => {
-    expect(getTaskAdaptiveTheta(undefined)).toBe(0.80);
-  });
-
-  test('returns 0.80 for unknown task', () => {
-    expect(getTaskAdaptiveTheta('unknown' as any)).toBe(0.80);
-  });
-});
 
 describe('selectGACStrategy', () => {
   test('selects centroid for tight, dense cluster', () => {

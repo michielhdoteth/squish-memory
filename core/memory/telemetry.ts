@@ -44,6 +44,37 @@ export interface MemoryTelemetry {
 // In-memory cache for recent retrieval events (flushed periodically)
 const retrievalEvents: RetrievalEvent[] = [];
 const MAX_CACHE_SIZE = 1000;
+const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
+
+let flushIntervalId: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Start the periodic telemetry flush interval.
+ * Safe to call multiple times -- subsequent calls are no-ops.
+ */
+export function startTelemetry(): void {
+  if (flushIntervalId !== null) return;
+  flushIntervalId = setInterval(() => {
+    flushRetrievalEvents().catch(err => {
+      logger.error('Periodic telemetry flush failed', err);
+    });
+  }, FLUSH_INTERVAL_MS);
+  logger.debug('[Telemetry] Periodic flush started', { intervalMs: FLUSH_INTERVAL_MS });
+}
+
+/**
+ * Stop the periodic flush interval and flush any remaining events.
+ * Should be called during graceful shutdown.
+ */
+export async function stopTelemetry(): Promise<void> {
+  if (flushIntervalId !== null) {
+    clearInterval(flushIntervalId);
+    flushIntervalId = null;
+    logger.debug('[Telemetry] Periodic flush stopped');
+  }
+  // Drain remaining events before shutdown
+  await flushRetrievalEvents();
+}
 
 /**
  * Record a retrieval event
@@ -65,6 +96,11 @@ export function recordRetrieval(
     timestamp: new Date(),
   };
   
+  // Auto-start periodic flush on first event if not already running
+  if (flushIntervalId === null) {
+    startTelemetry();
+  }
+
   retrievalEvents.push(event);
   
   // Flush if cache is full

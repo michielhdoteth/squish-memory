@@ -8,6 +8,7 @@
 
 import { config } from '../../../config.js';
 import { logger } from '../../logger.js';
+import { validateOutboundUrl } from '../../lib/url-validator.js';
 import type { LLMProvider, LLMCallOptions } from '../types.js';
 
 const DEFAULT_TIMEOUT_MS = 10000;
@@ -35,6 +36,8 @@ export const openaiProvider: LLMProvider = {
     try {
       // Normalize endpoint — add /v1 path if not present
       const baseUrl = endpoint.endsWith('/v1') ? endpoint : `${endpoint}/v1`;
+
+      validateOutboundUrl(`${baseUrl}/chat/completions`);
 
       // Build messages array
       const messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> = [];

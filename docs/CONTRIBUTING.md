@@ -14,7 +14,7 @@ Thank you for contributing to Squish! This document provides guidelines for deve
 
 ```bash
 # Clone the repository
-git clone https://github.com/4m-labs/squish.git
+git clone https://github.com/michielhdoteth/squish.git
 cd squish
 
 # Install dependencies

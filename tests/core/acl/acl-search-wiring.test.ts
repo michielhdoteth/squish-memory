@@ -13,7 +13,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 let testDataDir: string;
 let savedEnv: Record<string, string | undefined>;
 
-let SquishClient: typeof import('../../../packages/sdk/src/index.js').SquishClient;
+let SquishClient: typeof import('../../../core/runtime/squish-runtime.js').SquishRuntime;
 let setVisibilityRule: typeof import('../../../core/loadout/loadout.js').setVisibilityRule;
 let removeVisibilityRule: typeof import('../../../core/loadout/loadout.js').removeVisibilityRule;
 let getAclLog: typeof import('../../../core/acl/acl-log.js').getAclLog;
@@ -43,11 +43,11 @@ describe('SDK search ACL wiring', () => {
     process.env.SQUISH_DATA_DIR = testDataDir;
     process.env.DATABASE_URL = '';
 
-    const sdkMod = await import('../../../packages/sdk/src/index.js');
+    const sdkMod = await import('../../../core/runtime/squish-runtime.js');
     const loadoutMod = await import('../../../core/loadout/loadout.js');
     const logMod = await import('../../../core/acl/acl-log.js');
     const dbMod = await import('../../../db/index.js');
-    SquishClient = sdkMod.SquishClient;
+    SquishClient = sdkMod.SquishRuntime;
     setVisibilityRule = loadoutMod.setVisibilityRule;
     removeVisibilityRule = loadoutMod.removeVisibilityRule;
     getAclLog = logMod.getAclLog;

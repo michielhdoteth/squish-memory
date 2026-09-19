@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const MCP_INDEX = join(import.meta.dir, "..", "..", "packages", "mcp", "src", "index.ts");
+const MCP_INDEX = join(import.meta.dir, "..", "..", "mcp", "index.ts");
 
 describe("background services graceful degradation", () => {
   it("MCP server source imports scheduler", async () => {
@@ -13,8 +13,8 @@ describe("background services graceful degradation", () => {
     expect(source).toContain("sdkClient.initializeScheduler");
 
     // The scheduler itself lives in the SDK layer
-    const sdkSource = await readFile(join(import.meta.dir, "..", "..", "packages", "sdk", "src", "index.ts"), "utf-8");
-    expect(sdkSource).toContain("core/scheduler/cron-scheduler");
+    const sdkSource = await readFile(join(import.meta.dir, "..", "..", "core", "runtime", "squish-runtime.ts"), "utf-8");
+    expect(sdkSource).toContain("cron-scheduler");
   });
 
   it("server startup does not crash if scheduler throws", async () => {
@@ -46,7 +46,7 @@ describe("background services graceful degradation", () => {
     async () => {
       const rootDir = join(import.meta.dir, "..", "..");
       // Spawn MCP server directly (bypass relay script to avoid initialization hangs)
-      const entry = join(rootDir, "packages", "mcp", "src", "index.ts");
+      const entry = join(rootDir, "mcp", "index.ts");
 
       const tmpDir = await mkdtemp(join(tmpdir(), "squish-bg-degrade-"));
 

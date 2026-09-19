@@ -9,7 +9,7 @@ const TEST_TIMEOUT = 90_000;
 
 function resolveServerCommand(): { command: string; args: string[] } {
   const rootDir = join(import.meta.dir, "..", "..");
-  const entryPath = join(rootDir, "packages", "mcp", "src", "index.ts");
+  const entryPath = join(rootDir, "mcp", "index.ts");
 
   // When tests already run under bun, use the same runtime directly.
   // Probing PATH via execFileSync("where"/"--version") is fragile under
@@ -184,7 +184,7 @@ async function spawnServer(tmpDir: string): Promise<ServerHandle> {
   // Wait for the server to finish booting by polling its stderr for the
   // post-connect banner. A fixed sleep is fragile under full-suite CPU load:
   // cold-starting the MCP server (transpile + schema init) can take >60s.
-  const readyMarker = "Connected via stdio";
+  const readyMarker = "Starting in STDIO mode";
   const bootDeadline = Date.now() + 150_000;
   while (!stderrBuf.includes(readyMarker)) {
     if (Date.now() > bootDeadline) {
@@ -291,7 +291,7 @@ describe("MCP Tool Handlers", () => {
           expect(typeof parsed._raw).toBe("string");
         } else {
           expect(parsed.ok).toBeDefined();
-          expect(parsed.version).toBe("2.0.0");
+          expect(parsed.version).toBe("2.1.0");
         }
       },
       TEST_TIMEOUT

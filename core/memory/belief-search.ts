@@ -43,7 +43,7 @@ import type { SearchResult, SearchInput } from './memories.js';
 import { getDb } from '../../db/index.js';
 import { createDatabaseClient } from '../storage/database.js';
 import { requireProject } from '../../core/projects.js';
-import { getEmbedding, getActiveEmbeddingModelId } from '../../core/embeddings.js';
+import { getEmbedding, activeEmbeddingModel } from '../../core/embeddings.js';
 import { deserializeTags } from './serialization.js';
 import { normalizeTimestamp } from '../lib/utils.js';
 import { cosineSimilarity } from '../utils/vector-operations.js';
@@ -98,7 +98,7 @@ const embeddingCache = new Map<string, { stamp: string; vec: number[] }>();
 function cacheStamp(row: KnowledgeCandidateRow): string {
   const len = row.content?.length ?? 0;
   const head = row.content?.slice(0, 64) ?? '';
-  return `${getActiveEmbeddingModelId()}:${row.updatedAt ?? row.createdAt ?? 0}:${len}:${head}`;
+  return `${activeEmbeddingModel()}:${row.updatedAt ?? row.createdAt ?? 0}:${len}:${head}`;
 }
 
 async function cachedEmbedding(row: KnowledgeCandidateRow): Promise<number[] | null> {

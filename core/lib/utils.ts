@@ -1,8 +1,7 @@
 /**
  * Shared utility functions for the squish codebase
  */
-
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import { toSqliteJson } from '../memory/serialization.js';
 import { encodeEmbeddingBlob, normalizeForStorage } from './embedding-codec.js';
 
@@ -64,7 +63,7 @@ export async function withDatabaseErrorHandling<T>(
     return await operation();
   } catch (dbError: any) {
     if (isDatabaseUnavailableError(dbError)) {
-      throw new McpError(ErrorCode.InternalError, errorMessage);
+      throw new ProtocolError(ProtocolErrorCode.InternalError, errorMessage);
     }
     throw dbError;
   }
@@ -187,7 +186,7 @@ export function filterByDateRange<T extends { createdAt?: string | null }>(
   });
 }
 
-export type VisibilityScope = 'private' | 'project';
+export type VisibilityScope = 'private' | 'project' | 'team';
 
 export function normalizeVisibilityScopes(
   visibilityScope?: VisibilityScope | VisibilityScope[] | null

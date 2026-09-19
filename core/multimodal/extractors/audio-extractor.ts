@@ -8,6 +8,7 @@
 import { readFile } from 'fs/promises';
 import { logger } from '../../logger.js';
 import { config } from '../../../config.js';
+import { validateOutboundUrl } from '../../lib/url-validator.js';
 import type { MediaExtractor, ProcessedMedia } from '../types.js';
 
 /** MIME types this extractor can handle */
@@ -39,16 +40,15 @@ async function transcribeWithWhisper(
     formData.append('model', 'whisper-1');
     formData.append('response_format', 'text');
 
-    const response = await fetch(
-      `${config.openAiApiUrl.replace('/embeddings', '/audio/transcriptions')}`,
-      {
+    const whisperUrl = `${config.openAiApiUrl.replace('/embeddings', '/audio/transcriptions')}`;
+    validateOutboundUrl(whisperUrl);
+    const response = await fetch(whisperUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${config.openAiApiKey}`,
         },
         body: formData,
-      },
-    );
+    });
 
     if (!response.ok) {
       logger.debug(`Whisper transcription failed: ${response.status}`);

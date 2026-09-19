@@ -39,7 +39,7 @@ if (isHealth) {
 
 const runtime = resolveRuntimeLaunch({
   rootDir,
-  entryRelativePath: 'packages/mcp/src/index.ts',
+  entryRelativePath: 'mcp/index.ts',
   extraArgs: mcpArgs,
 });
 

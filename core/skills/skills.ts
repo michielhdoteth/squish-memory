@@ -1,8 +1,6 @@
 import { eq, and, desc, asc } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { getDb } from '../../db/index.js';
-import { getSchema } from '../../db/schema.js';
-import { createDatabaseClient } from '../storage/database.js';
+import { getDbClient } from '../lib/db-client.js';
 import { logger } from '../logger.js';
 
 // ============================================================================
@@ -196,8 +194,7 @@ function parseJsonField(value: any): any {
 // ============================================================================
 
 export async function createSkill(input: CreateSkillInput): Promise<SkillRecord> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const id = randomUUID();
   const now = new Date();
 
@@ -246,15 +243,13 @@ export async function createSkill(input: CreateSkillInput): Promise<SkillRecord>
 }
 
 export async function getSkillById(id: string): Promise<SkillRecord | null> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const rows = await db.select().from(schema.skills).where(eq(schema.skills.id, id)).limit(1);
   return rows[0] ? normalizeSkill(rows[0]) : null;
 }
 
 export async function getSkillByName(projectId: string | null, name: string): Promise<SkillRecord | null> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const conditions = [eq(schema.skills.name, name)];
   if (projectId) {
     conditions.push(eq(schema.skills.projectId, projectId));
@@ -275,8 +270,7 @@ export async function listSkills(options: {
   limit?: number;
   offset?: number;
 } = {}): Promise<SkillRecord[]> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const conditions: any[] = [];
 
   if (options.projectId) conditions.push(eq(schema.skills.projectId, options.projectId));
@@ -298,8 +292,7 @@ export async function listSkills(options: {
 }
 
 export async function updateSkill(id: string, input: UpdateSkillInput): Promise<SkillRecord> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const now = new Date();
 
   const existing = await getSkillById(id);
@@ -353,8 +346,7 @@ export async function updateSkill(id: string, input: UpdateSkillInput): Promise<
 }
 
 export async function deleteSkill(id: string): Promise<void> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   await db.delete(schema.skills).where(eq(schema.skills.id, id));
   logger.info(`Deleted skill: ${id}`);
 }
@@ -370,8 +362,7 @@ export async function requireSkill(id: string): Promise<SkillRecord> {
 // ============================================================================
 
 export async function getSkillVersions(skillId: string): Promise<SkillVersionRecord[]> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const rows = await db
     .select()
     .from(schema.skillVersions)
@@ -381,8 +372,7 @@ export async function getSkillVersions(skillId: string): Promise<SkillVersionRec
 }
 
 export async function getSkillVersion(skillId: string, version: number): Promise<SkillVersionRecord | null> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const rows = await db
     .select()
     .from(schema.skillVersions)
@@ -400,8 +390,7 @@ export async function assignSkill(
   agentId: string,
   options: { priority?: number; contextFilter?: Record<string, unknown>; assignedBy?: string } = {},
 ): Promise<SkillAssignmentRecord> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const id = randomUUID();
 
   await db.insert(schema.skillAssignments).values({
@@ -421,16 +410,14 @@ export async function assignSkill(
 }
 
 export async function unassignSkill(skillId: string, agentId: string): Promise<void> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   await db
     .delete(schema.skillAssignments)
     .where(and(eq(schema.skillAssignments.skillId, skillId), eq(schema.skillAssignments.agentId, agentId)));
 }
 
 export async function getAgentSkills(agentId: string): Promise<{ skill: SkillRecord; assignment: SkillAssignmentRecord }[]> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
 
   const assignments = await db
     .select()
@@ -456,8 +443,7 @@ export async function recordSkillUsage(
   skillId: string,
   success: boolean,
 ): Promise<void> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const now = new Date();
 
   const updates: Record<string, any> = {
@@ -497,8 +483,7 @@ export async function searchSkills(
   query: string,
   options: { projectId?: string; limit?: number } = {},
 ): Promise<SkillRecord[]> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
 
   // Simple LIKE search - can be enhanced with FTS5 later
   const conditions: any[] = [];

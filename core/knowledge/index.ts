@@ -80,11 +80,11 @@ export {
 // ─── Extractor ───────────────────────────────────────────────────────────────
 export {
   extractBeliefs,
-  extractStrategiesFromConversation,
-  extractStrategiesFromLearningEntry,
-  extractStrategiesFromBeliefEntry,
-  extractKnowledgeFromMemory,
-  extractKnowledgeFromLearning,
+  extractConversationStrats,
+  extractLearningStrats,
+  extractBeliefStrats,
+  knowledgeFromMemory,
+  knowledgeFromLearning,
 } from './extractor.js';
 export type { ExtractionOptions, ExtractedKnowledge } from './extractor.js';
 

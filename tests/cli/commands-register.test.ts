@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 describe('CLI command registration', () => {
   test('registers all core commands', async () => {
-    const { createProgram } = await import('../../packages/cli/src/program.ts');
+    const { createProgram } = await import('../../cli/program.ts');
     const program = createProgram();
     const commandNames = program.commands.map((command) => command.name());
 

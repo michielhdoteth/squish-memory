@@ -13,7 +13,7 @@ import { clampLimit } from '../lib/utils.js';
 import { getDbClient } from '../lib/db-client.js';
 import { hybridSearch as hybridSearchImpl } from './hybrid-search.js';
 import { autoRoute } from '../retrieval/query-router.js';
-import { normalizeMemory, getOrCreateUser } from './memory-crud.js';
+import { normalizeMemoryRecord, getOrCreateUser } from './memory-crud.js';
 import { applyAclReadGate, buildAutoAclContext } from '../acl/read-gate.js';
 import type { SearchInput, SearchResult } from './memory-types.js';
 import { meetsSemanticThreshold } from '../scoring/three-field.js';
@@ -74,7 +74,7 @@ export async function search(input: SearchInput): Promise<SearchResult[]> {
   // skips entirely (zero cost) when no rules are defined.
   // Batch 6b: belief-corpus rows (unified knowledge table) gate under asset
   // type 'knowledge' - rules for them are authored per knowledge-row id.
-  const acl = input.acl ?? (await buildAutoAclContext(input.user));
+  const acl = input.acl ?? (await buildAutoAclContext(input.user, input.teamId ? [input.teamId] : undefined));
   dbResults = await applyAclReadGate(
     dbResults,
     acl,
@@ -133,7 +133,7 @@ async function fallbackSearchByRecency(input: SearchInput, limit: number): Promi
       : await query.orderBy(desc(schema.memories.createdAt)).limit(limit * 2);
 
     let results = rows.map((row: any): SearchResult => ({
-      ...normalizeMemory(row),
+      ...normalizeMemoryRecord(row),
       similarity: 0,
     }));
     return results;

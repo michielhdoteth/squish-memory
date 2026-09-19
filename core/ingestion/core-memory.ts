@@ -6,9 +6,7 @@
  */
 
 import { eq, and, sql } from 'drizzle-orm';
-import { getDb } from '../../db/index.js';
-import { getSchema, type SchemaModule } from '../../db/schema.js';
-import { createDatabaseClient } from '../storage/database.js';
+import { getDbClient, type DbClient } from '../lib/db-client.js';
 import config from '../../config.js';
 import { estimateTokens } from '../context/context-window.js';
 
@@ -29,8 +27,7 @@ interface CoreMemoryContent {
  * Initialize core memory for a project
  */
 export async function initializeCoreMemory(projectId: string, userId?: string): Promise<void> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const { coreMemory } = schema;
 
   const sections: CoreMemorySection[] = ['persona', 'user_info', 'project_context', 'working_notes'];
@@ -64,8 +61,7 @@ export async function initializeCoreMemory(projectId: string, userId?: string): 
  * Get all core memory sections for a project
  */
 export async function getCoreMemory(projectId: string): Promise<CoreMemoryContent> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const { coreMemory } = schema;
 
   const sections = await db
@@ -95,8 +91,7 @@ export async function getCoreMemorySection(
   projectId: string,
   section: CoreMemorySection
 ): Promise<string> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const { coreMemory } = schema;
 
   const result = await db
@@ -141,8 +136,7 @@ export async function editCoreMemorySection(
     };
   }
 
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const { coreMemory } = schema;
 
   await db
@@ -208,8 +202,7 @@ async function getTotalCoreMemorySize(
   excludeSection?: CoreMemorySection,
   newSectionSize?: number
 ): Promise<number> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const { coreMemory } = schema;
 
   const sections = await db
@@ -247,8 +240,7 @@ export async function getCoreMemoryStats(projectId: string): Promise<{
     updatedAt: Date;
   }>;
 }> {
-  const db = createDatabaseClient(await getDb());
-  const schema = await getSchema();
+  const { db, schema } = await getDbClient();
   const { coreMemory } = schema;
 
   const sections = await db

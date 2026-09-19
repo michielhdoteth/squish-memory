@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 
-const MCP_SRC = join(process.cwd(), "packages", "mcp", "src", "index.ts");
+const MCP_SRC = join(process.cwd(), "mcp", "index.ts");
 
 function readSource(): string {
   return readFileSync(MCP_SRC, "utf8");

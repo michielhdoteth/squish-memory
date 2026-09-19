@@ -1,12 +1,12 @@
 {
   "name": "squish-memory",
-  "version": "2.1.0",
-  "author": "4m-labs",
+  "version": "2.0.0",
+  "author": "4M Labs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/michielhdoteth/squish.git"
+    "url": "https://github.com/4m-labs/squish.git"
   },
-  "mcpName": "io.github.michielhdoteth/squish",
+  "mcpName": "io.github.4m-labs/squish",
   "main": "config.ts",
   "dependencies": {
     "@clack/prompts": "^1.2.0",
@@ -24,8 +24,12 @@
     "picocolors": "^1.0.0",
     "redis": "^6.1.0",
     "sql.js": "^1.14.1",
+    "stemmer": "^2.0.1",
     "tsx": "^4.21.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -44,9 +48,9 @@
     "squish-mcp": "bin/squish-mcp.mjs"
   },
   "bugs": {
-    "url": "https://github.com/michielhdoteth/squish/issues"
+    "url": "https://github.com/michielhdoteth/squish-memory/issues"
   },
-  "description": "AI memory system for coding agents. Local-first MCP runtime with connectors (Google Drive, GitHub, Slack, Notion), knowledge graphs, decay scoring, and multi-tier deployment. Free locally, paid Cloud for sync and teams.",
+  "description": "Local-first memory runtime for AI coding agents. One package, three interfaces: CLI, MCP server, and desktop. Hybrid search, knowledge graphs, decay scoring, and multi-tier storage.",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -71,14 +75,12 @@
     "!plugin/**/db/**",
     "!plugin/**/*.map",
     "!plugin/**/*.d.ts.map",
-    "packages",
-    "!packages/**/*.test.ts",
-    "!packages/**/*.test.js",
-    "!packages/**/*.map",
-    "!packages/**/*.d.ts.map",
-    "webui",
-    "!webui/**/*.map",
-    "!webui/**/*.d.ts.map",
+    "cli",
+    "!cli/**/*.test.ts",
+    "!cli/**/*.test.js",
+    "mcp",
+    "!mcp/**/*.test.ts",
+    "!mcp/**/*.test.js",
     "mcp.json.example",
     ".env.example",
     "LICENSE",
@@ -97,11 +99,6 @@
     "mcp",
     "memory",
     "knowledge-graph",
-    "connectors",
-    "google-drive",
-    "github",
-    "slack",
-    "notion",
     "local-first",
     "sqlite",
     "postgres",
@@ -128,17 +125,19 @@
     "clean": "rm -rf dist && rm -f *.log",
     "build": "node -e \"console.log('No build step required. Use npm run start or npm run mcp.')\"",
     "start": "tsx core/index.ts",
-    "mcp": "tsx packages/mcp/src/index.ts",
+    "mcp": "tsx mcp/index.ts",
     "dev": "tsx --watch core/index.ts",
-    "dev:mcp": "tsx --watch packages/mcp/src/index.ts",
+    "dev:mcp": "tsx --watch mcp/index.ts",
     "test": "bun test --isolate",
-    "eval": "bun tests/golden/run-eval.ts",
+    "bench": "bun bench/index.ts",
+    "bench:retrieval": "bun bench/runners/retrieval.ts",
+    "bench:rag": "bun bench/runners/rag.ts",
+    "bench:locomo": "bun bench/runners/locomo.ts",
+    "bench:resurrection": "bun bench/runners/resurrection.ts",
+    "eval": "bun bench/runners/retrieval.ts",
     "bench:memory": "bun scripts/run-memory-bench.ts",
     "report:calibration": "bun scripts/calibration-report.ts",
-    "verify:mcp": "tsx packages/mcp/src/index.ts --health"
+    "verify:mcp": "tsx mcp/index.ts --health"
   },
-  "type": "module",
-  "workspaces": [
-    "packages/*"
-  ]
+  "type": "module"
 }

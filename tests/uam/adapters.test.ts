@@ -38,7 +38,7 @@ describe('UAM Adapter Layer', () => {
   });
   
   test('MCP server module should exist', () => {
-    const mcpPath = join(baseDir, 'packages', 'mcp', 'src', 'index.ts');
+    const mcpPath = join(baseDir, 'mcp', 'index.ts');
     expect(existsSync(mcpPath)).toBe(true);
   });
   

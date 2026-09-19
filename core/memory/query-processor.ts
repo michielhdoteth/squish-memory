@@ -51,7 +51,7 @@ const ENTITY_STOP_WORDS = new Set([
  * Delegates synonym expansion to `retrieval/query-expansion.ts` and adds
  * entity extraction and a synonym map for backward compatibility.
  */
-export function expandQuery(query: string): ProcessedQuery {
+export function expandQueryWithEntities(query: string): ProcessedQuery {
   const synonyms = new Map<string, string[]>();
 
   // Use the canonical retrieval expansion for the expanded query list

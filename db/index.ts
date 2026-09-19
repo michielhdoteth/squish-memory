@@ -67,7 +67,12 @@ export function resetDb(): void {
 }
 
 export async function closeAllDbs(): Promise<void> {
-  for (const [cacheKey, database] of dbInstances.entries()) {
+  const instances = new Map(dbInstances);
+  dbInstances.clear(); // Clear immediately to prevent concurrent calls from double-closing
+  dbInitPromises.clear();
+  clearSchemaCache();
+
+  for (const [cacheKey, database] of instances) {
     try {
       const client = (database as any)?.$client ?? database;
       if (client && typeof client.close === 'function') {
@@ -76,10 +81,7 @@ export async function closeAllDbs(): Promise<void> {
     } catch (error) {
       logger.error('Failed to close database connection', error);
     }
-    dbInstances.delete(cacheKey);
   }
-  dbInitPromises.clear();
-  clearSchemaCache();
 }
 
 export async function checkDatabaseHealth(): Promise<boolean> {
@@ -93,13 +95,16 @@ export async function checkDatabaseHealth(): Promise<boolean> {
       dbClient.exec('SELECT 1');
     } else if (dbClient && typeof dbClient.prepare === 'function') {
       const statement = dbClient.prepare('SELECT 1');
-      if (typeof statement.get === 'function') {
-        statement.get();
-      } else if (typeof statement.step === 'function') {
-        statement.step();
-      }
-      if (typeof statement.free === 'function') {
-        statement.free();
+      try {
+        if (typeof statement.get === 'function') {
+          statement.get();
+        } else if (typeof statement.step === 'function') {
+          statement.step();
+        }
+      } finally {
+        if (typeof statement.free === 'function') {
+          statement.free();
+        }
       }
     }
     return true;

@@ -42,13 +42,14 @@ export const memories = sqliteTable(
     id: text('id').primaryKey().$default(() => crypto.randomUUID()),
     projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    teamId: text('team_id').references(() => teams.id, { onDelete: 'set null' }),
 
     // Content
-    type: text('type').notNull().$type<'observation' | 'fact' | 'decision' | 'context' | 'preference'>(),
+    type: text('type').notNull().$type<'observation' | 'fact' | 'decision' | 'context' | 'preference' | 'note'>(),
     content: text('content').notNull(),
     summary: text('summary'),
 
-    // Embeddings stored as JSON string (not for semantic search in SQLite)
+    // Embeddings stored as JSON string (for vector similarity search)
     embeddingJson: text('embedding_json'),
 
     // v0.2.0: Vector embedding for local search
@@ -143,7 +144,7 @@ export const memories = sqliteTable(
     // v0.3.0: Agent-Aware Memory
     agentId: text('agent_id'),
     agentRole: text('agent_role'),
-    visibilityScope: text('visibility_scope').$type<'private' | 'project'>().default('private'),
+    visibilityScope: text('visibility_scope').$type<'private' | 'project' | 'team'>().default('private'),
 
     // v0.3.0: Memory Governance
     isProtected: integer('is_protected', { mode: 'boolean' }).default(false),
@@ -236,6 +237,8 @@ export const memories = sqliteTable(
       table.visibilityScope,
       table.isActive
     ),
+    // Team memory retrieval optimization
+    index('memories_team_idx').on(table.teamId),
   ],
 ) as any;
 
@@ -722,7 +725,7 @@ export const sessionSummaries = sqliteTable('session_summaries', {
 export const memorySnapshots = sqliteTable('memory_snapshots', {
   id: text('id').primaryKey().$default(() => crypto.randomUUID()),
   memoryId: text('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
-  snapshotType: text('snapshot_type').notNull().$type<'before_update' | 'after_update' | 'periodic'>(),
+  snapshotType: text('snapshot_type').notNull().$type<'before_update' | 'after_update' | 'periodic' | 'correction'>(),
   content: text('content').notNull(),
   metadata: text('metadata').$type<Record<string, unknown>>(),
   diff: text('diff').$type<Record<string, unknown>>(),
@@ -787,6 +790,234 @@ export const contextSessions = sqliteTable('context_sessions', {
   index('context_sessions_project_idx').on(table.projectId),
   index('context_sessions_created_idx').on(table.createdAt),
 ]);
+
+// =============================================================================
+// Knowledge System (v2.0.0) — Unified table replacing memories, beliefs, strategies
+// =============================================================================
+
+/**
+ * Knowledge - single source of truth for all knowledge items.
+ * knowledge_kind discriminates: 'memory' | 'belief' | 'strategy'.
+ * Fields are nullable based on kind (belief fields only populated for beliefs, etc.).
+ */
+export const knowledge: any = sqliteTable(
+  'knowledge',
+  {
+    id: text('id').primaryKey().$default(() => crypto.randomUUID()),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    agentId: text('agent_id'),
+    sessionId: text('session_id'),
+
+    // Classification
+    knowledgeKind: text('knowledge_kind').notNull().$type<'memory' | 'belief' | 'strategy'>(),
+    knowledgeType: text('knowledge_type').notNull(),
+
+    // Content
+    content: text('content').notNull(),
+    summary: text('summary'),
+
+    // Embeddings (multi-model)
+    embeddingJson: text('embedding_json'),
+    embedding: blob('embedding'),
+    embeddingBlob: blob('embedding_blob'),
+    embeddingModel: text('embedding_model'),
+    embeddingDim: integer('embedding_dim'),
+
+    // Confidence & importance
+    confidence: real('confidence').default(0.5),
+    confidenceLevel: text('confidence_level').$type<'certain' | 'speculative' | 'outdated'>().default('certain'),
+    importanceScore: real('importance_score').default(0.5),
+    importanceDecayRate: real('importance_decay_rate').default(30),
+    lastImportanceRecalc: integer('last_importance_recalc', { mode: 'timestamp' }),
+
+    // Belief-specific
+    normalizedKey: text('normalized_key'),
+    reason: text('reason'),
+    evidenceSummary: text('evidence_summary'),
+    evidence: text('evidence').$type<Record<string, unknown>>(),
+    lastConfirmedAt: integer('last_confirmed_at', { mode: 'timestamp' }),
+    sourceCount: integer('source_count').default(1),
+
+    // Strategy-specific
+    title: text('title'),
+    description: text('description'),
+    steps: text('steps'),
+    successCriteria: text('success_criteria'),
+    failureIndicators: text('failure_indicators'),
+    usageCount: integer('usage_count').default(0),
+    successCount: integer('success_count').default(0),
+    failureCount: integer('failure_count').default(0),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+    lastSuccessAt: integer('last_success_at', { mode: 'timestamp' }),
+    lastFailureAt: integer('last_failure_at', { mode: 'timestamp' }),
+
+    // Status & lifecycle
+    status: text('status').default('active'),
+    isActive: integer('is_active', { mode: 'boolean' }).default(true),
+    sector: text('sector').default('general'),
+    tier: text('tier').default('episodic'),
+    version: integer('version').default(1),
+
+    // Self-referencing relationships
+    supersededBy: text('superseded_by'),
+    contradictsId: text('contradicts_id'),
+    informedById: text('informed_by_id'),
+
+    // Tags & metadata
+    tags: text('tags').$type<string[]>(),
+    metadata: text('metadata').$type<Record<string, unknown>>(),
+
+    // Place routing
+    placeId: text('place_id'),
+    primaryPlace: text('primary_place'),
+
+    // Privacy & governance
+    isPrivate: integer('is_private', { mode: 'boolean' }).default(false),
+    isProtected: integer('is_protected', { mode: 'boolean' }).default(false),
+    isPinned: integer('is_pinned', { mode: 'boolean' }).default(false),
+    isImmutable: integer('is_immutable', { mode: 'boolean' }).default(false),
+    writeScope: text('write_scope').$type<string[]>(),
+    readScope: text('read_scope').$type<string[]>(),
+
+    // Visibility
+    scope: text('scope').$type<'company' | 'employee'>().default('company'),
+    visibilityScope: text('visibility_scope').$type<'private' | 'project' | 'team'>().default('private'),
+
+    // Provenance
+    actorUser: text('actor_user'),
+    actorAgent: text('actor_agent'),
+    agentRole: text('agent_role'),
+    triggeredBy: text('triggered_by'),
+    captureReason: text('capture_reason'),
+
+    // Temporal facts
+    validFrom: integer('valid_from', { mode: 'timestamp' }),
+    validTo: integer('valid_to', { mode: 'timestamp' }),
+    recordedAt: integer('recorded_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+
+    // Access tracking
+    accessCount: integer('access_count').default(0),
+    lastAccessedAt: integer('last_accessed_at', { mode: 'timestamp' }),
+
+    // Merge tracking
+    isMerged: integer('is_merged', { mode: 'boolean' }).default(false),
+    mergedIntoId: text('merged_into_id'),
+    mergedAt: integer('merged_at', { mode: 'timestamp' }),
+
+    // Consolidation
+    consolidatedFrom: text('consolidated_from').$type<string[]>(),
+    consolidatedAt: integer('consolidated_at', { mode: 'timestamp' }),
+    isConsolidated: integer('is_consolidated', { mode: 'boolean' }).default(false),
+
+    // Encryption
+    encryptedContent: text('encrypted_content'),
+    encryptionNonce: text('encryption_nonce'),
+    isEncrypted: integer('is_encrypted', { mode: 'boolean' }).default(false),
+
+    // Retrieval optimization
+    compressionLevel: integer('compression_level'),
+    relevanceScore: integer('relevance_score').default(50),
+    tokensEstimate: integer('tokens_estimate').default(0),
+
+    // Decay system
+    decayRate: integer('decay_rate').default(30),
+    coactivationScore: integer('coactivation_score').default(0),
+    lastDecayAt: integer('last_decay_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+
+    // Layer tracking
+    hasL0Abstract: integer('has_l0_abstract', { mode: 'boolean' }).default(false),
+    hasL1Overview: integer('has_l1_overview', { mode: 'boolean' }).default(false),
+    lastLayerUpdate: integer('last_layer_update', { mode: 'timestamp' }),
+
+    // Multimodal
+    mediaType: text('media_type'),
+    mediaPath: text('media_path'),
+    mediaMetadata: text('media_metadata'),
+
+    // Organization
+    namespaceId: text('namespace_id'),
+    namespacePath: text('namespace_path'),
+
+    // Cloud-specific
+    employeeId: text('employee_id'),
+
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  },
+  (table): any => [
+    index('knowledge_project_idx').on(table.projectId),
+    index('knowledge_kind_idx').on(table.knowledgeKind),
+    index('knowledge_type_idx').on(table.knowledgeType),
+    index('knowledge_status_idx').on(table.status),
+    index('knowledge_session_idx').on(table.sessionId),
+    index('knowledge_user_idx').on(table.userId),
+    index('knowledge_agent_idx').on(table.agentId),
+    index('knowledge_confidence_idx').on(table.confidence),
+    index('knowledge_active_idx').on(table.isActive),
+    index('knowledge_created_idx').on(table.createdAt),
+    index('knowledge_sector_idx').on(table.sector),
+    index('knowledge_tier_idx').on(table.tier),
+    index('knowledge_project_kind_idx').on(table.projectId, table.knowledgeKind),
+    index('knowledge_project_status_idx').on(table.projectId, table.status),
+    index('knowledge_normalized_key_idx').on(table.normalizedKey),
+    index('knowledge_duplicate_detection_idx').on(
+      table.projectId,
+      table.isMerged,
+      table.isActive
+    ),
+    index('knowledge_eviction_idx').on(
+      table.projectId,
+      table.tier,
+      table.relevanceScore,
+      table.createdAt
+    ),
+    index('knowledge_decay_idx').on(
+      table.sector,
+      table.lastDecayAt,
+      table.isProtected
+    ),
+    index('knowledge_temporal_idx').on(
+      table.projectId,
+      table.validFrom,
+      table.validTo
+    ),
+    index('knowledge_agent_visibility_idx').on(
+      table.agentId,
+      table.visibilityScope,
+      table.isActive
+    ),
+  ],
+) as any;
+
+/**
+ * Knowledge Edges - universal relationship table (v2.0.0).
+ * Replaces: belief_edges, strategy_edges, strategy_belief_edges,
+ *           entity_relations, memory_places (as edge type).
+ * Polymorphic via from_kind/to_kind: 'knowledge' | 'entity' | 'place'.
+ */
+export const knowledgeEdges = sqliteTable(
+  'knowledge_edges',
+  {
+    id: text('id').primaryKey().$default(() => crypto.randomUUID()),
+    fromId: text('from_id').notNull(),
+    fromKind: text('from_kind').notNull().$type<'knowledge' | 'entity' | 'place'>(),
+    toId: text('to_id').notNull(),
+    toKind: text('to_kind').notNull().$type<'knowledge' | 'entity' | 'place'>(),
+    edgeType: text('edge_type').notNull(),
+    weight: real('weight').default(1.0),
+    metadata: text('metadata').$type<Record<string, unknown>>(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  },
+  (table) => [
+    index('knowledge_edges_from_idx').on(table.fromId, table.fromKind),
+    index('knowledge_edges_to_idx').on(table.toId, table.toKind),
+    index('knowledge_edges_type_idx').on(table.edgeType),
+    index('knowledge_edges_from_kind_idx').on(table.fromKind),
+    index('knowledge_edges_to_kind_idx').on(table.toKind),
+    unique('knowledge_edges_unique').on(table.fromId, table.fromKind, table.toId, table.toKind, table.edgeType),
+  ],
+);
 
 /**
  * Agent Session Cache - Batch 7
@@ -937,6 +1168,12 @@ export type NewLightweightMemoryIndex = typeof lightweightMemoryIndices.$inferIn
 
 export type ContextPagingSession = typeof contextPagingSessions.$inferSelect;
 export type NewContextPagingSession = typeof contextPagingSessions.$inferInsert;
+
+// Knowledge System type exports
+export type Knowledge = typeof knowledge.$inferSelect;
+export type NewKnowledge = typeof knowledge.$inferInsert;
+export type KnowledgeEdge = typeof knowledgeEdges.$inferSelect;
+export type NewKnowledgeEdge = typeof knowledgeEdges.$inferInsert;
 
 // Memory Editing Tables (SQLite)
 // ============================================================================
@@ -1275,10 +1512,6 @@ export const skillMemoryLinks = sqliteTable('skill_memory_links', {
   index('skill_memory_links_memory_idx').on(table.memoryId),
   unique('skill_memory_links_unique').on(table.skillId, table.memoryId),
 ]);
-
-// Wiki System (v2.1.0) REMOVED in Batch 8 - db-only memory.
-// Legacy wiki_pages/wiki_links/wiki_page_versions rows are migrated into
-// memories (tagged 'wiki-origin') by db/migrations/wiki-to-memory.ts.
 
 // Agent Loadout & Visibility (v2.1.0)
 // ============================================================================

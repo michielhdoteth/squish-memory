@@ -149,7 +149,9 @@ export async function runBatch6bBackfill(
     for (;;) {
       const rows = selectPageStmt.all(lastId) as BackfillRow[];
       if (rows.length === 0) break;
-      lastId = rows[rows.length - 1].id;
+      const lastRow = rows[rows.length - 1];
+      if (!lastRow) break;
+      lastId = lastRow.id;
 
       let batchChanged = 0;
       if (!dryRun) {
@@ -204,7 +206,9 @@ export async function runBatch6bBackfill(
       for (;;) {
         const rows = kSelectPageStmt.all(lastId) as KnowledgeBackfillRow[];
         if (rows.length === 0) break;
-        lastId = rows[rows.length - 1].id;
+        const lastRow = rows[rows.length - 1];
+        if (!lastRow) break;
+        lastId = lastRow.id;
 
         let batchChanged = 0;
         if (!dryRun) {

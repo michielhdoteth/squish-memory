@@ -4,7 +4,7 @@
 
 ### Summary
 
-Multimodal ingestion, LLM cross-connection consolidation, and enhanced 7-tool MCP surface.
+Multimodal ingestion, LLM cross-connection consolidation, and enhanced 15-tool (+1 gated) MCP surface.
 
 ### Highlights
 
@@ -75,7 +75,7 @@ SEO and AI search optimization improvements for squishplugin.dev. Pricing docume
 
 ### Summary
 
-Advanced retrieval pipeline, sleep-time consolidation, and repo security hardening. MCP tool surface simplified from 17 to 7 tools.
+Advanced retrieval pipeline, sleep-time consolidation, and repo security hardening. MCP tool surface expanded from 7 to 15 tools (+1 gated).
 
 ### Highlights
 
@@ -99,10 +99,10 @@ Advanced retrieval pipeline, sleep-time consolidation, and repo security hardeni
 ### User-Facing Impact
 
 #### CLI
-- No new commands; 7-tool MCP surface simplified
+- 15-tool (+1 gated) MCP surface
 
 #### MCP
-- Simplified from 17 tools to 7: remember, recall, forget, link, context, stats, inspect
+- Expanded from 7 to 15 tools (+1 gated): remember, recall, forget, link, context, stats, inspect, skill, loadout, extract, feedback, places, sessions, tier, dedup
 - Session hooks auto-wire on server init (no agent-callable tools needed)
 - Strategy system integrated into recall, remember, and auto-load
 

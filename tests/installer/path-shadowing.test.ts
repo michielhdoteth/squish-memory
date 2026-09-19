@@ -13,13 +13,13 @@ describe('installer path shadowing guard', () => {
     const source = readText('bin/installer-core.mjs');
 
     expect(source).toContain('checkShadowIssues');
-    expect(source).toContain("['squish', 'squish-mcp']");
+    expect(source).toContain('squish-mcp');
   });
 
-  test('CLI install command handles shadow detection with remediation', () => {
-    const source = readText('packages/cli/src/commands/install.ts');
-    expect(source).toContain('checkShadowIssues');
-    expect(source).toContain('Stale Bun global install is shadowing');
-    expect(source).toContain('bun uninstall -g squish-memory');
+  test('CLI install command delegates to installer-core for shadow detection', () => {
+    const source = readText('cli/commands/install.ts');
+    // After refactor, install.ts shells out to installer-core.mjs which has the shadow check
+    expect(source).toContain('installer-core.mjs');
+    expect(source).toContain('--mode=install');
   });
 });

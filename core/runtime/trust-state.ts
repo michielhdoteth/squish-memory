@@ -1,6 +1,6 @@
 import { getDbClient } from '../lib/db-client.js';
 import { sql } from 'drizzle-orm';
-import { probeSchemaHealth } from '../../db/schema-health.js';
+import { probeSchemaHealth } from '../../db/schema-probe.js';
 import { getRecent } from '../memory/memories.js';
 import { getMemoryStats } from '../memory/stats.js';
 import { explainMemory } from '../memory/explain.js';

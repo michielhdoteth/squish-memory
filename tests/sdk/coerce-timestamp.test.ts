@@ -12,7 +12,7 @@
  */
 
 import { describe, test, expect } from 'bun:test';
-import { coerceTimestamp } from '../../packages/sdk/src/index.js';
+import { coerceTimestamp } from '../../core/runtime/squish-runtime.js';
 
 describe('coerceTimestamp (SDK mapper hardening)', () => {
   test('epoch seconds and milliseconds both coerce', () => {

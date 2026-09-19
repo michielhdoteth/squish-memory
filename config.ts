@@ -22,7 +22,7 @@ const DECAY_ENGINES = ['sector', 'ebbinghaus'] as const;
  * rows - operators of very large corpora should set SQUISH_VECTOR_SCAN=recency.
  * Benchmark: scripts/bench-vector-scan.ts
  */
-const VECTOR_SCAN_DEFAULT: 'recency' | 'full' = 'full';
+const VECTOR_SCAN_DEFAULT: 'recency' | 'full' = 'recency';
 
 function loadSettings(): Settings {
   const settingsPath = join(__dirname, 'config', 'settings.json');

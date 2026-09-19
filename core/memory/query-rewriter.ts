@@ -3,7 +3,7 @@
 import { logger } from '../logger.js';
 import { config } from '../../config.js';
 import { formatContextForLLM, type ContextMessage } from './context-collector.js';
-import { expandQuery } from './query-processor.js';
+import { expandQueryWithEntities } from './query-processor.js';
 
 export interface RewriteResult {
   original: string;
@@ -50,7 +50,7 @@ export async function rewriteQuery(
   }
 
   if (config.queryRewritingFallbackEnabled) {
-    const expanded = expandQuery(query);
+    const expanded = expandQueryWithEntities(query);
     return {
       original: query,
       rewritten: expanded.expanded[0] || query,

@@ -4,8 +4,7 @@
  */
 
 import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
-import { getDb } from '../db/index.js';
-import { getSchema } from '../db/schema.js';
+import { getDbClient } from './lib/db-client.js';
 import { logger } from './logger.js';
 
 export type AssociationType = 'co_occurred' | 'supersedes' | 'contradicts' | 'supports' | 'relates_to' | 'duplicate' | 'merged' | 'updates' | 'extends' | 'derives';
@@ -28,9 +27,25 @@ export async function createAssociation(
   weight: number = 1,
   confidence?: { tag: AssociationConfidence; score: number }
 ): Promise<void> {
+  // Safety: reject self-links
+  if (fromMemoryId === toMemoryId) {
+    logger.debug(`[Associations] Rejected self-link for memory ${fromMemoryId}`);
+    return;
+  }
+
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
+
+    // Safety: cap fan-out at 50 associations per memory
+    const existingCount = await (db as any)
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.memoryAssociations)
+      .where(eq(schema.memoryAssociations.fromMemoryId, fromMemoryId));
+
+    if ((existingCount[0]?.count ?? 0) >= 50) {
+      logger.debug(`[Associations] Fan-out cap reached for memory ${fromMemoryId}, skipping`);
+      return;
+    }
 
     // Check if association already exists
     const existing = await (db as any)
@@ -90,8 +105,7 @@ export async function autoLinkByEntities(
   if (entityNames.length === 0) return 0;
 
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
 
     // Find existing memories that contain any of these entity names
     // Use simple LIKE query for matching
@@ -135,8 +149,7 @@ export async function trackCoactivation(memoryIds: string[]): Promise<void> {
   if (memoryIds.length < 2) return;
 
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
     const now = new Date();
 
     // Generate all pairs
@@ -277,8 +290,7 @@ export async function getRelatedMemories(
   limit: number = 10
 ): Promise<any[]> {
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
 
     // Get all associated memories, sorted by weight
     const associations = await (db as any)
@@ -317,8 +329,7 @@ export async function getRelatedMemories(
  */
 export async function pruneWeakAssociations(weightThreshold: number = 5): Promise<number> {
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
 
     const result = await (db as any)
       .delete(schema.memoryAssociations)
@@ -327,6 +338,35 @@ export async function pruneWeakAssociations(weightThreshold: number = 5): Promis
     return result?.rowCount || 0;
   } catch (error) {
     logger.error('Error pruning weak associations', error);
+    return 0;
+  }
+}
+
+/**
+ * Prune associations that are BOTH weak AND old (dual criteria).
+ * More aggressive than weight-only pruning — removes stale low-value links.
+ */
+export async function pruneStaleAssociations(
+  maxWeight: number = 2,
+  maxAgeDays: number = 90
+): Promise<number> {
+  try {
+    const { db, schema } = await getDbClient();
+
+    const cutoff = Math.floor((Date.now() - maxAgeDays * 86400000) / 1000);
+
+    const result = await (db as any)
+      .delete(schema.memoryAssociations)
+      .where(
+        and(
+          sql`${schema.memoryAssociations.weight} <= ${maxWeight}`,
+          sql`${schema.memoryAssociations.createdAt} < ${cutoff}`
+        )
+      );
+
+    return result?.rowCount || 0;
+  } catch (error) {
+    logger.error('Error pruning stale associations', error);
     return 0;
   }
 }
@@ -341,8 +381,7 @@ export async function getAssociationStats(): Promise<{
   maxWeight: number;
 }> {
   try {
-    const db = await getDb();
-    const schema = await getSchema();
+    const { db, schema } = await getDbClient();
 
     const associations = await (db as any)
       .select()

@@ -8,7 +8,7 @@
  * Features:
  * - Single async call to get both db and schema
  * - Consistent error handling with clear messages
- * - Preserves schema caching
+ * - Schema caching via getSchema() (single source in db/schema.ts)
  * - Provides raw connection for special cases
  * - Helper `withDbClient` for functional programming patterns
  *
@@ -29,9 +29,9 @@
  */
 
 import { getDb } from '../../db/index.js';
-import { getSchema } from '../../db/schema.js';
-import { assertSchemaReady, fixSchemaIssues, SchemaDriftError } from '../../db/schema-health.js';
-import type { FixOptions } from '../../db/schema-health.js';
+import { getSchema, clearSchemaCache } from '../../db/schema.js';
+import { assertSchemaReady, SchemaDriftError } from '../../db/schema-probe.js';
+import { fixSchemaIssues, type FixOptions } from '../../db/schema-repair.js';
 import { createDatabaseClient } from '../storage/database.js';
 import type { DatabaseClient } from '../storage/database.js';
 import type { SchemaModule } from '../../db/schema.js';
@@ -64,16 +64,11 @@ export interface DbClient {
 }
 
 /**
- * Internal cached schema to preserve getSchema() caching behavior
- */
-let cachedSchema: SchemaModule | null = null;
-
-/**
- * Clear cached schema. Call this when resetting the database connection
- * to ensure schema is re-resolved for the new connection.
+ * Clear the schema cache. Delegates to the canonical clearSchemaCache() in db/schema.ts.
+ * Call this when resetting the database connection to ensure schema is re-resolved.
  */
 export function clearDbClientSchemaCache(): void {
-  cachedSchema = null;
+  clearSchemaCache();
 }
 
 /**
@@ -90,7 +85,7 @@ export function clearDbClientSchemaCache(): void {
  * - Preserves the original error as `cause` property
  *
  * Schema caching:
- * - Uses the same caching mechanism as getSchema()
+ * - Delegates to getSchema() which caches internally
  * - Multiple calls to getDbClient() will return the same schema reference
  *
  * @returns Promise<DbClient> Unified client with db, schema, and raw
@@ -125,17 +120,15 @@ export async function getDbClient(): Promise<DbClient> {
     // Get raw database connection
     const rawDb = await getDb();
 
-    // Get schema (with caching - invalidate if db was reset)
-    if (!cachedSchema) {
-      cachedSchema = await getSchema();
-    }
+    // Get schema (getSchema() handles its own caching internally)
+    const schema = await getSchema();
 
     // Create wrapped database client
     const db = createDatabaseClient(rawDb);
 
     return {
       db,
-      schema: cachedSchema,
+      schema,
       raw: rawDb,
     };
   } catch (error) {

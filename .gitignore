@@ -9,14 +9,16 @@ yarn.lock
 dist/
 *.tgz
 *.js.map
+*.d.ts
 *.d.ts.map
 
 # Compiled JS (keep only source TS)
 core/**/*.js
 db/**/*.js
+cli/**/*.js
+mcp/**/*.js
 packages/*/src/**/*.js
 config.js
-config.d.ts
 
 # Environment
 .env

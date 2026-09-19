@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Database } from 'better-sqlite3';
 import { getDataDir } from '../config.js';
 import { ensureSqliteSchema } from './bootstrap.js';
 import { maybeMergeLegacyClientDbs } from './merge-client-dbs.js';
@@ -17,20 +18,29 @@ const SQL_JS_WASM_RELATIVE_PATH = '../vendor/sql.js/sql-wasm.wasm';
  * and corrupted state. It exists only as a last-resort fallback when no
  * native driver (bun:sqlite / better-sqlite3) can load.
  *
- * Default behavior: allowed with a LOUD warning (single-process, read-mostly
- * use and some test environments rely on it). Set SQUISH_ALLOW_SQLJS_FALLBACK=false
- * to fail startup instead of silently running in this unsafe mode.
+ * Default behavior: BLOCKED. Set SQUISH_ALLOW_SQLJS_FALLBACK=true to
+ * explicitly opt in. This prevents silent data corruption from concurrent
+ * processes running in the unsafe sql.js mode.
  */
 function enforceSqlJsFallbackPolicy(): void {
   const raw = process.env.SQUISH_ALLOW_SQLJS_FALLBACK;
-  const explicitlyDenied =
-    raw !== undefined && ['false', '0', 'no', 'off'].includes(raw.trim().toLowerCase());
 
-  if (explicitlyDenied) {
+  const explicitlyAllowed =
+    raw !== undefined && ['true', '1', 'yes', 'on'].includes(raw.trim().toLowerCase());
+
+  if (!explicitlyAllowed) {
     throw new Error(
-      'sql.js fallback is disabled via SQUISH_ALLOW_SQLJS_FALLBACK=false.\n' +
+      'sql.js fallback is BLOCKED by default (data-safety guard).\n\n' +
         'Squish could not load a native SQLite driver (bun:sqlite / better-sqlite3).\n' +
-        'Install better-sqlite3 (npm/bun install better-sqlite3) or remove the env override.'
+        'sql.js rewrites the ENTIRE database file on every write, which causes\n' +
+        'silent data corruption under concurrent processes.\n\n' +
+        'Remediation steps:\n' +
+        '  1. Install a native driver:  npm install better-sqlite3\n' +
+        '     (or: bun install better-sqlite3)\n' +
+        '  2. If sql.js is intentional (single-process, read-mostly), opt in:\n' +
+        '     SQUISH_ALLOW_SQLJS_FALLBACK=true\n' +
+        '  3. Check that your runtime has the native bindings for better-sqlite3\n' +
+        '     (requires node-gyp / a C++ build toolchain).\n'
     );
   }
 
@@ -40,8 +50,8 @@ function enforceSqlJsFallbackPolicy(): void {
       'REWRITES THE ENTIRE DATABASE FILE ON EVERY WRITE. Concurrent\n' +
       'processes WILL lose data or corrupt the DB. Only acceptable for\n' +
       'single-process, read-mostly usage. Install better-sqlite3 for a\n' +
-      'safe native driver. To refuse this fallback, set\n' +
-      'SQUISH_ALLOW_SQLJS_FALLBACK=false.\n' +
+      'safe native driver.\n' +
+      'Opt-in acknowledged: SQUISH_ALLOW_SQLJS_FALLBACK=true\n' +
       '================================================================'
   );
 }
@@ -115,7 +125,9 @@ async function createBunSqliteDb(dbPath: string) {
   sqlite.exec('PRAGMA busy_timeout = 5000');
 
   if (!fs.existsSync(dbPath) || sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().length === 0) {
-    await ensureSqliteSchema(sqlite);
+    // bun:sqlite and better-sqlite3 expose the same exec/prepare surface that
+    // ensureSqliteSchema uses; the adapter-level types just disagree.
+    await ensureSqliteSchema(sqlite as unknown as Database);
   }
 
   logger.info('SQLite initialized with bun:sqlite');
@@ -164,8 +176,28 @@ async function createSqliteDb() {
     }
   }
 
+  // Only sql.js remains as a fallback. Check the policy before attempting it.
+  // If fallback is not explicitly enabled, fail fast with a clear error.
+  const rawEnv = process.env.SQUISH_ALLOW_SQLJS_FALLBACK;
+  const fallbackExplicitlyEnabled =
+    rawEnv !== undefined && ['true', '1', 'yes', 'on'].includes(rawEnv.trim().toLowerCase());
+
+  if (!fallbackExplicitlyEnabled) {
+    logger.error('CRITICAL: No native SQLite driver available; sql.js fallback blocked');
+    throw new Error(
+      'Squish requires a working local SQLite driver. Initialization failed.\n\n' +
+        'Native drivers that were tried and failed:\n' +
+        errors.map((entry, index) => `  ${index + 1}. ${entry}`).join('\n') +
+        '\n\nThe sql.js fallback is BLOCKED by default because it rewrites the\n' +
+        'entire database file on every write, causing silent data corruption\n' +
+        'under concurrent processes.\n\n' +
+        'To fix this:\n' +
+        '  1. Install a native driver:  npm install better-sqlite3\n' +
+        '  2. Or, if sql.js is intentional, set:  SQUISH_ALLOW_SQLJS_FALLBACK=true\n'
+    );
+  }
+
   try {
-    enforceSqlJsFallbackPolicy();
     return await createSqlJsDb(dbPath);
   } catch (error) {
     errors.push(formatInitializationError('sql.js', error));

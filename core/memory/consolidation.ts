@@ -18,7 +18,6 @@ import { createDatabaseClient } from '../storage/database.js';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { getEmbedding } from '../../core/embeddings.js';
-import { cosineSimilarity, DimensionMismatchError } from '../utils/vector-operations.js';
 import { parseEmbedding } from '../lib/parse-embedding.js';
 import { getLowImportanceMemories } from './importance.js';
 import { rememberMemory } from './memories.js';
@@ -28,9 +27,6 @@ import { callLLM } from '../llm/client.js';
 // Geometry-aware consolidation imports
 import {
   computeCentroid,
-  computeMeanCosineDistance,
-  estimateEffectiveDimension,
-  compressionSafetyTest,
 } from '../clustering/geometry.js';
 
 // GAC strategy selector (Layer 3: integration)
@@ -43,8 +39,16 @@ import {
   type ResidualBudget,
 } from '../clustering/gac-strategy.js';
 
+// Cluster engine for persistent clustering
+import {
+  findOrCreateCluster,
+  getClusterMemories,
+  updateClusterStats,
+  clearClusters,
+} from '../clustering/cluster-engine.js';
+
 export interface ConsolidationOptions {
-  projectId: string;
+  projectId?: string; // optional — when undefined, consolidates across all projects
   minAge?: number; // days - minimum age for consolidation
   maxImportance?: number; // 0-100 - maximum importance to consolidate
   minClusterSize?: number; // minimum memories in a cluster to consolidate
@@ -101,8 +105,9 @@ export async function consolidateMemories(
     return [];
   }
 
-  // Cluster memories by similarity
-  const clusters = await clusterMemoriesBySimilarity(candidates, {
+  // Cluster memories using the cluster engine (centroid-based, persistent within run)
+  clearClusters(); // fresh state for each maintenance run
+  const clusters = await clusterMemoriesWithEngine(candidates, {
     minClusterSize,
     similarityThreshold,
   });
@@ -125,9 +130,11 @@ export async function consolidateMemories(
 }
 
 /**
- * Cluster memories by similarity using a simple greedy algorithm
+ * Cluster memories using the cluster engine (centroid-based).
+ * Uses findOrCreateCluster() which assigns each memory to the nearest existing
+ * cluster or creates a new one, based on embedding similarity to centroids.
  */
-async function clusterMemoriesBySimilarity(
+async function clusterMemoriesWithEngine(
   memories: any[],
   options: {
     minClusterSize?: number;
@@ -136,86 +143,38 @@ async function clusterMemoriesBySimilarity(
 ): Promise<ClusterResult[]> {
   const { minClusterSize = 3, similarityThreshold = 0.7 } = options;
 
-  const clustered = new Set<string>();
-  const clusters: ClusterResult[] = [];
-
+  // Assign each memory to a cluster via the cluster engine
   for (const memory of memories) {
-    if (clustered.has(memory.id)) continue;
-
-    // Find similar memories
-    const similar: any[] = [memory];
-    const similarities: number[] = [1];
-
-    for (const other of memories) {
-      if (other.id === memory.id) continue;
-      if (clustered.has(other.id)) continue;
-
-      // Calculate similarity using embeddings
-      const sim = await calculateMemorySimilarity(memory, other);
-      if (sim >= similarityThreshold) {
-        similar.push(other);
-        similarities.push(sim);
-        clustered.add(other.id);
-      }
-    }
-
-    clustered.add(memory.id);
-
-    // Only keep clusters that meet minimum size
-    if (similar.length >= minClusterSize) {
-      const avgSimilarity = similarities.reduce((a, b) => a + b, 0) / similarities.length;
-      clusters.push({
-        memories: similar as any,
-        similarity: avgSimilarity,
-        representativeId: memory.id,
-      });
+    const emb = parseEmbedding(memory.embedding) ?? parseEmbedding(memory.embedding_json);
+    if (emb) {
+      await findOrCreateCluster(memory.id, emb, similarityThreshold);
     }
   }
 
-  return clusters;
-}
+  // Build ClusterResult[] from the engine's clusters
+  const allClusterIds = (await import('../clustering/cluster-engine.js')).getAllClusterIds();
+  const results: ClusterResult[] = [];
 
-/**
- * Calculate similarity between two memories using their embeddings
- */
-async function calculateMemorySimilarity(
-  memory1: any,
-  memory2: any
-): Promise<number> {
-  let embedding1 = parseEmbedding(memory1.embedding) ?? parseEmbedding(memory1.embedding_json);
-  let embedding2 = parseEmbedding(memory2.embedding) ?? parseEmbedding(memory2.embedding_json);
+  for (const clusterId of allClusterIds) {
+    const memoryIds = await getClusterMemories(clusterId);
+    if (memoryIds.length < minClusterSize) continue;
 
-  if (!embedding1 || !embedding2) {
-    // Fallback to text similarity if embeddings not available
-    return textSimilarity(memory1.content, memory2.content);
+    // Fetch the actual memory objects
+    const clusterMemories = memories.filter(m => memoryIds.includes(m.id));
+    if (clusterMemories.length < minClusterSize) continue;
+
+    // Use first memory as representative (medoid selection happens in GAC)
+    results.push({
+      memories: clusterMemories,
+      similarity: 0, // computed by GAC later
+      representativeId: clusterMemories[0].id,
+    });
   }
 
-  // Batch 4 mismatch policy: mixed-model pairs fall back to text similarity.
-  try {
-    return cosineSimilarity(embedding1, embedding2);
-  } catch (error) {
-    if (error instanceof DimensionMismatchError) {
-      return textSimilarity(memory1.content, memory2.content);
-    }
-    throw error;
-  }
+  return results;
 }
 
-/**
- * Simple text similarity as fallback (Jaccard similarity of word sets)
- */
-function textSimilarity(text1: string, text2: string): number {
-  const words1 = new Set(text1.toLowerCase().split(/\s+/).filter(w => w.length > 2));
-  const words2 = new Set(text2.toLowerCase().split(/\s+/).filter(w => w.length > 2));
 
-  if (words1.size === 0 && words2.size === 0) return 1;
-  if (words1.size === 0 || words2.size === 0) return 0;
-
-  const intersection = new Set([...words1].filter(w => words2.has(w)));
-  const union = new Set([...words1, ...words2]);
-
-  return intersection.size / union.size;
-}
 
 /**
  * Extracts embedding vectors from cluster memories.
@@ -232,33 +191,7 @@ function extractClusterEmbeddings(memories: any[]): number[][] | null {
   return vectors.length >= 2 ? vectors : null;
 }
 
-/**
- * Finds the memory nearest to the centroid vector.
- * Used for geometry-safe consolidation (keep the closest real memory).
- */
-function findNearestToCentroid(memories: any[], centroid: number[]): any {
-  let bestMemory = memories[0];
-  let bestSim = -1;
 
-  for (const mem of memories) {
-    const emb = parseEmbedding(mem.embedding) ?? parseEmbedding(mem.embedding_json);
-    if (emb) {
-      let sim: number;
-      try {
-        sim = cosineSimilarity(emb, centroid);
-      } catch (error) {
-        if (error instanceof DimensionMismatchError) continue; // mixed-model row
-        throw error;
-      }
-      if (sim > bestSim) {
-        bestSim = sim;
-        bestMemory = mem;
-      }
-    }
-  }
-
-  return bestMemory;
-}
 
 /**
  * Pre-consolidation dimensionality reduction.
@@ -323,10 +256,9 @@ async function consolidateCluster(
 
       switch (decision.strategy) {
         case 'centroid': {
-          // Tight cluster: use nearest-to-centroid as representative
-          const centroid = computeCentroid(vectors);
-          const nearest = findNearestToCentroid(memories, centroid);
-          const summary = `[Consolidated] ${nearest.content}`;
+          // Tight cluster: use medoid as representative
+          const medoid = findMedoid(memories, computeCentroid(vectors));
+          const summary = `[Consolidated] ${medoid.content}`;
 
           const consolidated = await rememberMemory({
             content: summary,
@@ -398,7 +330,6 @@ async function consolidateCluster(
               gacSpreadUnsafe: decision.spreadUnsafe,
               gacRepresentatives: decision.representatives,
               gacReason: decision.reason,
-              // Residual budget for future reference
               residualBudget: {
                 medoidId: budget.medoidId,
                 principalDirections: budget.principalDirections.length,

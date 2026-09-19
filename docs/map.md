@@ -48,7 +48,7 @@ squish/
 │   ├── cli/                   # squish CLI (commander): remember/recall/forget/link/
 │   │                          #   clean/run/doctor/install/pin/sessions/cloud/status/context
 │   ├── mcp/                   # MCP server: 15 tools by default (+gated squish_maintenance = 16)
-│   └── sdk/                   # @squish/sdk client for embedding Squish in apps
+│   ├── core-sdk/              # @squish/core-sdk: internal facade over core/ + db/ (workspace-only)
 ├── plugin/                    # Claude Code / Codex / OpenCode / OpenClaw integrations
 ├── skills/                    # Distributable SKILL.md
 ├── scripts/                   # Operational scripts incl. consolidation-bakeoff.ts
@@ -87,4 +87,4 @@ squish/
 
 - MCP server: `packages/mcp/src/index.ts` (stdio default; `--http` supported)
 - CLI: `packages/cli/src/program.ts`
-- SDK: `packages/sdk/src/index.ts` (`@squish/sdk`)
+- In-process: `packages/core-sdk/src/index.ts` (`@squish/core-sdk`, workspace-only)

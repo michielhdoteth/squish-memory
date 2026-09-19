@@ -51,7 +51,18 @@ export async function getMemoryStats(projectPath?: string): Promise<MemoryStats>
   const resolvedPath = projectPath || process.cwd();
   const project = await getProjectByPath(resolvedPath);
   if (!project) {
-    throw new Error(`Project not found: ${resolvedPath}`);
+    // No project registered yet — return empty stats instead of throwing
+    return {
+      totalMemories: 0,
+      byType: {},
+      totalNotes: 0,
+      notesByCategory: {},
+      totalLearnings: 0,
+      learningsByType: {},
+      totalLinks: 0,
+      projectPath: resolvedPath,
+      mode: 'local',
+    };
   }
 
   const stats: MemoryStats = {

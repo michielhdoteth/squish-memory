@@ -5,7 +5,7 @@
 
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
-import { lt, or, and, eq, lte } from 'drizzle-orm';
+import { lt, or, and, eq, lte, sql } from 'drizzle-orm';
 import { logger } from '../logger.js';
 import { emit } from '../event-bus.js';
 
@@ -134,20 +134,42 @@ export async function runAutoClean(options?: Partial<StaleMemoryQuery>): Promise
   };
   
   const stale = await getStaleMemories(defaultOptions);
-  let deleted = 0;
+  const idsToDelete = stale.filter(m => !m.isPinned).map(m => m.id);
   
-  for (const memory of stale) {
-    if (!memory.isPinned) {
-      await deleteMemoryPermanently(memory.id);
-      deleted++;
+  if (idsToDelete.length > 0) {
+    const db = await getDb();
+    const schema = await getSchema();
+    const sqliteDb = db as any;
+    const placeholders = idsToDelete.map(() => '?').join(',');
+
+    // Bulk delete associations
+    await sqliteDb.delete(schema.memoryAssociations).where(
+      sql`(${(schema.memoryAssociations as any).fromMemoryId} IN (${placeholders})) OR (${(schema.memoryAssociations as any).toMemoryId} IN (${placeholders}))`,
+      ...idsToDelete, ...idsToDelete
+    ).catch(() => {});
+
+    // Bulk delete tags
+    await sqliteDb.delete((schema as any).memoryTags).where(
+      sql`${(schema as any).memoryTags.memoryId} IN (${placeholders})`,
+      ...idsToDelete
+    ).catch(() => {});
+
+    // Bulk delete memories
+    await sqliteDb.delete(schema.memories).where(
+      sql`${schema.memories.id} IN (${placeholders})`,
+      ...idsToDelete
+    );
+
+    for (const id of idsToDelete) {
+      emit({ type: 'memory:deleted', payload: { memoryId: id } });
     }
   }
   
   return {
-    deleted,
+    deleted: idsToDelete.length,
     summary: {
       scanned: stale.length,
-      skippedPinned: stale.length - deleted,
+      skippedPinned: stale.length - idsToDelete.length,
       criteria: defaultOptions,
     },
   };

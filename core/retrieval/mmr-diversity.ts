@@ -61,6 +61,8 @@ function sim(a: number[], b: number[]): number {
  * @param queryEmbedding - Query vector
  * @param results - Search results with embeddings
  * @param options - MMR options
+ * @param candidateEmbeddings - Optional pre-computed embeddings array (indexed by position in results).
+ *   When provided, cosine similarity is used instead of content-based Jaccard fallback.
  * @returns Diversified results
  */
 export function applyMMR(
@@ -70,7 +72,8 @@ export function applyMMR(
     lambda?: number;
     topK?: number;
     candidatePool?: number;
-  } = {}
+  } = {},
+  candidateEmbeddings?: (number[] | null)[]
 ): SearchResult[] {
   const cfg = getMMRConfig();
   const lambda = options.lambda ?? cfg.lambda;
@@ -84,16 +87,18 @@ export function applyMMR(
   // Take top candidates for MMR
   const candidates = results.slice(0, candidatePool);
 
-  // Extract embeddings from results
-  const embeddings: (number[] | null)[] = candidates.map(r => {
-    // Try to get embedding from various locations
-    const emb = (r as any).embedding ?? (r as any)._embedding ?? null;
-    if (Array.isArray(emb)) return emb;
-    if (typeof emb === 'string') {
-      try { return JSON.parse(emb); } catch { return null; }
-    }
-    return null;
-  });
+  // Extract embeddings: prefer pre-computed array, fall back to legacy property sniffing
+  const embeddings: (number[] | null)[] = candidateEmbeddings
+    ? candidateEmbeddings.slice(0, candidatePool)
+    : candidates.map(r => {
+        // Legacy fallback: try to get embedding from various locations on the result
+        const emb = (r as any).embedding ?? (r as any)._embedding ?? null;
+        if (Array.isArray(emb)) return emb;
+        if (typeof emb === 'string') {
+          try { return JSON.parse(emb); } catch { return null; }
+        }
+        return null;
+      });
 
   // If no embeddings available, fall back to original order
   const hasEmbeddings = embeddings.some(e => e !== null);
@@ -233,7 +238,9 @@ export function applyMMRByContent(
 }
 
 /**
- * Smart MMR: tries embedding-based first, falls back to content-based
+ * Smart MMR: tries embedding-based first, falls back to content-based.
+ * When candidateEmbeddings is provided, cosine similarity is used for
+ * the diversity penalty instead of Jaccard content overlap.
  */
 export function smartMMR(
   queryEmbedding: number[] | null,
@@ -242,11 +249,12 @@ export function smartMMR(
     lambda?: number;
     topK?: number;
     candidatePool?: number;
-  } = {}
+  } = {},
+  candidateEmbeddings?: (number[] | null)[]
 ): SearchResult[] {
-  // Try embedding-based MMR first
+  // Try embedding-based MMR first (prefer pre-computed embeddings)
   if (queryEmbedding) {
-    const embeddingResults = applyMMR(queryEmbedding, results, options);
+    const embeddingResults = applyMMR(queryEmbedding, results, options, candidateEmbeddings);
     if (embeddingResults.length > 0) {
       return embeddingResults;
     }

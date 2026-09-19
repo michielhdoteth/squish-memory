@@ -2,7 +2,7 @@
  * Context CLI command (restored first-class public surface).
  *
  * Plugin hooks (claude-code/codex session-start.sh, opencode auto-inject,
- * openclaw) shell out to `squish context --json [--limit N] [--project P]`.
+ * openclaw) shell out to `squish context <topic> --json [--limit N] [--project P]`.
  * These tests pin the public output contract of the restored command.
  */
 
@@ -15,7 +15,7 @@ import { join } from 'node:path';
 const repoRoot = join(import.meta.dir, '..', '..');
 
 function runCli(args: string[], dataDir: string, timeout = 30000) {
-  return spawnSync('bun', ['run', 'packages/cli/src/index.ts', ...args], {
+  return spawnSync('bun', ['run', 'cli/index.ts', ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
     env: {
@@ -29,24 +29,26 @@ function runCli(args: string[], dataDir: string, timeout = 30000) {
 
 describe('squish context CLI', () => {
   test(
-    '--json emits the context report contract on a fresh database',
+    '--json emits the search result contract on a fresh database',
     { timeout: 60000 },
     () => {
       const dataDir = mkdtempSync(join(tmpdir(), 'squish-context-'));
       try {
-        const result = runCli(['context', '--json', '--limit', '3', '--project', '.'], dataDir);
+        // Bootstrap schema by storing a memory first (CLI needs FTS table to exist)
+        const seed = runCli(['remember', 'seed context test', '--type', 'fact', '--json', '--project', '.'], dataDir);
+        expect(seed.status).toBe(0);
+
+        const result = runCli(['context', 'test', '--json', '--limit', '3', '--project', '.'], dataDir);
         expect(result.status).toBe(0);
         const parsed = JSON.parse(result.stdout);
 
         expect(parsed.ok).toBe(true);
-        // Shape consumed by plugin hooks: durableMemories[] with content.
-        expect(Array.isArray(parsed.durableMemories)).toBe(true);
-        expect(parsed.currentProject).toBeDefined();
-        expect(parsed.runtime).toBeDefined();
-        for (const memory of parsed.durableMemories) {
-          expect(memory.id).toBeDefined();
-          expect(memory.type).toBeDefined();
-          expect(typeof memory.content).toBe('string');
+        expect(parsed.query).toBe('test');
+        expect(typeof parsed.count).toBe('number');
+        expect(Array.isArray(parsed.results)).toBe(true);
+        for (const r of parsed.results) {
+          expect(r.id).toBeDefined();
+          expect(typeof r.content).toBe('string');
         }
       } finally {
         try { rmSync(dataDir, { recursive: true, force: true }); } catch { /* Windows EBUSY */ }
@@ -69,11 +71,11 @@ describe('squish context CLI', () => {
         expect(remember.status).toBe(0);
         expect(JSON.parse(remember.stdout).ok).toBe(true);
 
-        const context = runCli(['context', '--limit', '5', ...envArgs], dataDir);
+        const context = runCli(['context', marker, '--limit', '5', ...envArgs], dataDir);
         expect(context.status).toBe(0);
         const parsed = JSON.parse(context.stdout);
         expect(parsed.ok).toBe(true);
-        const contents = (parsed.durableMemories as Array<{ content: string }>).map((m) => m.content);
+        const contents = (parsed.results as Array<{ content: string }>).map((r) => r.content);
         expect(contents.some((content) => content.includes(marker))).toBe(true);
       } finally {
         try { rmSync(dataDir, { recursive: true, force: true }); } catch { /* Windows EBUSY */ }
@@ -82,14 +84,18 @@ describe('squish context CLI', () => {
   );
 
   test(
-    'human-readable mode prints the Project Context header',
+    'human-readable mode prints the context header',
     { timeout: 60000 },
     () => {
       const dataDir = mkdtempSync(join(tmpdir(), 'squish-context-pretty-'));
       try {
-        const result = runCli(['context', '--project', '.'], dataDir);
+        // Bootstrap schema by storing a memory first
+        const seed = runCli(['remember', 'seed context test', '--type', 'fact', '--json', '--project', '.'], dataDir);
+        expect(seed.status).toBe(0);
+
+        const result = runCli(['context', 'test', '--project', '.'], dataDir);
         expect(result.status).toBe(0);
-        expect(result.stdout).toContain('Project Context');
+        expect(result.stdout).toContain('Context for "test"');
       } finally {
         try { rmSync(dataDir, { recursive: true, force: true }); } catch { /* Windows EBUSY */ }
       }
@@ -97,18 +103,13 @@ describe('squish context CLI', () => {
   );
 
   test(
-    'parity: status --context --json exposes the same top-level shape',
+    'exits with error when no topic or --file is provided',
     { timeout: 60000 },
     () => {
-      const dataDir = mkdtempSync(join(tmpdir(), 'squish-context-parity-'));
+      const dataDir = mkdtempSync(join(tmpdir(), 'squish-context-no-arg-'));
       try {
-        const viaContext = JSON.parse(
-          runCli(['context', '--json', '--limit', '3', '--project', '.'], dataDir).stdout
-        );
-        const viaStatus = JSON.parse(
-          runCli(['status', '--context', '--json', '--limit', '3', '--project', '.'], dataDir).stdout
-        );
-        expect(Object.keys(viaStatus).sort()).toEqual(Object.keys(viaContext).sort());
+        const result = runCli(['context'], dataDir);
+        expect(result.status).toBe(1);
       } finally {
         try { rmSync(dataDir, { recursive: true, force: true }); } catch { /* Windows EBUSY */ }
       }

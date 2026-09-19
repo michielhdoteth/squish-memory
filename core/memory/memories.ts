@@ -15,7 +15,7 @@
 export type { RememberInput, SearchInput, SearchResult, MemoryRecord, MemoryType, VisibilityScope } from './memory-types.js';
 
 // CRUD operations
-export { normalizeMemory, getOrCreateUser, getMemory, getMemoriesByIds, setConfidence, getRecent } from './memory-crud.js';
+export { normalizeMemoryRecord, getOrCreateUser, getMemory, getMemoriesByIds, setConfidence, getRecent } from './memory-crud.js';
 
 // Search operations
 export { search, findSimilarMemories } from './memory-search.js';

@@ -41,7 +41,7 @@ let flushTimer: ReturnType<typeof setInterval> | null = null;
  * Record that a memory was retrieved for a query.
  * Call this when a memory appears in search results.
  */
-export function recordRetrieval(
+export function recordFeedback(
   memoryId: string,
   query: string,
   options?: { sessionId?: string }
@@ -106,12 +106,13 @@ export function recordUsefulRetrieval(
  * Record that a memory was cited in a response.
  * This is stronger feedback than just "useful" - it means the memory
  * was explicitly referenced.
+ * Also triggers resurrection reinforcement on the cited memory.
  */
-export function recordCitation(
+export async function recordCitation(
   memoryId: string,
   responseId: string,
-  options?: { sessionId?: string }
-): void {
+  options?: { sessionId?: string; relevance?: number; answerConfidence?: number }
+): Promise<void> {
   const key = options?.sessionId || 'default';
   const buffer = feedbackBuffer.get(key) || [];
 
@@ -125,6 +126,19 @@ export function recordCitation(
   }
 
   feedbackBuffer.set(key, buffer);
+
+  // Trigger resurrection reinforcement for cited memory
+  try {
+    const { reinforceMemory } = await import('./resurrection.js');
+    await reinforceMemory({
+      memoryId,
+      signal: 'successful_use',
+      relevance: options?.relevance ?? 0.8,
+      answerConfidence: options?.answerConfidence ?? 0.9,
+    });
+  } catch {
+    // Best-effort — don't break feedback flow if resurrection fails
+  }
 }
 
 /**
@@ -190,11 +204,16 @@ export async function flushFeedback(): Promise<{
   const db = await getDb();
   const schema = await getSchema();
 
+  // Swap-and-flush: snapshot current buffer, replace with empty map
+  // so new writes during flush go to the new map (no lost updates)
+  const snapshot = new Map(feedbackBuffer);
+  feedbackBuffer.clear();
+
   let strengthened = 0;
   let weakened = 0;
   let total = 0;
 
-  for (const [, buffer] of feedbackBuffer) {
+  for (const [, buffer] of snapshot) {
     for (const feedback of buffer) {
       total++;
 
@@ -238,9 +257,6 @@ export async function flushFeedback(): Promise<{
       }
     }
   }
-
-  // Clear the buffer after flushing
-  feedbackBuffer.clear();
 
   logger.info('Feedback flushed', { strengthened, weakened, total });
 

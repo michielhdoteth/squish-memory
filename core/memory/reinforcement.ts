@@ -235,24 +235,64 @@ async function applyMemoryFeedback(
     // usage/recency anchor so decay treats it as recently reinforced.
     const { updateRetrievalPriority } = await import('./feedback-tracker.js');
     await updateRetrievalPriority(input.id, MEMORY_CONFIRM_PRIORITY_BONUS);
+
+    // Fetch current memory to check confidence promotion
+    const rows = await (db as any).select({
+      accessCount: schema.memories.accessCount,
+      usageCount: schema.memories.usageCount,
+      confidenceLevel: schema.memories.confidenceLevel,
+    }).from(schema.memories).where(eq(schema.memories.id, input.id)).limit(1);
+    const mem = rows[0];
+    const totalAccess = (mem?.accessCount ?? 0) + (mem?.usageCount ?? 0) + 1; // +1 for this confirm
+
+    // Confidence promotion: speculative -> certain after 5+ confirmed accesses
+    const confidenceUpdate = (mem?.confidenceLevel === 'speculative' && totalAccess >= 5)
+      ? { confidenceLevel: 'certain' as const }
+      : {};
+
     await (db as any).update(schema.memories).set({
       usageCount: sql`${schema.memories.usageCount} + 1`,
       lastUsedAt: now,
       updatedAt: now,
+      ...confidenceUpdate,
     }).where(eq(schema.memories.id, input.id));
-    return { ok: true, applied: true, detail: `memory confirmed: priority +${MEMORY_CONFIRM_PRIORITY_BONUS}, usage anchored` };
+
+    const detail = confidenceUpdate.confidenceLevel
+      ? `memory confirmed: priority +${MEMORY_CONFIRM_PRIORITY_BONUS}, usage anchored, confidence promoted to certain`
+      : `memory confirmed: priority +${MEMORY_CONFIRM_PRIORITY_BONUS}, usage anchored`;
+    return { ok: true, applied: true, detail };
   }
 
   if (input.signal === 'used') {
     const { updateRetrievalPriority } = await import('./feedback-tracker.js');
     await updateRetrievalPriority(input.id, MEMORY_USED_PRIORITY_BONUS);
+
+    // Fetch current memory to check confidence promotion
+    const rows = await (db as any).select({
+      accessCount: schema.memories.accessCount,
+      usageCount: schema.memories.usageCount,
+      confidenceLevel: schema.memories.confidenceLevel,
+    }).from(schema.memories).where(eq(schema.memories.id, input.id)).limit(1);
+    const mem = rows[0];
+    const totalAccess = (mem?.accessCount ?? 0) + (mem?.usageCount ?? 0) + 1;
+
+    // Confidence promotion: speculative -> certain after 5+ accesses
+    const confidenceUpdate = (mem?.confidenceLevel === 'speculative' && totalAccess >= 5)
+      ? { confidenceLevel: 'certain' as const }
+      : {};
+
     await (db as any).update(schema.memories).set({
       accessCount: sql`${schema.memories.accessCount} + 1`,
       lastAccessedAt: now,
       lastUsedAt: now,
       updatedAt: now,
+      ...confidenceUpdate,
     }).where(eq(schema.memories.id, input.id));
-    return { ok: true, applied: true, detail: 'memory usage recorded: counters + recency refreshed' };
+
+    const detail = confidenceUpdate.confidenceLevel
+      ? 'memory usage recorded: counters + recency refreshed, confidence promoted to certain'
+      : 'memory usage recorded: counters + recency refreshed';
+    return { ok: true, applied: true, detail };
   }
 
   // contradict -> soft outdated marker + priority penalty. recall-confidence

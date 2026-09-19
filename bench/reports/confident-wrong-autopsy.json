@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "name": "confident-wrong-autopsy",
+    "task": "B12-2",
+    "gitSha": "87df1fc",
+    "gitDirty": true,
+    "generatedAt": "2026-08-25T17:50:43.175Z",
+    "runtimeMs": 2885,
+    "embeddingsProvider": "local",
+    "bundledModel": "off",
+    "abstainBelow": 0.6,
+    "definition": "penalty <= -0.5 (scorer wrong bucket; bench penalties in {+1,+0.5,0,-1}); verdict recorded per row",
+    "totalQueries": 135,
+    "confidentWrongCount": 0,
+    "reproducedOverall": {
+      "macroPenaltyScore": 0.5944,
+      "microPenaltyScore": 0.7963,
+      "wrongTotal": 0
+    },
+    "baselineCheck": {
+      "baselineFile": "tests/benchmarks/reports/baseline.json",
+      "baselineConfidentWrong": 0,
+      "baselineMacroPenaltyScore": 0.5944,
+      "countMatches": true,
+      "macroMatches": true
+    }
+  },
+  "rows": []
+}
