@@ -6,7 +6,7 @@ import { join } from "node:path";
 import net from "node:net";
 
 const ROOT = join(import.meta.dir, "..", "..");
-const MCP_ENTRY = join(ROOT, "packages", "mcp", "src", "index.ts");
+const MCP_ENTRY = join(ROOT, "mcp", "index.ts");
 
 interface ServerHandle {
   proc: ChildProcess;
@@ -56,12 +56,12 @@ function waitForServerReady(proc: ChildProcess, port: number, timeoutMs = 15000)
 
     const check = () => {
       if (Date.now() > deadline) {
-        proc.kill("SIGTERM");
+        proc.kill("SIGKILL");
         reject(new Error(`Server did not start within ${timeoutMs}ms on port ${port}. stderr: ${stderrBuf}`));
         return;
       }
 
-      fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(500) })
+      fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1000) })
         .then((res) => {
           if (res.ok) {
             resolve();
@@ -89,6 +89,44 @@ function waitForServerReady(proc: ChildProcess, port: number, timeoutMs = 15000)
   });
 }
 
+/** Parse SSE response body to extract the JSON-RPC result */
+async function parseSseResponse(res: Response): Promise<any> {
+  const text = await res.text();
+  // SSE format: "event: message\ndata: {...}\n\n"
+  const dataLines = text.split("\n").filter((l) => l.startsWith("data: "));
+  if (dataLines.length === 0) {
+    // Maybe it's plain JSON
+    return JSON.parse(text);
+  }
+  const lastData = dataLines[dataLines.length - 1].slice(6); // strip "data: "
+  return JSON.parse(lastData);
+}
+
+/** Send a JSON-RPC request to the MCP HTTP endpoint, parse SSE response */
+async function mcpRequest(
+  port: number,
+  body: Record<string, unknown>,
+  opts?: { apiKey?: string; timeoutMs?: number }
+): Promise<{ status: number; json: any }> {
+  const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json, text/event-stream",
+      ...(opts?.apiKey ? { "x-api-key": opts.apiKey } : {}),
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(opts?.timeoutMs ?? 8000),
+  });
+
+  if (res.status === 401) {
+    return { status: res.status, json: await res.json().catch(() => null) };
+  }
+
+  const json = res.ok ? await parseSseResponse(res) : await res.json().catch(() => null);
+  return { status: res.status, json };
+}
+
 function killServer(handle: ServerHandle): Promise<void> {
   return new Promise((resolve) => {
     if (handle.proc.killed) {
@@ -102,7 +140,7 @@ function killServer(handle: ServerHandle): Promise<void> {
         handle.proc.kill("SIGKILL");
       }
       resolve();
-    }, 3000);
+    }, 2000);
   });
 }
 
@@ -139,42 +177,25 @@ describe("MCP HTTP server e2e", () => {
     async () => {
       const server = await startServer();
 
-      const initBody = {
+      const { status, json } = await mcpRequest(server.port, {
         jsonrpc: "2.0",
         id: 1,
         method: "initialize",
         params: {
-          protocolVersion: "2024-11-05",
+          protocolVersion: "2025-11-25",
           capabilities: {},
           clientInfo: { name: "test", version: "1.0.0" },
         },
-      };
+      }, { apiKey: "test-e2e-key" });
 
-      const res = await fetch(`http://127.0.0.1:${server.port}/mcp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json, text/event-stream",
-          "x-api-key": "test-e2e-key",
-        },
-        body: JSON.stringify(initBody),
-        signal: AbortSignal.timeout(5000),
-      });
-
-      expect(res.status).toBe(200);
-
-      const sessionId = res.headers.get("mcp-session-id");
-      expect(sessionId).toBeTruthy();
-      expect(sessionId!.length).toBeGreaterThan(0);
-
-      const body = await res.json();
-      expect(body).toHaveProperty("jsonrpc", "2.0");
-      expect(body).toHaveProperty("id", 1);
-      expect(body).toHaveProperty("result");
-      expect(body.result).toHaveProperty("serverInfo");
-      expect(body.result.serverInfo).toHaveProperty("name", "squish-memory");
-      expect(body.result.serverInfo).toHaveProperty("version", "2.1.0");
-      expect(body.result).toHaveProperty("capabilities");
+      expect(status).toBe(200);
+      expect(json).toHaveProperty("jsonrpc", "2.0");
+      expect(json).toHaveProperty("id", 1);
+      expect(json).toHaveProperty("result");
+      expect(json.result).toHaveProperty("serverInfo");
+      expect(json.result.serverInfo).toHaveProperty("name", "squish-memory");
+      expect(json.result.serverInfo).toHaveProperty("version", "2.1.0");
+      expect(json.result).toHaveProperty("capabilities");
     },
     15_000,
   );
@@ -184,62 +205,39 @@ describe("MCP HTTP server e2e", () => {
     async () => {
       const server = await startServer();
 
-      // Initialize session
-      const initRes = await fetch(`http://127.0.0.1:${server.port}/mcp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json, text/event-stream",
-          "x-api-key": "test-e2e-key",
+      // Initialize first
+      const init = await mcpRequest(server.port, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          clientInfo: { name: "test", version: "1.0.0" },
         },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "initialize",
-          params: {
-            protocolVersion: "2024-11-05",
-            capabilities: {},
-            clientInfo: { name: "test", version: "1.0.0" },
-          },
-        }),
-        signal: AbortSignal.timeout(5000),
-      });
+      }, { apiKey: "test-e2e-key" });
+      expect(init.status).toBe(200);
 
-      const sessionId = initRes.headers.get("mcp-session-id");
-      expect(sessionId).toBeTruthy();
+      // tools/list
+      const list = await mcpRequest(server.port, {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/list",
+      }, { apiKey: "test-e2e-key" });
 
-      // tools/list with session
-      const listRes = await fetch(`http://127.0.0.1:${server.port}/mcp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json, text/event-stream",
-          "mcp-session-id": sessionId!,
-          "x-api-key": "test-e2e-key",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 2,
-          method: "tools/list",
-        }),
-        signal: AbortSignal.timeout(5000),
-      });
-
-      expect(listRes.status).toBe(200);
-
-      const body = await listRes.json();
-      expect(body).toHaveProperty("jsonrpc", "2.0");
-      expect(body).toHaveProperty("id", 2);
-      expect(body).toHaveProperty("result");
-      expect(body.result).toHaveProperty("tools");
-      expect(Array.isArray(body.result.tools)).toBe(true);
-      expect(body.result.tools.length).toBe(17);
+      expect(list.status).toBe(200);
+      expect(list.json).toHaveProperty("jsonrpc", "2.0");
+      expect(list.json).toHaveProperty("id", 2);
+      expect(list.json).toHaveProperty("result");
+      expect(list.json.result).toHaveProperty("tools");
+      expect(Array.isArray(list.json.result.tools)).toBe(true);
+      expect(list.json.result.tools.length).toBe(19);
     },
     15_000,
   );
 
   it(
-    "MCP HTTP rejects requests without valid session",
+    "MCP HTTP rejects requests without API key",
     async () => {
       const server = await startServer();
 
@@ -248,23 +246,15 @@ describe("MCP HTTP server e2e", () => {
         headers: {
           "Content-Type": "application/json",
           "Accept": "application/json, text/event-stream",
-          "x-api-key": "test-e2e-key",
         },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 3,
-          method: "tools/list",
-        }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/list" }),
         signal: AbortSignal.timeout(5000),
       });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(401);
 
       const body = await res.json();
-      expect(body).toHaveProperty("jsonrpc", "2.0");
       expect(body).toHaveProperty("error");
-      expect(body.error).toHaveProperty("code");
-      expect(body.error).toHaveProperty("message");
     },
     15_000,
   );

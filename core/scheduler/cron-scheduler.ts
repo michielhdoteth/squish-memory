@@ -92,9 +92,11 @@ async function checkMissedJobs(): Promise<void> {
       if (!intervalMs) continue;
       
       const lastRun = job.lastRunAt ? new Date(job.lastRunAt).getTime() : 0;
-      const elapsed = lastRun > 0 ? now - lastRun : intervalMs * 2; // If never run, treat as overdue
+      if (lastRun === 0) continue; // Never run yet -- not missed, let cron schedule it normally
+
+      const elapsed = now - lastRun;
       const gracePeriod = intervalMs * 1.5; // 1.5x interval grace
-      
+
       if (elapsed > gracePeriod) {
         logger.info(`[Scheduler] Catch-up needed for ${job.jobName}, elapsed ${Math.round(elapsed / (60 * 60 * 1000))}h (grace: ${Math.round(gracePeriod / (60 * 60 * 1000))}h)`);
         

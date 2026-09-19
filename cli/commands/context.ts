@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander';
-import { getClient } from '../client.js';
+import { client } from '../client.js';
 import { remediationFor } from '../errors.js';
 import { colors } from '../colors.js';
 
@@ -24,7 +24,6 @@ export function registerContextCommand(program: Command) {
       const previousQuiet = process.env.SQUISH_QUIET;
       if (options.json) process.env.SQUISH_QUIET = '1';
       try {
-        const client = getClient();
         const query = topic || options.file || '';
         if (!query) {
           const payload = {

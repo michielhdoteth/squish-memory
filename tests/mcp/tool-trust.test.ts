@@ -19,7 +19,7 @@ const TEST_TIMEOUT = 90_000;
 
 function resolveServerCommand(): { command: string; args: string[] } {
   const rootDir = join(import.meta.dir, "..", "..");
-  const entryPath = join(rootDir, "packages", "mcp", "src", "index.ts");
+  const entryPath = join(rootDir, "mcp", "index.ts");
 
   if (typeof (globalThis as { Bun?: unknown }).Bun !== "undefined") {
     return { command: process.execPath, args: [entryPath, "--stdio"] };
@@ -181,7 +181,7 @@ async function spawnServer(tmpDir: string): Promise<ServerHandle> {
     return resp;
   }
 
-  const readyMarker = "Connected via stdio";
+  const readyMarker = "Starting in STDIO mode";
   const bootDeadline = Date.now() + 150_000;
   while (!stderrBuf.includes(readyMarker)) {
     if (Date.now() > bootDeadline) {

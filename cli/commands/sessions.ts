@@ -74,6 +74,11 @@ Examples:
       if (options.json) process.env.SQUISH_QUIET = '1';
       try {
         const session = await client.getSession(sessionId);
+        if (!session) {
+          const error = new Error(`Session not found: ${sessionId}`);
+          (error as any).code = 'SESSION_NOT_FOUND';
+          throw error;
+        }
         if (options.json) {
           console.log(JSON.stringify(session));
         } else {

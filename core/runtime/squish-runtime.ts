@@ -1256,6 +1256,11 @@ export class SquishRuntime {
     }
   }
 
+  /** CLI alias for stats() — the status command calls getStats(). */
+  async getStats(project?: string): Promise<MemoryStats> {
+    return this.stats(project);
+  }
+
   async health(): Promise<HealthResult> {
     const components: Record<string, string> = {};
 
@@ -1492,6 +1497,25 @@ export class SquishRuntime {
     } catch (error) {
       if (error instanceof SquishError) throw error;
       throw new StorageError('Failed to get session chunks', error as Error);
+    }
+  }
+
+  /** Get a single session by ID — used by the CLI inspect command. */
+  async getSession(sessionId: string): Promise<{ id: string; chunks: ChunkRecord[]; summary?: string } | null> {
+    try {
+      const { listSessions } = await import('../sessions/index.js');
+      const result = await listSessions({ sessionId });
+      if (!result.sessions || result.sessions.length === 0) return null;
+      const s = result.sessions[0] as any;
+      const chunks = await this.getSessionChunks(sessionId);
+      return {
+        id: s.session_id ?? sessionId,
+        chunks,
+        summary: s.title,
+      };
+    } catch (error) {
+      if (error instanceof SquishError) throw error;
+      throw new StorageError('Failed to get session', error as Error);
     }
   }
 

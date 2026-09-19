@@ -6,9 +6,23 @@ function readText(pathParts: string[]) {
   return readFileSync(join(process.cwd(), ...pathParts), "utf8");
 }
 
+/** Read MCP source across all tool files (tools were refactored into separate modules) */
+function readMcpSource(): string {
+  const files = [
+    ["mcp", "index.ts"],
+    ["mcp", "tools", "memory.ts"],
+    ["mcp", "tools", "extras.ts"],
+    ["mcp", "tools", "skill.ts"],
+    ["mcp", "tools", "team.ts"],
+    ["mcp", "tools", "dedup.ts"],
+    ["mcp", "tools", "edits.ts"],
+  ];
+  return files.map((f) => { try { return readText(f); } catch { return ""; } }).join("\n");
+}
+
 describe("MCP recall surface", () => {
   it("does not register the legacy dedicated search tool", () => {
-    const source = readText(["packages", "mcp", "src", "index.ts"]);
+    const source = readMcpSource();
     const legacyToolName = `"squish_${"search"}"`;
 
     expect(source).not.toContain(legacyToolName);
@@ -16,7 +30,7 @@ describe("MCP recall surface", () => {
   });
 
   it("exposes squish_recall as query-or-id recall", () => {
-    const source = readText(["packages", "mcp", "src", "index.ts"]);
+    const source = readMcpSource();
 
     expect(source).toContain('query: z.string().describe("Query text or memory ID to recall")');
     expect(source).toContain("const isUuid =");

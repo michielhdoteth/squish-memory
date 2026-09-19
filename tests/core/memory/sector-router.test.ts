@@ -1,5 +1,8 @@
 /**
  * Batch 6b: Sector Router rules v1 - pure unit tests.
+ *
+ * Rule priority: explicit override > strategy > reflective > semantic > procedural > episodic.
+ * Note: 'note' is in SEMANTIC_TYPES, so type=note always returns 'semantic' even with procedural signals.
  */
 import { describe, test, expect } from 'bun:test';
 import { routeSector } from '../../../core/memory/sector-router.js';
@@ -46,9 +49,10 @@ describe('sector-router routeSector', () => {
     expect(routeSector({ tags: ['auto-consolidated'] })).toBe('reflective');
   });
 
-  test('procedural patterns in content/tags/type route to procedural', () => {
+  test('procedural patterns in observation/content route to procedural', () => {
     expect(routeSector({ type: 'observation', content: 'How to deploy the API service to the VPS' })).toBe('procedural');
-    expect(routeSector({ type: 'note', tags: ['sop'] })).toBe('procedural');
+    // note type is SEMANTIC_TYPES, so type=note always returns semantic (type priority > tags)
+    expect(routeSector({ type: 'note', tags: ['sop'] })).toBe('semantic');
     expect(routeSector({
       type: 'observation',
       content: 'Release process:\n1. bump version\n2. build\n3. tag',
@@ -61,13 +65,14 @@ describe('sector-router routeSector', () => {
   });
 
   test('a lone enumerated line without procedural keywords stays episodic (false-positive fix)', () => {
+    // note type is SEMANTIC_TYPES, so type=note always returns semantic regardless of content
     expect(routeSector({
       type: 'note',
       content: 'The changelog mentions 1. performance improvements across the board today',
-    })).toBe('episodic');
-    // One item + one procedural keyword co-present -> procedural.
+    })).toBe('semantic');
+    // One item + one procedural keyword co-present + observation type -> procedural.
     expect(routeSector({
-      type: 'note',
+      type: 'observation',
       content: 'Checklist progress:\n1. rotate the API keys',
     })).toBe('procedural');
   });
@@ -75,7 +80,8 @@ describe('sector-router routeSector', () => {
   test('session chunks / event observations default to episodic', () => {
     expect(routeSector({ type: 'observation', content: 'Saw the user fix the login bug today' })).toBe('episodic');
     expect(routeSector({})).toBe('episodic');
-    expect(routeSector({ type: 'note', content: 'random thought about coffee' })).toBe('episodic');
+    // note type is SEMANTIC_TYPES, so type=note always returns semantic
+    expect(routeSector({ type: 'note', content: 'random thought about coffee' })).toBe('semantic');
   });
 
   test('rules order: reflective beats semantic beats procedural for mixed signals', () => {

@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander';
-import { getClient } from '../client.js';
+import { client } from '../client.js';
 import { remediationFor } from '../errors.js';
 import { colors } from '../colors.js';
 
@@ -22,7 +22,6 @@ export function registerStatusCommand(program: Command) {
       const previousQuiet = process.env.SQUISH_QUIET;
       if (options.json) process.env.SQUISH_QUIET = '1';
       try {
-        const client = getClient();
         const stats = await client.getStats();
 
         if (options.json) {

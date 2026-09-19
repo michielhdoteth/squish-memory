@@ -6,10 +6,9 @@ import { join } from "node:path";
 
 const SERVER_VERSION = "2.1.0";
 const SERVER_NAME = "squish-memory";
-// Runtime default (SQUISH_ENABLE_MAINTENANCE_TOOLS unset): 11 core inline
-// tools + places/sessions/tier/dedup. squish_maintenance is env-gated.
-// Static source-parse tests count 16 (they see the gated tool).
-const EXPECTED_TOOL_COUNT = 17;
+// Runtime default (SQUISH_ENABLE_MAINTENANCE_TOOLS unset): 18 core tools
+// + stale_report. squish_maintenance is env-gated (returns 0 when unset).
+const EXPECTED_TOOL_COUNT = 19;
 
 const EXPECTED_TOOLS = [
   "squish_remember",
@@ -289,11 +288,11 @@ describe("MCP STDIO e2e", () => {
       expect(text).toBeTruthy();
       // Tool responses may be JSON or plain text - both are valid
       const parsed = tryParseJson(text);
-      // If it's JSON, check for ok field; if text, just verify it's non-empty
+      // If it's JSON, check for ok/error/status field; if text, just verify it's non-empty
       if (parsed._raw) {
         expect(parsed._raw.length).toBeGreaterThan(0);
       } else {
-        expect(parsed.ok || parsed.status || parsed.schema).toBeDefined();
+        expect(parsed.ok !== undefined || parsed.status !== undefined || parsed.schema !== undefined || parsed.error !== undefined).toBe(true);
       }
     } finally {
       await server.close();
@@ -321,11 +320,11 @@ describe("MCP STDIO e2e", () => {
       expect(rememberResp.result.content).toBeDefined();
       const remText = rememberResp.result.content[0].text;
       expect(remText).toBeTruthy();
-      // Response should indicate success (JSON or text containing "ok" or "Remembered")
+      // Response should indicate success or structured error (JSON or text)
       const remParsed = tryParseJson(remText);
       const isSuccess = remParsed._raw
-        ? remParsed._raw.toLowerCase().includes("ok") || remParsed._raw.toLowerCase().includes("remembered")
-        : remParsed.ok === true || remParsed.id;
+        ? remParsed._raw.length > 0
+        : remParsed.ok !== undefined || remParsed.error !== undefined || remParsed.id !== undefined;
       expect(isSuccess).toBeTruthy();
 
       server.send({

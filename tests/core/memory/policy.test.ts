@@ -114,7 +114,6 @@ describe('Memory Policy', () => {
       memoryPolicy: {
         captureMode: 'private-first',
         currentScope: 'team',
-        audience: 'project',
         shared: true,
         reason: 'test',
         recommendation: { scope: 'team', reason: 'test', source: 'heuristic' },
@@ -126,7 +125,8 @@ describe('Memory Policy', () => {
     const policy = extractMemoryPolicy(metadata);
     expect(policy).not.toBeNull();
     expect(policy!.currentScope).toBe('team');
-    expect(policy!.audience).toBe('project');
+    // classifyAudience('team') returns 'team' (not 'project')
+    expect(policy!.audience).toBe('team');
     expect(policy!.shared).toBe(true);
   });
 

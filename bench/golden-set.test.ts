@@ -251,7 +251,7 @@ describe('calibration metrics (Batch 6a)', () => {
 
 describe('end-to-end smoke eval through SDK surface', () => {
   test('seeding + search retrieves the target memory via goldenId mapping', async () => {
-    const { SquishRuntime } = await import('../../core/runtime/squish-runtime.js');
+    const { SquishRuntime } = await import('../core/runtime/squish-runtime.js');
     const client = new SquishRuntime();
 
     const uuidToGolden = new Map<string, string>();
@@ -272,7 +272,7 @@ describe('end-to-end smoke eval through SDK surface', () => {
     // integers crash the SDK result mapper on the vector-search read path,
     // and ALL temporal columns (created_at, updated_at, last_decay_at) must
     // share one consistent format or computeRetention's anchor goes NaN.
-    const { getDb } = await import('../../db/index.js');
+    const { getDb } = await import('../db/index.js');
     const db = await getDb();
     const sqlite = (db as any)?.$client;
     if (sqlite && typeof sqlite.prepare === 'function') {

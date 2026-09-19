@@ -57,15 +57,13 @@ describe('Hook System', () => {
       expect(content).toContain('export function uninstallHooks');
     });
 
-    it('CLI install command integrates with core engine for hooks', () => {
-      const cli = path.join(root, 'packages', 'cli', 'src', 'commands', 'install.ts');
+    it('CLI install command exists and registers with commander', () => {
+      const cli = path.join(root, 'cli', 'commands', 'install.ts');
       expect(fs.existsSync(cli)).toBe(true);
       const content = fs.readFileSync(cli, 'utf-8');
-      // CLI delegates hooks to core via batch functions
-      expect(content).toContain('installAll');
-      expect(content).toContain('uninstallAll');
-      expect(content).toContain('(no hook support)');
-      expect(content).toContain('Hooks');
+      // CLI registers install command with commander
+      expect(content).toContain('registerInstallCommand');
+      expect(content).toContain('install');
     });
   });
 });

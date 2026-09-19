@@ -3,7 +3,7 @@
 // Load .env file for config
 import dotenv from 'dotenv';
 import { resolve } from 'path';
-dotenv.config({ path: resolve(__dirname, '../.env') });
+dotenv.config({ path: resolve(__dirname, '../.env'), quiet: true });
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { toNodeHandler } from "@modelcontextprotocol/node";
@@ -256,7 +256,6 @@ async function runHttp(port: number): Promise<void> {
   const nodeHandler = toNodeHandler(mcpHandler);
 
   const app = express();
-  app.use(express.json());
 
   // CORS for web-based MCP clients (restrictive origins)
   const allowedOrigins = process.env.SQUISH_CORS_ORIGINS
@@ -311,11 +310,13 @@ async function runHttp(port: number): Promise<void> {
     void probeSchemaHealth().then((probe) => {
       res.json({
         status: probe.status === "ok" ? "ok" : (probe.status === "drifted" ? "degraded" : "broken"),
+        server: SERVER_NAME,
         version: SERVER_VERSION,
       });
     }).catch(() => {
       res.status(500).json({
         status: "broken",
+        server: SERVER_NAME,
         version: SERVER_VERSION,
       });
     });
