@@ -77,7 +77,7 @@ interface RAGReport {
     queryId: string;
     variant: string;
     retrievedIds: string[];
-    retrievalScores: number[];
+    retrievedScores: number[];
     answer: string;
     expected: string;
     judge: {
@@ -134,7 +134,7 @@ async function seedCorpusAndRetrieve(
   variant: RetrievalVariant,
   topK: number,
   dataDir: string,
-): Promise<Array<{ query: RAGDatasetQuery; retrievedIds: string[]; retrievalScores: number[]; context: string[] }>> {
+): Promise<Array<{ query: RAGDatasetQuery; retrievedIds: string[]; retrievedScores: number[]; context: string[] }>> {
   // Apply variant flags
   const flags = VARIANT_FLAGS[variant];
   const savedEnv: Record<string, string | undefined> = {};
@@ -162,20 +162,20 @@ async function seedCorpusAndRetrieve(
     }
 
     // Run queries
-    const results: Array<{ query: RAGDatasetQuery; retrievedIds: string[]; retrievalScores: number[]; context: string[] }> = [];
+    const results: Array<{ query: RAGDatasetQuery; retrievedIds: string[]; retrievedScores: number[]; context: string[] }> = [];
 
     for (const q of queries) {
       if (variant === 'no_memory') {
-        results.push({ query: q, retrievedIds: [], retrievalScores: [], context: [] });
+        results.push({ query: q, retrievedIds: [], retrievedScores: [], context: [] });
         continue;
       }
 
       const searchResults = await client.search(q.query, { limit: topK });
       const retrievedIds = searchResults.map(r => uuidToGolden.get(r.memory.id) ?? r.memory.id);
-      const retrievalScores = searchResults.map(r => r.score);
+      const retrievedScores = searchResults.map(r => r.score);
       const context = searchResults.map(r => r.memory.content);
 
-      results.push({ query: q, retrievedIds, retrievalScores, context });
+      results.push({ query: q, retrievedIds, retrievedScores, context });
     }
 
     return results;
@@ -200,10 +200,10 @@ export async function runRAGBenchmark(options?: {
   quiet?: boolean;
   out?: string;
 }) {
-  const answerProvider = options?.answerProvider || PINNED_ANSWER_PROVIDER;
-  const answerModel = options?.answerModel || PINNED_ANSWER_MODEL;
-  const judgeProvider = options?.judgeProvider || PINNED_JUDGE_PROVIDER;
-  const judgeModel = options?.judgeModel || PINNED_JUDGE_MODEL;
+  const answerProvider = options?.answerProvider || process.env.BENCH_ANSWER_PROVIDER || PINNED_ANSWER_PROVIDER;
+  const answerModel = options?.answerModel || process.env.BENCH_ANSWER_MODEL || PINNED_ANSWER_MODEL;
+  const judgeProvider = options?.judgeProvider || process.env.BENCH_JUDGE_PROVIDER || PINNED_JUDGE_PROVIDER;
+  const judgeModel = options?.judgeModel || process.env.BENCH_JUDGE_MODEL || PINNED_JUDGE_MODEL;
   const topK = options?.topK ?? 5;
   const quiet = options?.quiet ?? false;
 
@@ -240,7 +240,7 @@ export async function runRAGBenchmark(options?: {
     try {
       const retrieved = await seedCorpusAndRetrieve(dataset.queries, variant, topK, dataDir);
 
-      for (const { query, retrievedIds, retrievalScores, context } of retrieved) {
+      for (const { query, retrievedIds, retrievedScores, context } of retrieved) {
         // Get answer
         const answerResult = await answerAdapter.answer({ query: query.query, context });
 
@@ -257,7 +257,7 @@ export async function runRAGBenchmark(options?: {
           category: query.category,
           variant,
           retrievedIds,
-          retrievalScores,
+          retrievedScores,
           answer: answerResult.answer,
           expected: query.expected,
           judge: judgeResult,
@@ -270,7 +270,7 @@ export async function runRAGBenchmark(options?: {
           queryId: query.id,
           variant,
           retrievedIds,
-          retrievalScores,
+          retrievedScores,
           answer: answerResult.answer,
           expected: query.expected,
           judge: {
@@ -286,6 +286,9 @@ export async function runRAGBenchmark(options?: {
           const correct = allResults.filter(r => r.judge.correct).length;
           console.log(`  [${allResults.length}/${dataset.queries.length * variants.length}] Correct: ${correct}`);
         }
+
+        // Rate limit: 1.5s delay between API calls to stay under 40 RPM
+        await new Promise(r => setTimeout(r, 1500));
       }
     } finally {
       try { rmSync(dataDir, { recursive: true, force: true }); } catch {}

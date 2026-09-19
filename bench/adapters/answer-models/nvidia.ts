@@ -9,7 +9,7 @@ import type { AnswerAdapter, AnswerInput, AnswerResult } from './types.js';
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 
 export function createNVIDIAAnswerAdapter(
-  model: string = 'poolside/laguna-xs-2.1',
+  model: string = 'nvidia/nemotron-3-ultra-550b-a55b',
   apiKey?: string,
 ): AnswerAdapter {
   const key = apiKey || process.env.NVIDIA_API_KEY;
@@ -20,7 +20,7 @@ export function createNVIDIAAnswerAdapter(
 
     async answer(input: AnswerInput): Promise<AnswerResult> {
       const started = Date.now();
-      const maxRetries = 3;
+      const maxRetries = 8;
 
       const contextBlock = input.context.length > 0
         ? `Relevant memories:\n${input.context.map((c, i) => `[${i + 1}] ${c}`).join('\n\n')}`
@@ -49,11 +49,14 @@ export function createNVIDIAAnswerAdapter(
             }),
           });
 
-          if (response.status === 503) {
-            const waitTime = Math.min(Math.pow(2, attempt) * 3000, 30000);
+          if (response.status === 503 || response.status === 429) {
+            const waitTime = Math.min(Math.pow(2, attempt) * 3000, 60000);
             await new Promise(r => setTimeout(r, waitTime));
             continue;
           }
+
+          // Rate limit: 40 RPM = 1 req per 1.5s minimum between sequential calls
+          await new Promise(r => setTimeout(r, 1500));
 
           if (!response.ok) {
             const err = await response.text();

@@ -43,6 +43,10 @@ export async function runResurrectionBenchmark(quiet = false) {
   try {
     const { getDb } = await import('../../db/index.js');
     const db = await getDb();
+    const sqlite = (db as any)?.$client;
+    if (!sqlite || typeof sqlite.prepare !== 'function') {
+      throw new Error('Expected SQLite client for resurrection benchmark');
+    }
 
     if (!quiet) {
       console.log(`\n=== Resurrection Benchmark ===`);
@@ -61,8 +65,8 @@ export async function runResurrectionBenchmark(quiet = false) {
         importanceScore: Math.round(mem.initialConfidence * 100),
         stability: mem.initialStability,
         usageCount: 0,
-        createdAt: new Date(mem.createdAt).toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: new Date(mem.createdAt),
+        updatedAt: new Date(),
       });
     }
 
@@ -78,7 +82,7 @@ export async function runResurrectionBenchmark(quiet = false) {
       if (!quiet) console.log(`Running: ${tc.description}`);
 
       // Get initial state (importance_score is 0-100; convert to 0.0-1.0)
-      const initialMem = (db as any).prepare(
+      const initialMem = sqlite.prepare(
         'SELECT importance_score, stability FROM memories WHERE id = ?'
       ).get(tc.memoryId) as any;
 
@@ -96,7 +100,7 @@ export async function runResurrectionBenchmark(quiet = false) {
       }
 
       // Get final state
-      const finalMem = (db as any).prepare(
+      const finalMem = sqlite.prepare(
         'SELECT importance_score, stability FROM memories WHERE id = ?'
       ).get(tc.memoryId) as any;
 

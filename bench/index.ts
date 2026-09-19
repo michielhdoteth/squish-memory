@@ -54,7 +54,9 @@ Modes:
 Options:
   --variant=<v>        Run single RAG variant (no_memory|vector_only|...)
   --answer-provider=<p> Answer model provider (default: openai)
+  --answer-model=<m>   Answer model name
   --judge-provider=<p>  Judge model provider (default: openai)
+  --judge-model=<m>    Judge model name
   --top-k=<n>          Top-K results (default: 5)
   --out=<path>         Output report path
   --quiet              Suppress output
@@ -66,54 +68,92 @@ Without mode flags, runs the full suite.`);
   console.log('=== Squish Bench ===\n');
 
   const startTime = Date.now();
+  const failures: string[] = [];
 
   // --- Retrieval (runs as subprocess — it has its own CLI) ---
   if (!hasFlag('rag-only') && !hasFlag('locomo') && !hasFlag('resurrection') && !hasFlag('embeddings')) {
-    console.log('[1/3] Retrieval benchmark...');
-    execSync(`bun run bench/runners/retrieval.ts${quiet ? ' --quiet' : ''}`, {
-      cwd: ROOT,
-      stdio: 'inherit',
-    });
+    try {
+      console.log('[1/3] Retrieval benchmark...');
+      execSync(`bun run bench/runners/retrieval.ts${quiet ? ' --quiet' : ''}`, {
+        cwd: ROOT,
+        stdio: 'inherit',
+      });
+    } catch (err: any) {
+      console.error(`Retrieval benchmark failed: ${err.message}`);
+      failures.push('retrieval');
+    }
   }
 
   // --- RAG ---
   if (!hasFlag('retrieval-only') && !hasFlag('locomo') && !hasFlag('resurrection') && !hasFlag('embeddings')) {
-    console.log('[2/3] RAG benchmark...');
-    const { runRAGBenchmark } = await import('./runners/rag.js');
-    await runRAGBenchmark({
-      quiet,
-      variant: getArg('variant') as RetrievalVariant | undefined,
-      answerProvider: getArg('answer-provider'),
-      judgeProvider: getArg('judge-provider'),
-      topK: getArg('top-k') ? parseInt(getArg('top-k')!) : undefined,
-      out: getArg('out'),
-    });
+    try {
+      console.log('[2/3] RAG benchmark...');
+      const { runRAGBenchmark } = await import('./runners/rag.js');
+      await runRAGBenchmark({
+        quiet,
+        variant: getArg('variant') as RetrievalVariant | undefined,
+        answerProvider: getArg('answer-provider'),
+        answerModel: getArg('answer-model'),
+        judgeProvider: getArg('judge-provider'),
+        judgeModel: getArg('judge-model'),
+        topK: getArg('top-k') ? parseInt(getArg('top-k')!) : undefined,
+        out: getArg('out'),
+      });
+    } catch (err: any) {
+      console.error(`RAG benchmark failed: ${err.message}`);
+      failures.push('rag');
+    }
   }
 
   // --- Resurrection ---
   if (!hasFlag('retrieval-only') && !hasFlag('rag-only') && !hasFlag('locomo') && !hasFlag('embeddings')) {
-    console.log('[3/3] Resurrection benchmark...');
-    const { runResurrectionBenchmark } = await import('./runners/resurrection.js');
-    await runResurrectionBenchmark(quiet);
+    try {
+      console.log('[3/3] Resurrection benchmark...');
+      const { runResurrectionBenchmark } = await import('./runners/resurrection.js');
+      await runResurrectionBenchmark(quiet);
+    } catch (err: any) {
+      console.error(`Resurrection benchmark failed: ${err.message}`);
+      failures.push('resurrection');
+    }
   }
 
   // --- LoCoMo (separate, needs NVIDIA key) ---
   if (hasFlag('locomo')) {
-    const { runLoCoMoBenchmark } = await import('./runners/locomo.js');
-    await runLoCoMoBenchmark(undefined, quiet);
+    try {
+      const { runLoCoMoBenchmark } = await import('./runners/locomo.js');
+      await runLoCoMoBenchmark({
+        quiet,
+        judgeProvider: getArg('judge-provider'),
+        judgeModel: getArg('judge-model'),
+      });
+    } catch (err: any) {
+      console.error(`LoCoMo benchmark failed: ${err.message}`);
+      failures.push('locomo');
+    }
   }
 
   // --- Embedding comparison ---
   if (hasFlag('embeddings')) {
-    const providers = getArg('embeddings')?.split(',') || ['local'];
-    console.log(`[4/4] Embedding comparison: ${providers.join(', ')}...`);
-    const { runEmbeddingBakeoff } = await import('./runners/embeddings.js');
-    await runEmbeddingBakeoff(quiet);
+    try {
+      const providers = getArg('embeddings')?.split(',') || ['local'];
+      console.log(`[4/4] Embedding comparison: ${providers.join(', ')}...`);
+      const { runEmbeddingBakeoff } = await import('./runners/embeddings.js');
+      await runEmbeddingBakeoff(quiet);
+    } catch (err: any) {
+      console.error(`Embedding benchmark failed: ${err.message}`);
+      failures.push('embeddings');
+    }
   }
 
   const durationMs = Date.now() - startTime;
   console.log(`\nTotal time: ${(durationMs / 1000).toFixed(1)}s`);
-  console.log('Done.');
+
+  if (failures.length > 0) {
+    console.error(`\nFailed benchmarks: ${failures.join(', ')}`);
+    process.exitCode = 1;
+  } else {
+    console.log('Done.');
+  }
 }
 
 main().catch(err => {

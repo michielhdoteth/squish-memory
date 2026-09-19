@@ -46,6 +46,7 @@ export function createOpenAIJudgeAdapter(
 
     async judge(input: JudgeInput): Promise<JudgeResult> {
       const started = Date.now();
+      const maxRetries = 5;
 
       const contextBlock = input.context.length > 0
         ? input.context.map((c, i) => `[${i + 1}] ${c}`).join('\n\n')
@@ -62,56 +63,70 @@ Generated answer: ${input.answer}
 
 Evaluate the generated answer. Return JSON only.`;
 
-      const response = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: JUDGE_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.0,
-          max_tokens: 512,
-          response_format: { type: 'json_object' },
-        }),
-      });
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${key}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: 'system', content: JUDGE_SYSTEM_PROMPT },
+                { role: 'user', content: userPrompt },
+              ],
+              temperature: 0.0,
+              max_tokens: 512,
+              response_format: { type: 'json_object' },
+            }),
+          });
 
-      if (!response.ok) {
-        const err = await response.text();
-        throw new Error(`OpenAI judge API error ${response.status}: ${err}`);
+          if (response.status === 503 || response.status === 429) {
+            const waitTime = Math.min(Math.pow(2, attempt) * 3000, 60000);
+            await new Promise(r => setTimeout(r, waitTime));
+            continue;
+          }
+
+          if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`OpenAI judge API error ${response.status}: ${err}`);
+          }
+
+          const data = await response.json() as any;
+          const content = data.choices[0].message.content.trim();
+          const latencyMs = Date.now() - started;
+
+          try {
+            const parsed = JSON.parse(content);
+            return {
+              correct: Boolean(parsed.correct),
+              grounded: Boolean(parsed.grounded),
+              stale: Boolean(parsed.stale),
+              shouldAbstain: Boolean(parsed.should_abstain),
+              confidence: Number(parsed.confidence) || 0.5,
+              reasoning: String(parsed.reasoning || ''),
+              latencyMs,
+            };
+          } catch {
+            return {
+              correct: false,
+              grounded: false,
+              stale: false,
+              shouldAbstain: false,
+              confidence: 0,
+              reasoning: `Failed to parse judge output: ${content}`,
+              latencyMs,
+            };
+          }
+        } catch (error) {
+          if (attempt === maxRetries - 1) throw error;
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
+        }
       }
 
-      const data = await response.json() as any;
-      const content = data.choices[0].message.content.trim();
-      const latencyMs = Date.now() - started;
-
-      try {
-        const parsed = JSON.parse(content);
-        return {
-          correct: Boolean(parsed.correct),
-          grounded: Boolean(parsed.grounded),
-          stale: Boolean(parsed.stale),
-          shouldAbstain: Boolean(parsed.should_abstain),
-          confidence: Number(parsed.confidence) || 0.5,
-          reasoning: String(parsed.reasoning || ''),
-          latencyMs,
-        };
-      } catch {
-        // Fallback if JSON parsing fails
-        return {
-          correct: false,
-          grounded: false,
-          stale: false,
-          shouldAbstain: false,
-          confidence: 0,
-          reasoning: `Failed to parse judge output: ${content}`,
-          latencyMs,
-        };
-      }
+      throw new Error('Max retries exceeded');
     },
   };
 }

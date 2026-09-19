@@ -32,7 +32,7 @@ Rules:
 - Return ONLY the JSON object, no markdown fences`;
 
 export function createNVIDIAJudgeAdapter(
-  model: string = 'poolside/laguna-xs-2.1',
+  model: string = 'nvidia/nemotron-3-ultra-550b-a55b',
   apiKey?: string,
 ): JudgeAdapter {
   const key = apiKey || process.env.NVIDIA_API_KEY;
@@ -43,6 +43,7 @@ export function createNVIDIAJudgeAdapter(
 
     async judge(input: JudgeInput): Promise<JudgeResult> {
       const started = Date.now();
+      const maxRetries = 8;
 
       const contextBlock = input.context.length > 0
         ? input.context.map((c, i) => `[${i + 1}] ${c}`).join('\n\n')
@@ -59,55 +60,75 @@ Generated: ${input.answer}
 
 Evaluate. Return JSON only.`;
 
-      const response = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: JUDGE_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.0,
-          max_tokens: 512,
-          stream: false,
-        }),
-      });
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${key}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: 'system', content: JUDGE_SYSTEM_PROMPT },
+                { role: 'user', content: userPrompt },
+              ],
+              temperature: 0.0,
+              max_tokens: 512,
+              stream: false,
+            }),
+          });
 
-      if (!response.ok) {
-        const err = await response.text();
-        throw new Error(`NVIDIA judge API error ${response.status}: ${err}`);
+          if (response.status === 503 || response.status === 429) {
+            const waitTime = Math.min(Math.pow(2, attempt) * 3000, 60000);
+            await new Promise(r => setTimeout(r, waitTime));
+            continue;
+          }
+
+          // Rate limit: 40 RPM = 1 req per 1.5s minimum between sequential calls
+          await new Promise(r => setTimeout(r, 1500));
+
+          if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`NVIDIA judge API error ${response.status}: ${err}`);
+          }
+
+          const data = await response.json() as any;
+          const content = data.choices[0].message.content.trim();
+          const latencyMs = Date.now() - started;
+
+          try {
+            const parsed = JSON.parse(content);
+            return {
+              correct: Boolean(parsed.correct),
+              grounded: Boolean(parsed.grounded),
+              stale: Boolean(parsed.stale),
+              shouldAbstain: Boolean(parsed.should_abstain),
+              confidence: Number(parsed.confidence) || 0.5,
+              reasoning: String(parsed.reasoning || ''),
+              latencyMs,
+            };
+          } catch {
+            return {
+              correct: false,
+              grounded: false,
+              stale: false,
+              shouldAbstain: false,
+              confidence: 0,
+              reasoning: `Failed to parse judge output: ${content}`,
+              latencyMs,
+            };
+          }
+        } catch (fetchErr: any) {
+          // Network errors (ECONNRESET, ECONNREFUSED, timeout, etc.)
+          if (attempt === maxRetries - 1) throw fetchErr;
+          const waitTime = Math.min(Math.pow(2, attempt) * 3000, 60000);
+          await new Promise(r => setTimeout(r, waitTime));
+        }
       }
 
-      const data = await response.json() as any;
-      const content = data.choices[0].message.content.trim();
-      const latencyMs = Date.now() - started;
-
-      try {
-        const parsed = JSON.parse(content);
-        return {
-          correct: Boolean(parsed.correct),
-          grounded: Boolean(parsed.grounded),
-          stale: Boolean(parsed.stale),
-          shouldAbstain: Boolean(parsed.should_abstain),
-          confidence: Number(parsed.confidence) || 0.5,
-          reasoning: String(parsed.reasoning || ''),
-          latencyMs,
-        };
-      } catch {
-        return {
-          correct: false,
-          grounded: false,
-          stale: false,
-          shouldAbstain: false,
-          confidence: 0,
-          reasoning: `Failed to parse judge output: ${content}`,
-          latencyMs,
-        };
-      }
+      throw new Error('NVIDIA judge: max retries exceeded');
     },
   };
 }

@@ -16,6 +16,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 import { createLocalAdapter } from '../adapters/embeddings/local.js';
+import { createOpenAIAdapter } from '../adapters/embeddings/openai.js';
+import { createNVIDIAAdapter } from '../adapters/embeddings/nvidia.js';
 import type { EmbeddingAdapter } from '../adapters/embeddings/types.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -39,6 +41,8 @@ function parseProviders(): string[] {
 function getAdapter(provider: string): EmbeddingAdapter {
   switch (provider) {
     case 'local': return createLocalAdapter();
+    case 'openai': return createOpenAIAdapter();
+    case 'nvidia': return createNVIDIAAdapter();
     default: throw new Error(`Unknown embedding provider: ${provider}. Available: local, openai, nvidia`);
   }
 }

@@ -7,13 +7,13 @@
 
 // ─── Answer Model (pinned canonical) ────────────────────────────────────────
 
-export const PINNED_ANSWER_PROVIDER = 'openai';
-export const PINNED_ANSWER_MODEL = 'gpt-4o-mini';
+export const PINNED_ANSWER_PROVIDER = 'nvidia';
+export const PINNED_ANSWER_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b';
 
 // ─── Judge Model (separate from answer to avoid self-evaluation bias) ───────
 
-export const PINNED_JUDGE_PROVIDER = 'openai';
-export const PINNED_JUDGE_MODEL = 'gpt-4o';
+export const PINNED_JUDGE_PROVIDER = 'nvidia';
+export const PINNED_JUDGE_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b';
 
 // ─── Retrieval Variants (ablation) ─────────────────────────────────────────
 

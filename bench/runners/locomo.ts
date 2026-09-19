@@ -10,6 +10,8 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createNVIDIAAnswerAdapter } from '../adapters/answer-models/nvidia.js';
+import { createNVIDIAJudgeAdapter } from '../adapters/judges/nvidia.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -46,55 +48,12 @@ interface BenchmarkResult {
   partial: boolean;
   category: number;
   evidence: string[];
+  judgeReasoning?: string;
 }
 
-// ─── NVIDIA API Client ──────────────────────────────────────────────────────
+// ─── Answer Model ──────────────────────────────────────────────────────────
 
-const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
-const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
-const MODEL = process.env.BENCH_ANSWER_MODEL || 'poolside/laguna-xs-2.1';
-
-async function callNvidia(prompt: string, maxTokens = 512, retries = 5): Promise<string> {
-  if (!NVIDIA_API_KEY) throw new Error('NVIDIA_API_KEY required for LoCoMo bench');
-
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      const response = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${NVIDIA_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.1,
-          top_p: 0.95,
-          max_tokens: maxTokens,
-          stream: false,
-        }),
-      });
-
-      if (response.status === 503) {
-        const waitTime = Math.min(Math.pow(2, attempt) * 3000, 30000);
-        await new Promise(r => setTimeout(r, waitTime));
-        continue;
-      }
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`NVIDIA API error: ${response.status} - ${error}`);
-      }
-
-      const data = await response.json() as any;
-      return data.choices[0].message.content.trim();
-    } catch (error) {
-      if (attempt === retries - 1) throw error;
-      await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
-    }
-  }
-  throw new Error('Max retries exceeded');
-}
+const MODEL = process.env.BENCH_ANSWER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b';
 
 // ─── Answer Matching ────────────────────────────────────────────────────────
 
@@ -134,7 +93,14 @@ function extractConversationText(conversations: LoCoMoConversation): string {
   const speakerA = conversations.speaker_a;
   const speakerB = conversations.speaker_b;
 
-  for (let i = 1; i <= 35; i++) {
+  // Dynamically discover all session_N_date_time keys instead of hardcoding limit
+  const sessionNums = Object.keys(conversations)
+    .filter(k => k.startsWith('session_') && k.endsWith('_date_time'))
+    .map(k => parseInt(k.replace('session_', '').replace('_date_time', ''), 10))
+    .filter(n => !isNaN(n))
+    .sort((a, b) => a - b);
+
+  for (const i of sessionNums) {
     const dateTimeKey = `session_${i}_date_time`;
     const sessionKey = `session_${i}`;
 
@@ -156,11 +122,25 @@ function extractConversationText(conversations: LoCoMoConversation): string {
 
 // ─── Main Benchmark ─────────────────────────────────────────────────────────
 
-export async function runLoCoMoBenchmark(limit?: number, quiet = false) {
+export async function runLoCoMoBenchmark(options?: {
+  limit?: number;
+  quiet?: boolean;
+  judgeProvider?: string;
+  judgeModel?: string;
+}) {
+  const limit = options?.limit;
+  const quiet = options?.quiet ?? false;
+  const judgeProvider = options?.judgeProvider || 'nvidia';
+  const judgeModel = options?.judgeModel || 'nvidia/nemotron-3-ultra-550b-a55b';
+
   const startedAt = Date.now();
 
   const datasetPath = join(__dirname, '..', 'datasets', 'locomo', 'locomo10.json');
   const dataset: LoCoMoPersona[] = JSON.parse(readFileSync(datasetPath, 'utf-8'));
+
+  // Create answer and judge adapters using shared NVIDIA adapter
+  const answerAdapter = createNVIDIAAnswerAdapter(MODEL);
+  const judgeAdapter = createNVIDIAJudgeAdapter(judgeModel);
 
   const results: BenchmarkResult[] = [];
   let totalQuestions = 0;
@@ -174,7 +154,8 @@ export async function runLoCoMoBenchmark(limit?: number, quiet = false) {
 
   if (!quiet) {
     console.log(`\n=== LoCoMo Benchmark ===`);
-    console.log(`Model: ${MODEL}`);
+    console.log(`Answer Model: ${MODEL}`);
+    console.log(`Judge: ${judgeAdapter.name}`);
     console.log(`Dataset: ${dataset.length} personas, ${totalQuestions} questions`);
     console.log(`Processing: ${questionsToProcess} questions\n`);
   }
@@ -193,17 +174,42 @@ export async function runLoCoMoBenchmark(limit?: number, quiet = false) {
 
     const summary = persona.session_summary || '';
     const observations = persona.observation || '';
-    const context = `CONVERSATION CONTEXT:\n${conversationText}\n\nSUMMARY:\n${summary}\n\nOBSERVATIONS:\n${observations}\n\nAnswer the following question based on the conversation above. Be concise and accurate. If the answer is not in the conversation, say "not mentioned".`;
+    const contextBlock = `CONVERSATION CONTEXT:\n${conversationText}\n\nSUMMARY:\n${summary}\n\nOBSERVATIONS:\n${observations}`;
 
     for (const qa of persona.qa) {
       if (processedQuestions >= questionsToProcess) break;
 
-      const prompt = `${context}\n\nQuestion: ${qa.question}\n\nAnswer (be concise, just the answer):`;
-
       try {
-        const predicted = await callNvidia(prompt);
-        const correct = checkCorrect(predicted, qa.answer);
-        const partial = !correct && checkPartial(predicted, qa.answer);
+        const answerResult = await answerAdapter.answer({ query: qa.question, context: [contextBlock] });
+        const predicted = answerResult.answer;
+
+        // Fast pre-filter: exact/near-exact string match skips LLM judge
+        const normPred = normalizeAnswer(predicted);
+        const normExp = normalizeAnswer(qa.answer);
+        const isExactMatch = normPred === normExp || normPred.includes(normExp);
+
+        let correct: boolean;
+        let partial: boolean;
+        let judgeReasoning: string;
+
+        if (isExactMatch) {
+          // Fast path: exact match, skip LLM judge
+          correct = true;
+          partial = false;
+          judgeReasoning = 'Exact string match (LLM judge skipped)';
+        } else {
+          // Slow path: use LLM judge for actual correctness evaluation
+          const judgeResult = await judgeAdapter.judge({
+            query: qa.question,
+            answer: predicted,
+            expected: qa.answer,
+            context: [conversationText],
+          });
+          correct = judgeResult.correct;
+          // Partial credit via string matching when judge says incorrect
+          partial = !correct && checkPartial(predicted, qa.answer);
+          judgeReasoning = judgeResult.reasoning || '';
+        }
 
         results.push({
           question: qa.question,
@@ -213,6 +219,7 @@ export async function runLoCoMoBenchmark(limit?: number, quiet = false) {
           partial,
           category: qa.category,
           evidence: qa.evidence,
+          judgeReasoning,
         });
 
         processedQuestions++;
@@ -295,12 +302,26 @@ const argv = process.argv.slice(2);
 const limitArg = argv.find(a => a.startsWith('--limit='));
 const quietFlag = argv.includes('--quiet');
 
+function getArg(name: string): string | undefined {
+  const arg = argv.find(a => a.startsWith(`--${name}=`));
+  return arg?.split('=').slice(1).join('=');
+}
+
 if (argv.includes('--help') || argv.includes('-h')) {
-  console.log('Usage: bun bench/runners/locomo.ts [--limit N] [--quiet]');
+  console.log(`Usage: bun bench/runners/locomo.ts [options]
+  --limit=N              Maximum questions to process
+  --quiet                Suppress output
+  --judge-provider=<p>   Judge model provider (default: nvidia)
+  --judge-model=<m>      Judge model name`);
   process.exit(0);
 }
 
-runLoCoMoBenchmark(limitArg ? parseInt(limitArg.split('=')[1]) : undefined, quietFlag)
+runLoCoMoBenchmark({
+  limit: limitArg ? parseInt(limitArg.split('=')[1]) : undefined,
+  quiet: quietFlag,
+  judgeProvider: getArg('judge-provider'),
+  judgeModel: getArg('judge-model'),
+})
   .then(() => process.exit(0))
   .catch(err => {
     console.error(err);
