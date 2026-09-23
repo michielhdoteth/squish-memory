@@ -58,8 +58,8 @@ export async function walkPlace(
     return null;
   }
 
-  // Get memory IDs for this place
-  const memoryIds = await getPlaceMemories(place.id, maxMemoriesPerPlace);
+  // Get memory IDs for this place (knowledge_edges stores placeType, not UUID)
+  const memoryIds = await getPlaceMemories(place.placeType, maxMemoriesPerPlace);
 
   // Batch-fetch all memories at once (fixes N+1 query)
   const allMemories = await getMemoriesByIds(memoryIds, false);

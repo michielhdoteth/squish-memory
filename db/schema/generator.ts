@@ -33,7 +33,7 @@ export interface TableSchema {
  * Whitelist of allowed table names in the Squish schema
  */
 const ALLOWED_TABLE_NAMES = new Set([
-  'users', 'projects', 'memories', 'memory_places', 'places', 'place_rules',
+  'users', 'projects', 'memories', 'places', 'place_rules',
   'memory_associations', 'memory_tags', 'embeddings', 'sessions',
   'session_signals', 'session_working_set', 'context_sessions',
   'context_paging', 'temporal_anchors', 'graph_nodes', 'graph_edges',

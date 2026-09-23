@@ -635,7 +635,7 @@ async function assignMemoryToDefaultPlace(
       });
     }
 
-    // Store all candidates in memory_places (1:N)
+    // Store candidates via memory-places module (no-op: memory_places deprecated in v2.0.0)
     const { assignMemoryToPlaces } = await import('../places/memory-places.js');
     await assignMemoryToPlaces(memoryId, candidates, resolvedPlaceProjectId);
 

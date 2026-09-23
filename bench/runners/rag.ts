@@ -287,8 +287,7 @@ export async function runRAGBenchmark(options?: {
           console.log(`  [${allResults.length}/${dataset.queries.length * variants.length}] Correct: ${correct}`);
         }
 
-        // Rate limit: 1.5s delay between API calls to stay under 40 RPM
-        await new Promise(r => setTimeout(r, 1500));
+        // Adapters handle rate limiting internally
       }
     } finally {
       try { rmSync(dataDir, { recursive: true, force: true }); } catch {}

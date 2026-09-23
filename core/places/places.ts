@@ -394,20 +394,19 @@ export async function getPlaceByLociIndex(projectId: string | undefined, sortOrd
 }
 
 /**
- * Update memory count for a place
+ * Update memory count for a place.
+ * Counts placed_in edges from knowledge_edges for the place's type.
  */
 export async function updatePlaceMemoryCount(placeId: string): Promise<void> {
   const { db, schema } = await getDbClient();
 
-  // Resolve placeId to placeType and projectId by looking up the places table
+  // Resolve placeId to placeType
   let placeType: string | null = null;
-  let projectId: string | null = null;
   try {
-    const placeRow = db.$client.prepare(
-      'SELECT place_type, project_id FROM places WHERE id = ? LIMIT 1'
-    ).get(placeId) as { place_type: string; project_id: string } | undefined;
+    const placeRow = (db as any).$client.prepare(
+      'SELECT place_type FROM places WHERE id = ? LIMIT 1'
+    ).get(placeId) as { place_type: string } | undefined;
     placeType = placeRow?.place_type ?? null;
-    projectId = placeRow?.project_id ?? null;
   } catch {
     // Ignore
   }
@@ -417,36 +416,17 @@ export async function updatePlaceMemoryCount(placeId: string): Promise<void> {
     return;
   }
 
-  // Count memories in this place type, scoped by project
+  // Count from knowledge_edges
   let count = 0;
   try {
-    const rawClient = db.$client || db;
-    if (typeof rawClient.prepare === 'function') {
-      if (projectId) {
-        const stmt = rawClient.prepare(
-          `SELECT COUNT(*) as count FROM memory_places mp
-           INNER JOIN memories m ON mp.memory_id = m.id
-           WHERE mp.place_type = ? AND m.project_id = ?`
-        );
-        const row = stmt.get(placeType, projectId) as { count: number } | undefined;
-        count = row?.count ?? 0;
-      } else {
-        const stmt = rawClient.prepare(
-          'SELECT COUNT(*) as count FROM memory_places WHERE place_type = ?'
-        );
-        const row = stmt.get(placeType) as { count: number } | undefined;
-        count = row?.count ?? 0;
-      }
-    }
+    const sqlite = (db as any).$client || db;
+    const row = sqlite.prepare(
+      `SELECT COUNT(*) as cnt FROM knowledge_edges
+       WHERE to_id = ? AND to_kind = 'place' AND edge_type = 'placed_in'`
+    ).get(placeType) as { cnt: number } | undefined;
+    count = row?.cnt ?? 0;
   } catch {
-    // If raw SQL fails, fall back to counting from select results
-    try {
-      const rows = await db.select().from(schema.memoryPlaces).where(eq(schema.memoryPlaces.placeType, placeType));
-      count = rows.length;
-    } catch {
-      logger.warn(`[Places] Failed to update memory count for place ${placeId}`);
-      return;
-    }
+    // knowledge_edges table may not exist on very old installs
   }
 
   await db.update(schema.places)

@@ -487,23 +487,6 @@ CREATE INDEX IF NOT EXISTS places_type_idx ON places(place_type);
 CREATE INDEX IF NOT EXISTS places_parent_idx ON places(parent_id);
 CREATE INDEX IF NOT EXISTS places_sort_order_idx ON places(project_id, sort_order);
 
--- Memory-Place assignments (v1.5.0: 1:N multi-place routing)
-CREATE TABLE IF NOT EXISTS memory_places (
-  id TEXT PRIMARY KEY,
-  memory_id TEXT REFERENCES memories(id) ON DELETE CASCADE NOT NULL,
-  place_type TEXT NOT NULL,
-  weight REAL NOT NULL DEFAULT 1.0,
-  reason TEXT,
-  source TEXT NOT NULL DEFAULT 'heuristic',
-  is_primary INTEGER DEFAULT 0,
-  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
-);
-CREATE INDEX IF NOT EXISTS memory_places_memory_idx ON memory_places(memory_id);
-CREATE INDEX IF NOT EXISTS memory_places_place_type_idx ON memory_places(place_type);
-CREATE INDEX IF NOT EXISTS memory_places_place_weight_idx ON memory_places(place_type, weight);
-CREATE INDEX IF NOT EXISTS memory_places_memory_primary_idx ON memory_places(memory_id, is_primary);
-CREATE UNIQUE INDEX IF NOT EXISTS memory_places_unique ON memory_places(memory_id, place_type, source);
-
 -- Memory Tags (v1.5.0: Tag-aware retrieval)
 CREATE TABLE IF NOT EXISTS memory_tags (
   id TEXT PRIMARY KEY,
@@ -919,7 +902,6 @@ export async function ensureSqliteSchema(sqlite: Database): Promise<void> {
 const SCHEMA_VERSIONS = [
   { version: '1.2.0-base', description: 'Initial v1.2.0 schema with schema_versions table' },
   { version: '1.2.0-place-sort', description: 'Add place_sort_order column to places' },
-  { version: '1.2.0-mem-place', description: 'Add place_sort_order to memories and memory_places' },
   { version: '1.2.0-agent-prefs', description: 'Add agent_preferences table for agent evolution' },
   { version: '2.1.0-skills', description: 'Add skills, skill_versions, skill_assignments, skill_memory_links tables' },
   // '2.1.0-wiki' retired in Batch 8: wiki subsystem removed (db-only memory).

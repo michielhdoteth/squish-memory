@@ -1,10 +1,11 @@
 /**
  * NVIDIA API answer adapter.
  *
- * Extracted from tests/benchmarks/locomo-bench.ts for reuse.
+ * Uses shared rate limiter for provider throughput limits.
  */
 
 import type { AnswerAdapter, AnswerInput, AnswerResult } from './types.js';
+import { rateLimit } from '../../rate-limit.js';
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 
@@ -30,6 +31,8 @@ export function createNVIDIAAnswerAdapter(
 
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
+          await rateLimit();
+
           const response = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
             method: 'POST',
             headers: {
@@ -49,14 +52,14 @@ export function createNVIDIAAnswerAdapter(
             }),
           });
 
-          if (response.status === 503 || response.status === 429) {
-            const waitTime = Math.min(Math.pow(2, attempt) * 3000, 60000);
+          if (response.status === 429 || response.status === 503) {
+            const retryAfter = response.headers.get('retry-after');
+            const waitTime = retryAfter
+              ? Math.min(parseInt(retryAfter, 10) * 1000 + 2000, 30000)
+              : Math.min(Math.pow(2, attempt) * 2000, 30000);
             await new Promise(r => setTimeout(r, waitTime));
             continue;
           }
-
-          // Rate limit: 40 RPM = 1 req per 1.5s minimum between sequential calls
-          await new Promise(r => setTimeout(r, 1500));
 
           if (!response.ok) {
             const err = await response.text();
@@ -77,9 +80,14 @@ export function createNVIDIAAnswerAdapter(
               completion: data.usage?.completion_tokens ?? 0,
             },
           };
-        } catch (error) {
+        } catch (error: any) {
           if (attempt === maxRetries - 1) throw error;
-          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
+          // Transient errors: brief backoff then retry
+          const isNetwork = error?.code === 'ECONNRESET' || error?.code === 'ECONNREFUSED' || error?.code === 'ETIMEDOUT';
+          const waitTime = isNetwork
+            ? Math.min(Math.pow(2, attempt) * 1000, 10000)
+            : Math.min(Math.pow(2, attempt) * 2000, 30000);
+          await new Promise(r => setTimeout(r, waitTime));
         }
       }
 

@@ -54,7 +54,6 @@ describe('Graph Boost Integration', () => {
       sqlite.exec('DELETE FROM memory_associations;');
       sqlite.exec('DELETE FROM memories;');
       sqlite.exec('DELETE FROM places;');
-      sqlite.exec('DELETE FROM memory_places;');
     }
   });
 

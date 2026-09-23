@@ -6,14 +6,26 @@
  */
 
 // ─── Answer Model (pinned canonical) ────────────────────────────────────────
+// Uses Poolside Laguna XS 2.1 via NVIDIA NIM (free endpoint, same API key)
 
 export const PINNED_ANSWER_PROVIDER = 'nvidia';
-export const PINNED_ANSWER_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b';
+export const PINNED_ANSWER_MODEL = 'poolside/laguna-xs-2.1';
 
 // ─── Judge Model (separate from answer to avoid self-evaluation bias) ───────
 
 export const PINNED_JUDGE_PROVIDER = 'nvidia';
-export const PINNED_JUDGE_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b';
+export const PINNED_JUDGE_MODEL = 'poolside/laguna-xs-2.1';
+
+// ─── NVIDIA NIM Config ──────────────────────────────────────────────────────
+// Free endpoint, 40 RPM rate limit. Laguna XS 2.1 = 33B MoE, 3B active, 256K context.
+
+export const NVIDIA_NIM_CONFIG = {
+  provider: 'nvidia',
+  baseUrl: 'https://integrate.api.nvidia.com/v1',
+  apiKeyEnv: 'NVIDIA_API_KEY',
+  minDelayMs: 1500,     // provider throughput limit
+  maxRetries: 10,       // retries on 429 with Retry-After backoff
+};
 
 // ─── Retrieval Variants (ablation) ─────────────────────────────────────────
 

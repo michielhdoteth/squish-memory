@@ -28,7 +28,6 @@ export const REQUIRED_TABLES = [
   'namespaces',
   'maintenance_jobs',
   'places',
-  'memory_places',
   'place_rules',
   'session_summaries',
   'knowledge',

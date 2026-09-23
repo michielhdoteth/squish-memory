@@ -49,7 +49,6 @@ async function clearAllData(): Promise<void> {
   const db = await getDb();
   const sqlite = (db as any).$client;
   if (sqlite && typeof sqlite.exec === 'function') {
-    sqlite.exec('DELETE FROM memory_places;');
     sqlite.exec('DELETE FROM memories;');
     sqlite.exec('DELETE FROM place_rules;');
     sqlite.exec('DELETE FROM places;');

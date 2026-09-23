@@ -55,7 +55,6 @@ async function execSql(sql: string) {
 
 async function clearData() {
   await execSql('DELETE FROM memory_tags;');
-  await execSql('DELETE FROM memory_places;');
   await execSql('DELETE FROM memory_associations;');
   await execSql('DELETE FROM memories;');
   await execSql('DELETE FROM places;');

@@ -58,14 +58,10 @@ export function computeUsefulScore(judge: JudgeResult): number {
 
   if (judge.shouldAbstain) {
     // Unanswerable query: correct abstention is good, wrong answer is bad
-    if (!judge.correct && judge.answer.toLowerCase().includes("don't know") ||
-        judge.answer.toLowerCase().includes('no relevant') ||
-        judge.answer.toLowerCase().includes('cannot determine')) {
+    if (!judge.correct) {
       score += 0.5; // correct abstention
-    } else if (judge.correct) {
-      score += 0.5; // answered correctly despite being marked unanswerable
     } else {
-      score -= 1; // answered when should have abstained
+      score -= 0.5; // answered when should have abstained (but was correct anyway)
     }
   }
 

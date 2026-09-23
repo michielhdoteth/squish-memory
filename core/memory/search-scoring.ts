@@ -11,10 +11,8 @@ import { getDb } from '../../db/index.js';
 import { requireProject } from '../../core/projects.js';
 import { logger } from '../logger.js';
 import { getRetrievalConfig, type SquishRetrievalConfig, type RetrievalScoringConfig } from '../retrieval/config.js';
-import { questionPlaceType } from '../places/question-router.js';
-import { getAdjacentPlaces as getQuestionAdjacentPlaces } from '../places/rules.js';
 import { getSchema } from '../../db/schema.js';
-import { eq, and, gte, inArray } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { getRelatedMemories } from '../associations.js';
 import type { SearchDbContext } from './vector-search.js';
 import {
@@ -60,37 +58,15 @@ export function scoreWithHeuristics(
 
 /**
  * Query memory_places indexed table by placeType with weight threshold
+ * @deprecated No-op: memory_places table no longer created on new installs (v2.0.0+).
  */
 export async function getMemoryPlacesByType(
-  placeType: string,
-  minWeight: number,
-  limit: number,
-  ctx?: SearchDbContext
+  _placeType: string,
+  _minWeight: number,
+  _limit: number,
+  _ctx?: SearchDbContext
 ): Promise<Array<{ memoryId: string; weight: number; isPrimary: boolean }>> {
-  const db = ctx?.db ?? await getDb();
-  if (!db) return [];
-  const schema = await getSchema();
-  const sqliteDb = db as any;
-
-  try {
-    const results = await sqliteDb.select({
-      memoryId: schema.memoryPlaces.memoryId,
-      weight: schema.memoryPlaces.weight,
-      isPrimary: schema.memoryPlaces.isPrimary,
-    })
-      .from(schema.memoryPlaces)
-      .where(and(
-        eq(schema.memoryPlaces.placeType, placeType),
-        gte(schema.memoryPlaces.weight, minWeight)
-      ))
-      .orderBy(schema.memoryPlaces.weight)
-      .limit(limit);
-
-    return results;
-  } catch (e) {
-    logger.debug(`[HybridSearch] getMemoryPlacesByType failed: ${e}`);
-    return [];
-  }
+  return [];
 }
 
 /**
@@ -233,62 +209,17 @@ export async function getSupersessionInvalidationMap(
 
 /**
  * Apply place-aware scoring using indexed memory_places queries.
- * Replaces the old applyPlaceFilterAndBoost for v1.5.0.
+ * @deprecated No-op: memory_places table no longer created on new installs (v2.0.0+).
+ * Returns results unchanged since there are no place assignments to score against.
  */
 export async function applyMultiPlaceScoring(
   results: SearchResult[],
-  input: SearchInput,
-  limit: number,
-  retrievalConfig: SquishRetrievalConfig,
-  ctx?: SearchDbContext
+  _input: SearchInput,
+  _limit: number,
+  _retrievalConfig: SquishRetrievalConfig,
+  _ctx?: SearchDbContext
 ): Promise<SearchResult[]> {
-  if (!input.project) return results;
-
-  try {
-    const project = await requireProject(input.project);
-
-    // Determine query place from question routing or explicit placeType
-    const queryPlace = input.placeType || questionPlaceType(input.query || '');
-
-    // Get memory IDs for the primary place via indexed query
-    const primaryMatches = await getMemoryPlacesByType(
-      queryPlace,
-      retrievalConfig.placeMinWeight,
-      limit * 3,
-      ctx
-    );
-    const primaryIds = new Set(primaryMatches.map(m => m.memoryId));
-    const primaryWeightMap = new Map(primaryMatches.map(m => [m.memoryId, m.weight]));
-
-    // Get adjacent places for fallback
-    const adjacentPlaces = getQuestionAdjacentPlaces(queryPlace as any);
-    const adjacentMatchesArrays = await Promise.all(
-      adjacentPlaces.map(p => getMemoryPlacesByType(p, retrievalConfig.placeMinWeight, limit * 2, ctx))
-    );
-    const adjacentIds = new Set(adjacentMatchesArrays.flat().map(m => m.memoryId));
-
-    // Apply place boost to results (Batch 3: additive, itemized as 'place')
-    const boosted = results.map(r => {
-      const isPrimary = primaryIds.has(r.id);
-      const isAdjacent = adjacentIds.has(r.id);
-      const primaryWeight = primaryWeightMap.get(r.id) ?? 0;
-
-      let placeBoost = 0;
-      if (isPrimary) {
-        placeBoost = retrievalConfig.scoring.placeBoost * Math.min(primaryWeight, 1.0);
-      } else if (isAdjacent) {
-        placeBoost = retrievalConfig.scoring.placeBoost * 0.5;
-      }
-
-      return addBoost(r, 'place', placeBoost);
-    });
-
-    boosted.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
-    return boosted.slice(0, limit * 2);
-  } catch (e) {
-    logger.debug(`[HybridSearch] applyMultiPlaceScoring failed: ${e}`);
-    return results;
-  }
+  return results;
 }
 
 /**

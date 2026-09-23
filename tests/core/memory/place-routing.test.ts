@@ -1,5 +1,5 @@
 /**
- * Tests for place-based routing
+ * Tests for place-based routing via knowledge_edges
  */
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -62,14 +62,14 @@ describe('Place-based Routing', () => {
     const db = await getDb();
     const sqlite = (db as any).$client;
     if (sqlite && typeof sqlite.exec === 'function') {
-      sqlite.exec('DELETE FROM memory_places;');
+      sqlite.exec('DELETE FROM knowledge_edges;');
       sqlite.exec('DELETE FROM memory_associations;');
       sqlite.exec('DELETE FROM memories;');
       sqlite.exec('DELETE FROM places;');
     }
   });
 
-  test('assignMemoryToPlace assigns memory to a place', async () => {
+  test('assignMemoryToPlace writes to knowledge_edges', async () => {
     const project = await getOrCreateProject('/test-project');
     if (!project) throw new Error('Failed to create project');
     await initializeDefaultPlaces(project.id);
@@ -87,7 +87,7 @@ describe('Place-based Routing', () => {
     expect(success).toBe(true);
   });
 
-  test('getMemoryPlace returns the place type for a memory', async () => {
+  test('getMemoryPlace returns placeType after assignment', async () => {
     const project = await getOrCreateProject('/test-project-2');
     if (!project) throw new Error('Failed to create project');
     await initializeDefaultPlaces(project.id);
@@ -102,13 +102,11 @@ describe('Place-based Routing', () => {
     });
 
     await assignMemoryToPlace({ memoryId: memory.id, placeId: wip.id });
-    const placeId = await getMemoryPlace(memory.id);
-    expect(placeId).not.toBeNull();
-    // getMemoryPlace returns the place ID (UUID), not the place type
-    expect(placeId).toBe(wip.id);
+    const placeType = await getMemoryPlace(memory.id);
+    expect(placeType).toBe('wip');
   });
 
-  test('getPlaceMemories returns memory IDs in a place', async () => {
+  test('getPlaceMemories returns memory IDs for a place type', async () => {
     const project = await getOrCreateProject('/test-project-3');
     if (!project) throw new Error('Failed to create project');
     await initializeDefaultPlaces(project.id);
@@ -129,7 +127,6 @@ describe('Place-based Routing', () => {
       user: 'test-user'
     });
 
-    // assignMemoryToPlace replaces (not accumulates), so assign each memory to one place
     await assignMemoryToPlace({ memoryId: m1.id, placeId: inbox.id });
     await assignMemoryToPlace({ memoryId: m2.id, placeId: ref.id });
 
@@ -139,7 +136,7 @@ describe('Place-based Routing', () => {
     expect(refMems).toContain(m2.id);
   });
 
-  test('removeMemoryFromPlace removes memory', async () => {
+  test('removeMemoryFromPlace deletes placed_in edges', async () => {
     const project = await getOrCreateProject('/test-project-4');
     if (!project) throw new Error('Failed to create project');
     await initializeDefaultPlaces(project.id);
@@ -155,20 +152,17 @@ describe('Place-based Routing', () => {
 
     await assignMemoryToPlace({ memoryId: memory.id, placeId: inbox.id });
 
-    // Verify it was assigned
     const placeTypeBefore = await getMemoryPlace(memory.id);
-    expect(placeTypeBefore).not.toBeNull();
+    expect(placeTypeBefore).toBe('inbox');
 
-    // Remove it
     const removed = await removeMemoryFromPlace(memory.id);
     expect(removed).toBe(true);
 
-    // Verify it was removed
     const placeTypeAfter = await getMemoryPlace(memory.id);
     expect(placeTypeAfter).toBeNull();
   });
 
-  test('getPlaceMemories returns memories in a place', async () => {
+  test('getPlaceMemories returns multiple memories for a place', async () => {
     const project = await getOrCreateProject('/test-project-5');
     if (!project) throw new Error('Failed to create project');
     await initializeDefaultPlaces(project.id);
@@ -191,13 +185,13 @@ describe('Place-based Routing', () => {
     await assignMemoryToPlace({ memoryId: r1.id, placeId: inbox.id });
     await assignMemoryToPlace({ memoryId: r2.id, placeId: inbox.id });
 
-    const memoryIds = await getPlaceMemories(inbox.id, 10);
-    expect(memoryIds.length).toBeGreaterThanOrEqual(2);
+    const memoryIds = await getPlaceMemories('inbox', 10);
     expect(memoryIds).toContain(r1.id);
     expect(memoryIds).toContain(r2.id);
+    expect(memoryIds.length).toBe(2);
   });
 
-  test('removeMemoryFromPlace returns false when memory not in any place', async () => {
+  test('removeMemoryFromPlace returns true when memory not in any place', async () => {
     const project = await getOrCreateProject('/test-project-6');
     if (!project) throw new Error('Failed to create project');
     await initializeDefaultPlaces(project.id);
@@ -209,10 +203,9 @@ describe('Place-based Routing', () => {
       user: 'test-user'
     });
 
-    // Memory was never assigned, so removing should be a no-op (returns false or true depending on implementation)
-    // The function deletes from DB regardless, but the actual return depends on whether rows existed
+    // Memory was never assigned, but removeMemoryFromPlace deletes
+    // from knowledge_edges regardless (0 rows affected is fine)
     const result = await removeMemoryFromPlace(memory.id);
-    // Either false (no rows deleted) or true (cleanup succeeded)
     expect(typeof result).toBe('boolean');
   });
 });

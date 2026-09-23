@@ -437,15 +437,16 @@ export const places: any = sqliteTable('places', {
 ]);
 
 /**
- * Memory-Place assignments (v1.5.0: 1:N multi-place routing)
+ * @deprecated Table no longer created on new installs. Kept as Drizzle schema
+ * for migration/backfill scripts (backfill-v1.5.0.ts, migrations/knowledge.ts).
  */
 export const memoryPlaces: any = sqliteTable('memory_places', {
   id: text('id').primaryKey().$default(() => crypto.randomUUID()),
   memoryId: text('memory_id').references(() => memories.id, { onDelete: 'cascade' }).notNull(),
-  placeType: text('place_type').notNull(),  // 'board' | 'wip' | 'sparks' | 'ref' | 'inbox' | 'sandbox' | 'archive'
-  weight: real('weight').default(1.0).notNull(),  // 0.0-1.0, higher = more relevant to this place
-  reason: text('reason'),  // why this memory belongs here
-  source: text('source').default('heuristic').notNull(),  // 'heuristic' | 'llm' | 'manual' | 'dream' | 'legacy'
+  placeType: text('place_type').notNull(),
+  weight: real('weight').default(1.0).notNull(),
+  reason: text('reason'),
+  source: text('source').default('heuristic').notNull(),
   isPrimary: integer('is_primary', { mode: 'boolean' }).default(false),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => [
@@ -993,7 +994,7 @@ export const knowledge: any = sqliteTable(
 /**
  * Knowledge Edges - universal relationship table (v2.0.0).
  * Replaces: belief_edges, strategy_edges, strategy_belief_edges,
- *           entity_relations, memory_places (as edge type).
+ *           entity_relations.
  * Polymorphic via from_kind/to_kind: 'knowledge' | 'entity' | 'place'.
  */
 export const knowledgeEdges = sqliteTable(

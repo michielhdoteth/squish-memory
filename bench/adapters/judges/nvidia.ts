@@ -1,10 +1,11 @@
 /**
  * NVIDIA judge adapter.
  *
- * Uses the NVIDIA API for judge evaluation.
+ * Uses shared rate limiter for provider throughput limits.
  */
 
 import type { JudgeAdapter, JudgeInput, JudgeResult } from './types.js';
+import { rateLimit } from '../../rate-limit.js';
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 
@@ -62,6 +63,8 @@ Evaluate. Return JSON only.`;
 
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
+          await rateLimit();
+
           const response = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
             method: 'POST',
             headers: {
@@ -80,14 +83,14 @@ Evaluate. Return JSON only.`;
             }),
           });
 
-          if (response.status === 503 || response.status === 429) {
-            const waitTime = Math.min(Math.pow(2, attempt) * 3000, 60000);
+          if (response.status === 429 || response.status === 503) {
+            const retryAfter = response.headers.get('retry-after');
+            const waitTime = retryAfter
+              ? Math.min(parseInt(retryAfter, 10) * 1000 + 2000, 30000)
+              : Math.min(Math.pow(2, attempt) * 2000, 30000);
             await new Promise(r => setTimeout(r, waitTime));
             continue;
           }
-
-          // Rate limit: 40 RPM = 1 req per 1.5s minimum between sequential calls
-          await new Promise(r => setTimeout(r, 1500));
 
           if (!response.ok) {
             const err = await response.text();
@@ -121,9 +124,11 @@ Evaluate. Return JSON only.`;
             };
           }
         } catch (fetchErr: any) {
-          // Network errors (ECONNRESET, ECONNREFUSED, timeout, etc.)
           if (attempt === maxRetries - 1) throw fetchErr;
-          const waitTime = Math.min(Math.pow(2, attempt) * 3000, 60000);
+          const isNetwork = fetchErr?.code === 'ECONNRESET' || fetchErr?.code === 'ECONNREFUSED' || fetchErr?.code === 'ETIMEDOUT';
+          const waitTime = isNetwork
+            ? Math.min(Math.pow(2, attempt) * 1000, 10000)
+            : Math.min(Math.pow(2, attempt) * 2000, 30000);
           await new Promise(r => setTimeout(r, waitTime));
         }
       }

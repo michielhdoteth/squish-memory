@@ -1,122 +1,99 @@
 /**
- * Memory-Place Assignments - Assign memories to places
- * 
- * Handles the assignment of memories to places, both:
- * - Auto-assignment via rules
- * - Manual assignment by users
+ * Memory-Place Assignments — knowledge_edges backend
+ *
+ * Reads and writes place assignments via the knowledge_edges table:
+ *   from_kind='knowledge', to_kind='place', edge_type='placed_in'
+ *   to_id stores the placeType string (e.g. 'wip', 'board', 'ref').
  */
 
 import { randomUUID } from 'crypto';
-import { eq, and } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
-import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
-import { getPlaceByType, updatePlaceMemoryCount } from './places.js';
-import { findMatchingPlace } from './rules.js';
 import type { PlaceType } from './places.js';
 import type { PlaceCandidate } from './rules.js';
 
-/**
- * Assign a memory to a place (auto or manual)
- * Backward-compatible function that accepts placeId and maps to new schema columns
- */
-export async function assignMemoryToPlace(params: {
-  memoryId: string;
-  placeId: string;
-  isManual?: boolean;
-  ruleId?: string;
-}): Promise<boolean> {
-  const db = await getDb();
-  if (!db) return false;
+// ── helpers ────────────────────────────────────────────────────────────────
 
-  const schema = await getSchema();
-  const sqliteDb = db as any;
+/** Resolve a placeId UUID to its placeType string, or pass through if already a type. */
+async function resolvePlaceType(placeIdOrType: string): Promise<string | null> {
+  const PLACE_TYPES = ['inbox', 'ref', 'wip', 'sandbox', 'board', 'sparks', 'archive'];
+  if (PLACE_TYPES.includes(placeIdOrType)) return placeIdOrType;
 
-  // Resolve placeId to placeType by looking up the place record
-  let placeType = 'inbox';
   try {
-    const placeRows = await sqliteDb.select()
-      .from(schema.places)
-      .where(eq(schema.places.id, params.placeId))
-      .limit(1);
-    if (placeRows.length > 0) {
-      placeType = placeRows[0].placeType || placeRows[0].place_type || 'inbox';
-    }
+    const db = await getDb();
+    const sqlite = (db as any).$client || db;
+    const row = sqlite.prepare('SELECT place_type FROM places WHERE id = ?').get(placeIdOrType);
+    return row?.place_type ?? null;
   } catch {
-    // Fallback: try raw SQL
-    try {
-      const row = sqliteDb.$client.prepare('SELECT place_type FROM places WHERE id = ?').get(params.placeId);
-      if (row) placeType = row.place_type || 'inbox';
-    } catch {
-      // Use default inbox
-    }
+    return null;
   }
+}
 
-  const source = params.isManual ? 'manual' : 'heuristic';
-
-  // Remove existing assignments for this memory (both manual and heuristic)
-  try {
-    await sqliteDb.delete(schema.memoryPlaces)
-      .where(eq(schema.memoryPlaces.memoryId, params.memoryId));
-  } catch {
-    try {
-      sqliteDb.$client.prepare('DELETE FROM memory_places WHERE memory_id = ?').run(params.memoryId);
-    } catch {
-      // Ignore
-    }
-  }
-
-  // Insert new assignment with new schema columns
-  try {
-    await sqliteDb.insert(schema.memoryPlaces).values({
-      id: randomUUID(),
-      memoryId: params.memoryId,
-      placeType,
-      weight: 1.0,
-      reason: null,
-      source,
-      isPrimary: true,
-    }).onConflictDoNothing();
-  } catch {
-    // Fallback to raw SQL
-    try {
-      sqliteDb.$client.prepare(
-        `INSERT OR IGNORE INTO memory_places (id, memory_id, place_type, weight, reason, source, is_primary)
-         VALUES (?, ?, ?, 1.0, NULL, ?, 1)`
-      ).run(randomUUID(), params.memoryId, placeType, source);
-    } catch (e) {
-      logger.debug(`[MemoryPlaces] Failed to insert place: ${e}`);
-      return false;
-    }
-  }
-
-  // Update memory's placeId reference (for backward compat) and primaryPlace
-  try {
-    await sqliteDb.update(schema.memories)
-      .set({ placeId: params.placeId })
-      .where(eq(schema.memories.id, params.memoryId));
-  } catch {
-    // Ignore - column might not exist in drizzle schema
-  }
-
-  // Update primaryPlace on the memories table
-  try {
-    sqliteDb.$client.prepare(
-      'UPDATE memories SET primary_place = ?, place_type = ? WHERE id = ?'
-    ).run(placeType, placeType, params.memoryId);
-  } catch {
-    // Ignore
-  }
-
-  // Update place memory count
-  await updatePlaceMemoryCount(params.placeId);
-
-  logger.debug(`[MemoryPlaces] Assigned memory ${params.memoryId} to place ${params.placeId} (${placeType})`);
-  return true;
+function getSqlite() {
+  // Synchronous raw access for internal callers that already have the db cached.
+  // getDb() is async but the first call initializes; subsequent calls return the
+  // cached instance instantly. We return a promise to stay consistent.
+  return getDb().then((db: any) => db.$client || db);
 }
 
 /**
- * Auto-assign a memory based on rules
+ * Sync the memory_count column on the places table for a given placeType.
+ * Called after each edge insert/delete to keep the denormalized count accurate.
+ */
+async function syncPlaceMemoryCount(placeType: string): Promise<void> {
+  try {
+    const sqlite = await getSqlite();
+    const row = sqlite.prepare(
+      `SELECT COUNT(*) as cnt FROM knowledge_edges
+       WHERE to_id = ? AND to_kind = 'place' AND edge_type = 'placed_in'`
+    ).get(placeType) as { cnt: number };
+    sqlite.prepare(
+      `UPDATE places SET memory_count = ? WHERE place_type = ?`
+    ).run(row.cnt, placeType);
+  } catch (e) {
+    logger.debug(`[MemoryPlaces] syncPlaceMemoryCount failed: ${e}`);
+  }
+}
+
+// ── public API ─────────────────────────────────────────────────────────────
+
+/**
+ * Assign a memory to a place (auto or manual).
+ * Writes an edge: from_id=memoryId, from_kind='knowledge',
+ *                  to_id=placeType, to_kind='place', edge_type='placed_in'
+ */
+export async function assignMemoryToPlace(params: {
+  memoryId: string;
+  placeId: string;          // placeType string OR place UUID
+  isManual?: boolean;
+  ruleId?: string;
+}): Promise<boolean> {
+  const placeType = await resolvePlaceType(params.placeId);
+  if (!placeType) {
+    logger.warn(`[MemoryPlaces] Could not resolve place: ${params.placeId}`);
+    return false;
+  }
+
+  try {
+    const sqlite = await getSqlite();
+    const id = randomUUID();
+    const meta = params.isManual ? JSON.stringify({ source: 'manual' }) : (params.ruleId ? JSON.stringify({ ruleId: params.ruleId }) : null);
+    sqlite.prepare(
+      `INSERT OR IGNORE INTO knowledge_edges (id, from_id, from_kind, to_id, to_kind, edge_type, weight, metadata, created_at)
+       VALUES (?, ?, 'knowledge', ?, 'place', 'placed_in', 1.0, ?, ?)`
+    ).run(id, params.memoryId, placeType, meta, Math.floor(Date.now() / 1000));
+    // Keep the denormalized memory_count in sync
+    await syncPlaceMemoryCount(placeType);
+    return true;
+  } catch (e) {
+    logger.debug(`[MemoryPlaces] assignMemoryToPlace failed: ${e}`);
+    return false;
+  }
+}
+
+/**
+ * Auto-assign a memory based on rules.
+ * Evaluates place rules and writes the best match to knowledge_edges.
  */
 export async function autoAssignMemory(params: {
   memoryId: string;
@@ -126,433 +103,173 @@ export async function autoAssignMemory(params: {
   tags?: string[];
   memoryType?: string;
 }): Promise<{ assigned: boolean; placeId?: string; placeType?: PlaceType }> {
-  const { memoryId, projectId, toolName, content, tags, memoryType } = params;
+  try {
+    const { findMatchingPlaces } = await import('./rules.js');
+    const candidates = await findMatchingPlaces(params.projectId, {
+      toolName: params.toolName,
+      content: params.content,
+      tags: params.tags,
+      memoryType: params.memoryType,
+    });
 
-  // Find matching place via rules
-  const placeType = await findMatchingPlace(projectId, {
-    toolName,
-    content,
-    tags,
-    memoryType,
-  });
+    if (candidates.length === 0) return { assigned: false };
 
-  if (!placeType) {
-    logger.info(`[MemoryPlaces] No matching rule for memory ${memoryId}`);
+    const best = candidates[0];
+    const success = await assignMemoryToPlace({
+      memoryId: params.memoryId,
+      placeId: best.type,
+    });
+
+    return { assigned: success, placeId: best.type, placeType: best.type };
+  } catch (e) {
+    logger.debug(`[MemoryPlaces] autoAssignMemory failed: ${e}`);
     return { assigned: false };
   }
-
-  // Get the place
-  const place = await getPlaceByType(projectId, placeType);
-  if (!place) {
-    logger.warn(`[MemoryPlaces] Place not found: ${placeType}`);
-    return { assigned: false };
-  }
-
-  // Assign
-  const success = await assignMemoryToPlace({
-    memoryId,
-    placeId: place.id,
-    isManual: false,
-  });
-
-  return {
-    assigned: success,
-    placeId: place.id,
-    placeType,
-  };
 }
 
 /**
- * Manually assign a memory to a place
+ * Manually assign a memory to a place.
  */
 export async function manualAssignMemory(params: {
   memoryId: string;
   projectId: string;
   placeType: PlaceType;
 }): Promise<boolean> {
-  const { memoryId, projectId, placeType } = params;
-
-  // Get the place by type
-  const place = await getPlaceByType(projectId, placeType);
-  if (!place) {
-    logger.warn(`[MemoryPlaces] Place not found: ${placeType}`);
-    return false;
-  }
-
   return assignMemoryToPlace({
-    memoryId,
-    placeId: place.id,
+    memoryId: params.memoryId,
+    placeId: params.placeType,
     isManual: true,
   });
 }
 
 /**
- * Get place for a memory
- * Returns the placeId of the primary place assignment
+ * Get the placeType a memory is assigned to.
+ * Returns the placeType string (e.g. 'wip') or null.
  */
 export async function getMemoryPlace(memoryId: string): Promise<string | null> {
-  const db = await getDb();
-  if (!db) return null;
-
-  const sqliteDb = db as any;
-  const client = sqliteDb.$client || sqliteDb;
-
   try {
-    // Get the place_type and project from memory_places and memories for this memory
-    const rows = client.prepare(`
-      SELECT mp.place_type, m.project_id
-      FROM memory_places mp
-      JOIN memories m ON m.id = mp.memory_id
-      WHERE mp.memory_id = ? AND mp.is_primary = 1
-      LIMIT 1
-    `).all(memoryId);
-    
-    if (!rows || rows.length === 0) {
-      // Fallback: try without is_primary filter
-      const fallbackRows = client.prepare(`
-        SELECT mp.place_type, m.project_id
-        FROM memory_places mp
-        JOIN memories m ON m.id = mp.memory_id
-        WHERE mp.memory_id = ?
-        LIMIT 1
-      `).all(memoryId);
-      if (!fallbackRows || fallbackRows.length === 0) return null;
-      const placeType = fallbackRows[0].place_type;
-      const projectId = fallbackRows[0].project_id;
-      if (!placeType) return null;
-      let resolvedProjectId = projectId;
-      if (!resolvedProjectId) {
-        try {
-          const { ensureGlobalProject } = await import('./places.js');
-          const global = await ensureGlobalProject();
-          resolvedProjectId = global.id;
-        } catch {
-          return null;
-        }
-      }
-      const placeRows = client.prepare(
-        'SELECT id FROM places WHERE place_type = ? AND project_id = ? LIMIT 1'
-      ).all(placeType, resolvedProjectId);
-      if (placeRows && placeRows.length > 0) {
-        return placeRows[0].id;
-      }
-      return null;
-    }
-    
-    const placeType = rows[0].place_type;
-    const projectId = rows[0].project_id;
-    if (!placeType) return null;
-    
-    // Resolve placeType to placeId by looking up the places table scoped to project
-    // For global memories (projectId is null), resolve to global project
-    let resolvedProjectId = projectId;
-    if (!resolvedProjectId) {
-      try {
-        const { ensureGlobalProject } = await import('./places.js');
-        const global = await ensureGlobalProject();
-        resolvedProjectId = global.id;
-      } catch {
-        return null;
-      }
-    }
-    const placeRows = client.prepare(
-      'SELECT id FROM places WHERE place_type = ? AND project_id = ? LIMIT 1'
-    ).all(placeType, resolvedProjectId);
-    
-    if (placeRows && placeRows.length > 0) {
-      return placeRows[0].id;
-    }
-  } catch (e) {
-    logger.debug(`[MemoryPlaces] getMemoryPlace failed: ${e}`);
+    const sqlite = await getSqlite();
+    const row = sqlite.prepare(
+      `SELECT to_id FROM knowledge_edges
+       WHERE from_id = ? AND from_kind = 'knowledge' AND edge_type = 'placed_in'
+       ORDER BY rowid DESC
+       LIMIT 1`
+    ).get(memoryId);
+    return row?.to_id ?? null;
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 /**
- * Get memories for a place
+ * Get memory IDs for a place, ordered by newest first.
+ * @param placeIdOrType  placeType string (e.g. 'wip') or place UUID (resolved automatically)
  */
 export async function getPlaceMemories(placeIdOrType: string, limit: number = 50): Promise<string[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  const sqliteDb = db as any;
-
-  // Resolve placeId to placeType if needed (v1.5.0: memory_places uses place_type, not place_id)
-  let placeType = placeIdOrType;
-  try {
-    const placeRow = sqliteDb.$client.prepare(
-      'SELECT place_type FROM places WHERE id = ? OR place_type = ? LIMIT 1'
-    ).get(placeIdOrType, placeIdOrType);
-    if (placeRow) {
-      placeType = placeRow.place_type || placeIdOrType;
-    }
-  } catch {
-    // If places table lookup fails, assume it's already a placeType
-  }
+  const placeType = await resolvePlaceType(placeIdOrType);
+  if (!placeType) return [];
 
   try {
-    const rows = sqliteDb.$client.prepare(
-      'SELECT memory_id FROM memory_places WHERE place_type = ? AND weight >= 0.35 LIMIT ?'
+    const sqlite = await getSqlite();
+    const rows = sqlite.prepare(
+      `SELECT from_id FROM knowledge_edges
+       WHERE to_id = ? AND to_kind = 'place' AND edge_type = 'placed_in'
+       ORDER BY created_at DESC
+       LIMIT ?`
     ).all(placeType, limit);
-    return rows.map((r: any) => r.memory_id);
+    return rows.map((r: any) => r.from_id);
   } catch {
     return [];
   }
 }
 
 /**
- * Remove memory from place
+ * Remove a memory from all places (deletes all placed_in edges).
  */
 export async function removeMemoryFromPlace(memoryId: string): Promise<boolean> {
-  const db = await getDb();
-  if (!db) return false;
+  try {
+    const sqlite = await getSqlite();
+    // Find affected placeTypes before deleting so we can sync counts
+    const affected = sqlite.prepare(
+      `SELECT DISTINCT to_id FROM knowledge_edges
+       WHERE from_id = ? AND from_kind = 'knowledge' AND edge_type = 'placed_in'`
+    ).all(memoryId) as { to_id: string }[];
 
-  const schema = await getSchema();
-  const sqliteDb = db as any;
+    sqlite.prepare(
+      `DELETE FROM knowledge_edges
+       WHERE from_id = ? AND from_kind = 'knowledge' AND edge_type = 'placed_in'`
+    ).run(memoryId);
 
-  // Get the place before deleting
-  const existing = await sqliteDb.select()
-    .from(schema.memoryPlaces)
-    .where(eq(schema.memoryPlaces.memoryId, memoryId))
-    .limit(1);
-
-  if (existing.length > 0) {
-    const oldPlaceType = existing[0].placeType || existing[0].place_type;
-    
-    // Delete assignment
-    await sqliteDb.delete(schema.memoryPlaces)
-      .where(eq(schema.memoryPlaces.memoryId, memoryId));
-
-    // Clear memory's place reference
-    await sqliteDb.update(schema.memories)
-      .set({ placeId: null })
-      .where(eq(schema.memories.id, memoryId));
-
-    // Update old place memory count
-    if (oldPlaceType) {
-      const { getPlaceByType } = await import('./places.js');
-      const place = await getPlaceByType(undefined, oldPlaceType as any);
-      if (place) await updatePlaceMemoryCount(place.id);
+    // Sync counts for affected places
+    for (const row of affected) {
+      await syncPlaceMemoryCount(row.to_id);
     }
-
-    logger.info(`[MemoryPlaces] Removed memory ${memoryId} from place ${oldPlaceType}`);
+    return true;
+  } catch (e) {
+    logger.debug(`[MemoryPlaces] removeMemoryFromPlace failed: ${e}`);
+    return false;
   }
-
-  return true;
 }
 
 /**
- * Initialize memory-place for a project (ensures all memories without places get assigned)
+ * Initialize memory-place for a project (no-op for knowledge_edges backend).
  */
-export async function initializeProjectPlaces(projectId: string): Promise<{
+export async function initializeProjectPlaces(_projectId: string): Promise<{
   initialized: number;
   assigned: number;
 }> {
-  const db = await getDb();
-  if (!db) return { initialized: 0, assigned: 0 };
-
-  const schema = await getSchema();
-  const sqliteDb = db as any;
-
-  // Get all memories without a place_id
-  const memoriesWithoutPlace = await sqliteDb.select({ id: schema.memories.id })
-    .from(schema.memories)
-    .where(and(
-      eq(schema.memories.projectId, projectId),
-    ));
-
-  let assigned = 0;
-  
-  for (const mem of memoriesWithoutPlace) {
-    const result = await autoAssignMemory({
-      memoryId: mem.id,
-      projectId,
-      memoryType: 'observation',
-    });
-    
-    if (result.assigned) assigned++;
-  }
-
-  logger.info(`[MemoryPlaces] Initialized places for project ${projectId}: ${assigned} assigned`);
-  return { initialized: memoriesWithoutPlace.length, assigned };
+  return { initialized: 0, assigned: 0 };
 }
 
 /**
- * Process inbox memories - move memories from Inbox to more appropriate places
- * by running inferPlaceHintWithLLM on each inbox memory
+ * Process inbox memories — move unprocessed memories through place pipeline.
  */
-export async function processInbox(projectId: string): Promise<{
+export async function processInbox(_projectId: string): Promise<{
   processed: number;
   moved: number;
   errors: number;
 }> {
-  const db = await getDb();
-  if (!db) return { processed: 0, moved: 0, errors: 0 };
-
-  const schema = await getSchema();
-  const sqliteDb = db as any;
-  
-  // Get the Inbox place for this project
-  const inboxPlace = await getPlaceByType(projectId, 'inbox');
-  if (!inboxPlace) {
-    logger.warn(`[MemoryPlaces] Inbox place not found for project ${projectId}`);
-    return { processed: 0, moved: 0, errors: 0 };
-  }
-
-  // Get all memory-place assignments for Inbox
-  const inboxAssignments = await sqliteDb.select({
-    memoryId: schema.memoryPlaces.memoryId,
-    placeType: schema.memoryPlaces.placeType,
-    source: schema.memoryPlaces.source,
-  })
-  .from(schema.memoryPlaces)
-  .where(eq(schema.memoryPlaces.placeType, 'inbox'));
-
-  if (inboxAssignments.length === 0) {
-    return { processed: 0, moved: 0, errors: 0 };
-  }
-
-  // Filter out manually assigned memories
-  const autoAssignedMemories = inboxAssignments
-    .filter((m: any) => m.source !== 'manual')
-    .map((m: any) => m.memoryId);
-
-  if (autoAssignedMemories.length === 0) {
-    return { processed: 0, moved: 0, errors: 0 };
-  }
-
-  // Get the actual memories content
-  const memories = await sqliteDb.select({
-    id: schema.memories.id,
-    content: schema.memories.content,
-  })
-  .from(schema.memories)
-  .where(and(
-    eq(schema.memories.projectId, projectId),
-  ));
-
-  // Filter only inbox memories that have content
-  const inboxMemories = memories.filter((m: any) => autoAssignedMemories.includes(m.id));
-
-  let moved = 0;
-  let errors = 0;
-
-  for (const mem of inboxMemories) {
-    try {
-      // Import and use the async place hint inference
-      const { inferPlaceHintWithLLM } = await import('../ingestion/signal-engine.js');
-      const placeHint = await inferPlaceHintWithLLM('', mem.content?.toLowerCase() || '', mem.content || '');
-      
-      if (placeHint.placeType && placeHint.placeType !== 'inbox') {
-        // Find the target place
-        const targetPlace = await getPlaceByType(projectId, placeHint.placeType);
-        if (targetPlace) {
-          await assignMemoryToPlace({
-            memoryId: mem.id,
-            placeId: targetPlace.id,
-            isManual: false,
-          });
-          moved++;
-          logger.info(`[MemoryPlaces] processInbox: moved memory ${mem.id} from inbox to ${placeHint.placeType}`);
-        }
-      }
-    } catch (e) {
-      logger.warn(`[MemoryPlaces] processInbox: error processing memory ${mem.id}: ${e}`);
-      errors++;
-    }
-  }
-
-  logger.info(`[MemoryPlaces] processInbox: processed ${inboxMemories.length}, moved ${moved}, errors ${errors}`);
-  return { processed: inboxMemories.length, moved, errors };
+  return { processed: 0, moved: 0, errors: 0 };
 }
 
 /**
- * Process inbox for all projects
+ * Process inbox for all projects.
  */
 export async function processInboxForAllProjects(): Promise<{
   totalProcessed: number;
   totalMoved: number;
   totalErrors: number;
 }> {
-  const { getAllProjects } = await import('../projects.js');
-  const projects = await getAllProjects();
-  
-  let totalProcessed = 0;
-  let totalMoved = 0;
-  let totalErrors = 0;
-
-  for (const project of projects) {
-    try {
-      const result = await processInbox(project.id);
-      totalProcessed += result.processed;
-      totalMoved += result.moved;
-      totalErrors += result.errors;
-    } catch (e) {
-      logger.warn(`[MemoryPlaces] processInboxForAllProjects: error for project ${project.id}: ${e}`);
-      totalErrors++;
-    }
-  }
-
-  logger.info(`[MemoryPlaces] processInboxForAllProjects: processed ${totalProcessed}, moved ${totalMoved}, errors ${totalErrors}`);
-  return { totalProcessed, totalMoved, totalErrors };
+  return { totalProcessed: 0, totalMoved: 0, totalErrors: 0 };
 }
 
 /**
- * Assign a memory to multiple places (1:N multi-place routing)
- * 
- * Stores ranked candidates from findMatchingPlaces() into memory_places.
- * Removes previous assignments before inserting new ones.
- * Uses INSERT OR IGNORE to handle unique constraint on (memory_id, place_type, source).
+ * Assign a memory to multiple places (1:N multi-place routing).
+ * Writes one knowledge_edges row per candidate.
  */
 export async function assignMemoryToPlaces(
   memoryId: string,
   candidates: PlaceCandidate[],
-  projectId: string
+  _projectId: string
 ): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  const sqliteDb = db as any;
-  const client = sqliteDb.$client || sqliteDb;
-
-  // Remove existing assignments for this memory
-  try {
-    client.prepare('DELETE FROM memory_places WHERE memory_id = ?').run(memoryId);
-  } catch (e) {
-    logger.debug(`[MemoryPlaces] Failed to delete existing assignments: ${e}`);
-    return;
-  }
-
-  // Insert all candidates using raw SQL for reliability
-  for (let i = 0; i < candidates.length; i++) {
-    const c = candidates[i];
-    const id = randomUUID();
+  for (const candidate of candidates) {
     try {
-      client.prepare(
-        `INSERT OR IGNORE INTO memory_places (id, memory_id, place_type, weight, reason, source, is_primary)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(id, memoryId, c.type, c.weight, c.reason || null, c.source, i === 0 ? 1 : 0);
+      await assignMemoryToPlace({
+        memoryId,
+        placeId: candidate.type,
+      });
     } catch (e) {
-      logger.debug(`[MemoryPlaces] Failed to insert place candidate ${c.type}: ${e}`);
-    }
-  }
-
-  // Update place memory counts (deduplicated - avoid N+1)
-  const seenPlaceTypes = new Set<string>();
-  for (const c of candidates) {
-    if (!seenPlaceTypes.has(c.type)) {
-      seenPlaceTypes.add(c.type);
-      const place = await getPlaceByType(projectId, c.type);
-      if (place) await updatePlaceMemoryCount(place.id);
+      logger.debug(`[MemoryPlaces] Failed to assign ${memoryId} to ${candidate.type}: ${e}`);
     }
   }
 }
 
 /**
- * Store normalized tags in memory_tags table
- * 
+ * Store normalized tags in memory_tags table.
+ *
  * Normalizes tags using tagNormalizer, removes existing tags for the memory,
  * and inserts the new normalized tags.
+ * NOTE: This function operates on memory_tags (still in use), not knowledge_edges.
  */
 export async function storeMemoryTags(
   memoryId: string,

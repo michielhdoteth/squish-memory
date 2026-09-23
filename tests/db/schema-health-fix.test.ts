@@ -145,7 +145,6 @@ describe('schema-health fix functionality', () => {
     // Clear places data
     const sqlite = new Database(dbPath);
     sqlite.exec('DELETE FROM place_rules');
-    sqlite.exec('DELETE FROM memory_places');
     sqlite.exec('DELETE FROM places');
     sqlite.close();
     await ensureFreshDb(dataDir);

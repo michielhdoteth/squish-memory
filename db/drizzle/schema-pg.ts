@@ -323,7 +323,8 @@ export const memoryTags = pgTable('memory_tags', {
 ]);
 
 /**
- * Memory Places - spatial context
+ * @deprecated Table no longer created on new installs. Kept as Drizzle schema
+ * for migration/backfill scripts.
  */
 export const memoryPlaces = pgTable('memory_places', {
   id: text('id').default(sql`gen_random_uuid()`).primaryKey(),

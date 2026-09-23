@@ -129,6 +129,32 @@ All local data is stored in SQLite at `.squish/squish.db` with no encryption at 
 
 ---
 
+## Benchmarks (v2.1.0)
+
+Offline, deterministic benchmarks on a 60-memory corpus. No LLM calls. Reproducible.
+
+| Metric | Score | Threshold |
+|--------|-------|-----------|
+| Recall@5 | **0.935** | 0.85 |
+| MRR | **0.904** | 0.82 |
+| Hit@1 | **0.870** | 0.78 |
+| ECE (calibration) | **0.055** | 0.15 |
+
+By query type:
+
+| Category | n | Recall@5 | MRR | Hit@1 |
+|----------|---|----------|-----|-------|
+| Entity | 9 | 1.000 | 0.944 | 0.889 |
+| Temporal | 8 | 1.000 | 1.000 | 1.000 |
+| Multi-hop | 4 | 1.000 | 1.000 | 1.000 |
+| Procedural | 8 | 0.875 | 0.888 | 0.875 |
+| Paraphrase | 9 | 0.889 | 0.889 | 0.889 |
+| Negation | 8 | 0.875 | 0.750 | 0.625 |
+
+**Resurrection**: 5/5 scenarios pass (dormant strengthening, irrelevant decay, accidental retrieval immunity, contradiction handling).
+
+---
+
 ## License
 
 **AGPLv3** -- Free to use, modify, and self-host. Commercial license available for proprietary embedding.

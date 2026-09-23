@@ -1,8 +1,8 @@
 {
   "meta": {
-    "name": "squish-rag-eval-v1",
-    "description": "End-to-end RAG evaluation dataset. Each query has an expected answer, category, and whether it's answerable from memory. Tests answer correctness, groundedness, stale-fact leakage, and abstention.",
-    "version": 1
+    "name": "squish-rag-eval-v2",
+    "description": "End-to-end RAG evaluation dataset expanded from 20 to 100+ queries. Each query has an expected answer, category, and whether it's answerable from memory. Tests answer correctness, groundedness, stale-fact leakage, multi-hop reasoning, and abstention.",
+    "version": 2
   },
   "queries": [
     {
@@ -161,6 +161,679 @@
       "id": "rag_020",
       "category": "unanswerable",
       "query": "What is our strategy for Series B fundraising?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+
+    {
+      "id": "rag_021",
+      "category": "fact-retrieval",
+      "query": "What is the org-wide RNG seed convention for experiments?",
+      "expected": "Seed 42 by default, and every experiment must record an environment hash alongside results.",
+      "answerable": true,
+      "memoryIds": ["golden_043"]
+    },
+    {
+      "id": "rag_022",
+      "category": "fact-retrieval",
+      "query": "What analytics data warehouse does the lab use?",
+      "expected": "BigQuery; raw event data lands hourly through scheduled transfer jobs.",
+      "answerable": true,
+      "memoryIds": ["golden_045"]
+    },
+    {
+      "id": "rag_023",
+      "category": "fact-retrieval",
+      "query": "How many people work at Helios Research Lab?",
+      "expected": "40 people.",
+      "answerable": true,
+      "memoryIds": ["golden_028"]
+    },
+    {
+      "id": "rag_024",
+      "category": "fact-retrieval",
+      "query": "What is the Postgres connection pool cap per service?",
+      "expected": "20 connections per service instance.",
+      "answerable": true,
+      "memoryIds": ["golden_037", "golden_038"]
+    },
+    {
+      "id": "rag_025",
+      "category": "fact-retrieval",
+      "query": "How long are staging database backups retained?",
+      "expected": "Seven days.",
+      "answerable": true,
+      "memoryIds": ["golden_054", "golden_055"]
+    },
+    {
+      "id": "rag_026",
+      "category": "fact-retrieval",
+      "query": "What does the lab's internal wiki run on?",
+      "expected": "Outline; legacy Confluence exports were archived and remain read-only.",
+      "answerable": true,
+      "memoryIds": ["golden_049"]
+    },
+    {
+      "id": "rag_027",
+      "category": "fact-retrieval",
+      "query": "Which GPU type is reserved for RLHF training?",
+      "expected": "H100 nodes are reserved for RLHF training runs.",
+      "answerable": true,
+      "memoryIds": ["golden_053"]
+    },
+    {
+      "id": "rag_028",
+      "category": "fact-retrieval",
+      "query": "Where are production backups stored and how often are they tested?",
+      "expected": "Monthly cold-storage archives with one-year retention, tested quarterly by restore drills.",
+      "answerable": true,
+      "memoryIds": ["golden_056"]
+    },
+    {
+      "id": "rag_029",
+      "category": "fact-retrieval",
+      "query": "What was the GPU cluster size as of January 2026?",
+      "expected": "Eight A100 cards.",
+      "answerable": true,
+      "memoryIds": ["golden_022"]
+    },
+    {
+      "id": "rag_030",
+      "category": "fact-retrieval",
+      "query": "Which Python version is the standard for new services?",
+      "expected": "Python 3.12; version 3.11 is allowed only when legacy dependencies lack compatible wheels.",
+      "answerable": true,
+      "memoryIds": ["golden_060"]
+    },
+    {
+      "id": "rag_031",
+      "category": "fact-retrieval",
+      "query": "What tool replaced flake8, isort, and black for Python linting?",
+      "expected": "ruff.",
+      "answerable": true,
+      "memoryIds": ["golden_008"]
+    },
+    {
+      "id": "rag_032",
+      "category": "fact-retrieval",
+      "query": "What does Nordwind Energy supply to Helios?",
+      "expected": "Wind-farm telemetry data that powers the Borealis forecasting benchmark.",
+      "answerable": true,
+      "memoryIds": ["golden_047"]
+    },
+    {
+      "id": "rag_033",
+      "category": "multi-hop",
+      "query": "Which project depends on PaperTrail, and what does PaperTrail actually do?",
+      "expected": "Project Aurora depends on PaperTrail; PaperTrail is the internal literature tracker that indexes arXiv daily and flags citations in drafts.",
+      "answerable": true,
+      "memoryIds": ["golden_058", "golden_029"]
+    },
+    {
+      "id": "rag_034",
+      "category": "multi-hop",
+      "query": "Who maintains the GPU cluster and what reservation policy do they enforce?",
+      "expected": "Tomas Lindqvist maintains the GPU cluster; H100 nodes are reserved for RLHF training runs while A100s handle everything else.",
+      "answerable": true,
+      "memoryIds": ["golden_027", "golden_053"]
+    },
+    {
+      "id": "rag_035",
+      "category": "multi-hop",
+      "query": "What vector store backs Project Aurora and what preceded it?",
+      "expected": "Qdrant backs Aurora's retrieval index; FAISS preceded it for online similarity search before the June 2026 migration.",
+      "answerable": true,
+      "memoryIds": ["golden_058", "golden_017", "golden_016"]
+    },
+    {
+      "id": "rag_036",
+      "category": "multi-hop",
+      "query": "How does Nordwind Energy connect to Project Borealis?",
+      "expected": "Nordwind Energy supplies wind-farm telemetry data that powers the Borealis time-series forecasting benchmark.",
+      "answerable": true,
+      "memoryIds": ["golden_025", "golden_047"]
+    },
+    {
+      "id": "rag_037",
+      "category": "multi-hop",
+      "query": "What does the annotation service run on and which annotation tool integrates with it?",
+      "expected": "The annotation service runs on FastAPI; Argilla integrates natively with it since the May 2026 migration.",
+      "answerable": true,
+      "memoryIds": ["golden_003", "golden_019"]
+    },
+    {
+      "id": "rag_038",
+      "category": "multi-hop",
+      "query": "Who took over as tech lead of Project Aurora and when?",
+      "expected": "Priya Nair serves as tech lead of Project Aurora as of April 2026, taking over after Marco's departure to a professorship.",
+      "answerable": true,
+      "memoryIds": ["golden_048", "golden_024"]
+    },
+    {
+      "id": "rag_039",
+      "category": "multi-hop",
+      "query": "What caching strategy is used for embeddings and how much did it save?",
+      "expected": "Embedding vectors are cached in Redis with a 24-hour TTL, cutting recompute costs by roughly 40%.",
+      "answerable": true,
+      "memoryIds": ["golden_035", "golden_036"]
+    },
+    {
+      "id": "rag_040",
+      "category": "multi-hop",
+      "query": "What happened to experiment configs after June 2026 and where do they live now?",
+      "expected": "Experiment configs moved from YAML files inside each repo to the central config service Confidant in July 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_057"]
+    },
+    {
+      "id": "rag_041",
+      "category": "multi-hop",
+      "query": "What observability framework was adopted and why?",
+      "expected": "OpenTelemetry was adopted for distributed tracing because vendor-neutral exporters simplified the observability stack and avoided lock-in.",
+      "answerable": true,
+      "memoryIds": ["golden_046"]
+    },
+    {
+      "id": "rag_042",
+      "category": "multi-hop",
+      "query": "Which testing framework replaced Vitest and what benefit did it bring?",
+      "expected": "Bun's built-in test runner replaced Vitest; the single-binary runtime keeps CI pipelines under two minutes.",
+      "answerable": true,
+      "memoryIds": ["golden_052"]
+    },
+    {
+      "id": "rag_043",
+      "category": "temporal",
+      "query": "What replaced FAISS for online similarity search?",
+      "expected": "Qdrant replaced FAISS for online similarity search in June 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_017", "golden_030"]
+    },
+    {
+      "id": "rag_044",
+      "category": "temporal",
+      "query": "When did the weekly research sync move and what is the new time?",
+      "expected": "From July 2026 onward the weekly research sync moved from Thursdays at 10:00 CET to Tuesdays at 14:00 CET.",
+      "answerable": true,
+      "memoryIds": ["golden_021", "golden_020"]
+    },
+    {
+      "id": "rag_045",
+      "category": "temporal",
+      "query": "How did the lab office location change in 2026?",
+      "expected": "The lab office moved from Utrecht city center to the Utrecht Science Park campus in February 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_059"]
+    },
+    {
+      "id": "rag_046",
+      "category": "temporal",
+      "query": "What changed about the budget review cycle starting March 2026?",
+      "expected": "The budget review cycle changed from quarterly to monthly.",
+      "answerable": true,
+      "memoryIds": ["golden_034"]
+    },
+    {
+      "id": "rag_047",
+      "category": "temporal",
+      "query": "When did the documentation hosting change and what replaced it?",
+      "expected": "Until February 2026 docs were hosted on ReadTheDocs; since then we self-host MkDocs behind the internal gateway.",
+      "answerable": true,
+      "memoryIds": ["golden_032"]
+    },
+    {
+      "id": "rag_048",
+      "category": "temporal",
+      "query": "When did user studies expand beyond the in-house team?",
+      "expected": "During Q1 2026 user studies were run in-house only; the external pilot program began in April 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_033"]
+    },
+    {
+      "id": "rag_049",
+      "category": "temporal",
+      "query": "When did experiment configurations move to Confidant?",
+      "expected": "Experiment configs moved from YAML files inside each repo to Confidant in July 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_057"]
+    },
+    {
+      "id": "rag_050",
+      "category": "temporal",
+      "query": "How did the GPU cluster expand between January and August 2026?",
+      "expected": "It went from eight A100 cards in January to sixteen A100s plus four H100s after the August 2026 expansion.",
+      "answerable": true,
+      "memoryIds": ["golden_022", "golden_023"]
+    },
+    {
+      "id": "rag_051",
+      "category": "temporal",
+      "query": "What was the previous annotation tool before the May 2026 switch?",
+      "expected": "Label Studio was used until April 2026; annotation moved to Argilla in May 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_018", "golden_019"]
+    },
+    {
+      "id": "rag_052",
+      "category": "temporal",
+      "query": "When did the vector store migration from FAISS to Qdrant happen?",
+      "expected": "The migration happened in June 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_016", "golden_017"]
+    },
+    {
+      "id": "rag_053",
+      "category": "temporal",
+      "query": "How many GPUs did the cluster have before the August 2026 expansion?",
+      "expected": "Eight A100 cards.",
+      "answerable": true,
+      "memoryIds": ["golden_022"]
+    },
+    {
+      "id": "rag_054",
+      "category": "contradiction",
+      "query": "I heard the team uses FAISS for vector search. Is that correct?",
+      "expected": "Only for offline batch similarity jobs over archived historical snapshots; production online search uses Qdrant since June 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_042", "golden_017", "golden_030"]
+    },
+    {
+      "id": "rag_055",
+      "category": "contradiction",
+      "query": "Someone said the GPU cluster has 12 GPUs. Is that accurate?",
+      "expected": "No. As of January 2026 it had eight A100s; after the August 2026 expansion it has sixteen A100s plus four H100s (20 total).",
+      "answerable": true,
+      "memoryIds": ["golden_022", "golden_023"]
+    },
+    {
+      "id": "rag_056",
+      "category": "contradiction",
+      "query": "Is MongoDB used for the metrics store?",
+      "expected": "No. MongoDB was considered for the metrics store but rejected due to weak join support and the operational cost of sharding.",
+      "answerable": true,
+      "memoryIds": ["golden_040", "golden_001"]
+    },
+    {
+      "id": "rag_057",
+      "category": "contradiction",
+      "query": "I heard the team uses npm for TypeScript packages. Is that right?",
+      "expected": "No. The team standardized on pnpm for all TypeScript monorepos instead of npm or yarn.",
+      "answerable": true,
+      "memoryIds": ["golden_002"]
+    },
+    {
+      "id": "rag_058",
+      "category": "contradiction",
+      "query": "Does Redis store session data?",
+      "expected": "No. Redis was evaluated for session storage but rejected; persistence requirements led to Postgres-backed sessions instead.",
+      "answerable": true,
+      "memoryIds": ["golden_039"]
+    },
+    {
+      "id": "rag_059",
+      "category": "contradiction",
+      "query": "Are budget reviews still quarterly?",
+      "expected": "No. Starting March 2026 the budget review cycle changed from quarterly to monthly.",
+      "answerable": true,
+      "memoryIds": ["golden_034"]
+    },
+    {
+      "id": "rag_060",
+      "category": "procedural",
+      "query": "What are the steps for onboarding a new dataset?",
+      "expected": "Verify the checksum, lint the schema against the registered contract, register the dataset in the catalog, run a 50-row preview validation, then announce it in the data channel with the catalog link.",
+      "answerable": true,
+      "memoryIds": ["golden_012"]
+    },
+    {
+      "id": "rag_061",
+      "category": "procedural",
+      "query": "What is the incident response protocol?",
+      "expected": "Page the on-call engineer immediately, open an incident doc from the template, post status updates every 30 minutes until resolved, and file a blameless postmortem within 72 hours.",
+      "answerable": true,
+      "memoryIds": ["golden_014"]
+    },
+    {
+      "id": "rag_062",
+      "category": "procedural",
+      "query": "What needs to happen before submitting a paper?",
+      "expected": "Anonymize author info, attach the reproducibility appendix, verify every citation resolves, audit licenses of released assets, and get supervisor sign-off before upload.",
+      "answerable": true,
+      "memoryIds": ["golden_015"]
+    },
+    {
+      "id": "rag_063",
+      "category": "procedural",
+      "query": "How do we release a new SDK version?",
+      "expected": "Update the changelog, run integration tests, publish a canary under the next dist-tag, soak for 48 hours monitoring error rates, then promote the canary version to latest.",
+      "answerable": true,
+      "memoryIds": ["golden_051"]
+    },
+    {
+      "id": "rag_064",
+      "category": "procedural",
+      "query": "How does the weekly model evaluation procedure work?",
+      "expected": "Pull the latest checkpoint, run the HELM subset suite, compare scores against the current champion, and record the delta on the evaluation dashboard.",
+      "answerable": true,
+      "memoryIds": ["golden_044"]
+    },
+    {
+      "id": "rag_065",
+      "category": "procedural",
+      "query": "What is the deployment checklist from start to finish?",
+      "expected": "Run full test suite, docker compose build, tag release image, push to registry, deploy to staging, verify health endpoint returns ok, then promote the same image tag to production. Never hand-edit files on servers.",
+      "answerable": true,
+      "memoryIds": ["golden_011"]
+    },
+    {
+      "id": "rag_066",
+      "category": "procedural",
+      "query": "What are the code review rules for pull requests?",
+      "expected": "Code reviews should complete within one business day; pull requests larger than 400 changed lines require a pairing session instead of async review.",
+      "answerable": true,
+      "memoryIds": ["golden_050"]
+    },
+    {
+      "id": "rag_067",
+      "category": "procedural",
+      "query": "How are staging database backups managed?",
+      "expected": "Staging database snapshots run nightly at 02:00 UTC with seven-day retention.",
+      "answerable": true,
+      "memoryIds": ["golden_054", "golden_055"]
+    },
+    {
+      "id": "rag_068",
+      "category": "preference",
+      "query": "What are the meeting rules at Helios?",
+      "expected": "Keep meetings under 25 minutes, send the agenda at least one day ahead, and cancel any meeting without an agenda.",
+      "answerable": true,
+      "memoryIds": ["golden_010"]
+    },
+    {
+      "id": "rag_069",
+      "category": "preference",
+      "query": "What are the dashboard design requirements?",
+      "expected": "Dashboards are dark-mode-first and every chart must remain readable under colorblind-safe palettes.",
+      "answerable": true,
+      "memoryIds": ["golden_009"]
+    },
+    {
+      "id": "rag_070",
+      "category": "preference",
+      "query": "What is the policy on code reviews?",
+      "expected": "Code reviews should complete within one business day; PRs larger than 400 changed lines require a pairing session.",
+      "answerable": true,
+      "memoryIds": ["golden_050"]
+    },
+    {
+      "id": "rag_071",
+      "category": "preference",
+      "query": "How should experiment results be recorded for reproducibility?",
+      "expected": "Every experiment must seed its RNG with seed 42 by default and record an environment hash alongside results.",
+      "answerable": true,
+      "memoryIds": ["golden_043"]
+    },
+    {
+      "id": "rag_072",
+      "category": "preference",
+      "query": "What is the standard Python version for new services?",
+      "expected": "Python 3.12; version 3.11 is allowed only when legacy dependencies lack compatible wheels.",
+      "answerable": true,
+      "memoryIds": ["golden_060"]
+    },
+    {
+      "id": "rag_073",
+      "category": "preference",
+      "query": "What unit test runner does the team prefer?",
+      "expected": "Bun's built-in test runner, which replaced Vitest because the single-binary runtime keeps CI pipelines under two minutes.",
+      "answerable": true,
+      "memoryIds": ["golden_052"]
+    },
+    {
+      "id": "rag_074",
+      "category": "entity",
+      "query": "Who is Dr. Elena Vasquez?",
+      "expected": "Principal investigator for model alignment research, based at the Madrid satellite office.",
+      "answerable": true,
+      "memoryIds": ["golden_026"]
+    },
+    {
+      "id": "rag_075",
+      "category": "entity",
+      "query": "What is Project Borealis?",
+      "expected": "The time-series forecasting benchmark built with Nordwind Energy using wind-farm telemetry data.",
+      "answerable": true,
+      "memoryIds": ["golden_025"]
+    },
+    {
+      "id": "rag_076",
+      "category": "entity",
+      "query": "What is Confidant?",
+      "expected": "The central config service that experiment configurations moved to in July 2026, replacing YAML files in each repo.",
+      "answerable": true,
+      "memoryIds": ["golden_057"]
+    },
+    {
+      "id": "rag_077",
+      "category": "entity",
+      "query": "What does MLflow track at Helios?",
+      "expected": "All experiments log metrics and artifacts to the MLflow tracking server on staging-02.",
+      "answerable": true,
+      "memoryIds": ["golden_031"]
+    },
+    {
+      "id": "rag_078",
+      "category": "entity",
+      "query": "What is the HELM subset suite used for?",
+      "expected": "It is run during weekly model evaluations to compare checkpoint scores against the current champion.",
+      "answerable": true,
+      "memoryIds": ["golden_044"]
+    },
+    {
+      "id": "rag_079",
+      "category": "entity",
+      "query": "What role does OpenTelemetry play at Helios?",
+      "expected": "It provides distributed tracing across all services with vendor-neutral exporters to avoid lock-in.",
+      "answerable": true,
+      "memoryIds": ["golden_046"]
+    },
+    {
+      "id": "rag_080",
+      "category": "entity",
+      "query": "Who is Marco in the context of Project Aurora?",
+      "expected": "Marco was the previous tech lead of Project Aurora before departing to a professorship; Priya Nair took over in April 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_048", "golden_024"]
+    },
+    {
+      "id": "rag_081",
+      "category": "entity",
+      "query": "What is the Madrid satellite office used for?",
+      "expected": "It is where Dr. Elena Vasquez, the principal investigator for model alignment research, is based.",
+      "answerable": true,
+      "memoryIds": ["golden_026"]
+    },
+    {
+      "id": "rag_082",
+      "category": "negation",
+      "query": "Do we still use Label Studio for annotation?",
+      "expected": "No. The team switched from Label Studio to Argilla in May 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_018", "golden_019"]
+    },
+    {
+      "id": "rag_083",
+      "category": "negation",
+      "query": "Is FAISS used for production vector search?",
+      "expected": "No. FAISS was replaced by Qdrant for online similarity search in June 2026. FAISS still powers offline batch jobs.",
+      "answerable": true,
+      "memoryIds": ["golden_042", "golden_017", "golden_030"]
+    },
+    {
+      "id": "rag_084",
+      "category": "negation",
+      "query": "Does the team meet on Thursday mornings for research sync?",
+      "expected": "No. The weekly research sync moved from Thursdays at 10:00 CET to Tuesdays at 14:00 CET in July 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_020", "golden_021"]
+    },
+    {
+      "id": "rag_085",
+      "category": "negation",
+      "query": "Is Kafka actively used in our event infrastructure?",
+      "expected": "No. Redis Streams is the event relay. Kafka stays on the technology watchlist in case volume exceeds 50k messages per second.",
+      "answerable": true,
+      "memoryIds": ["golden_004", "golden_041"]
+    },
+    {
+      "id": "rag_086",
+      "category": "negation",
+      "query": "Do we still host documentation on ReadTheDocs?",
+      "expected": "No. Since February 2026 docs are self-hosted on MkDocs behind the internal gateway.",
+      "answerable": true,
+      "memoryIds": ["golden_032"]
+    },
+    {
+      "id": "rag_087",
+      "category": "negation",
+      "query": "Is the lab still in Utrecht city center?",
+      "expected": "No. The lab office moved from Utrecht city center to the Utrecht Science Park campus in February 2026.",
+      "answerable": true,
+      "memoryIds": ["golden_059"]
+    },
+    {
+      "id": "rag_088",
+      "category": "negation",
+      "query": "Do we use Vitest for unit tests?",
+      "expected": "No. The team uses Bun's built-in test runner instead of Vitest because it keeps CI pipelines under two minutes.",
+      "answerable": true,
+      "memoryIds": ["golden_052"]
+    },
+    {
+      "id": "rag_089",
+      "category": "negation",
+      "query": "Does Redis handle session storage?",
+      "expected": "No. Redis was evaluated for sessions but rejected; persistence requirements led to Postgres-backed sessions.",
+      "answerable": true,
+      "memoryIds": ["golden_039"]
+    },
+    {
+      "id": "rag_090",
+      "category": "negation",
+      "query": "Do we send customer text to GPT-4 for the ticket classifier?",
+      "expected": "No. Mistral-7B is fine-tuned in-house because keeping customer text on-prem was a hard legal requirement.",
+      "answerable": true,
+      "memoryIds": ["golden_005"]
+    },
+    {
+      "id": "rag_091",
+      "category": "reasoning",
+      "query": "Why was PostgreSQL chosen over MongoDB for experiment metadata?",
+      "expected": "Because the team needs strong relational integrity across runs and datasets; JSONB columns cover the flexible fields where a document store would have helped.",
+      "answerable": true,
+      "memoryIds": ["golden_001", "golden_040"]
+    },
+    {
+      "id": "rag_092",
+      "category": "reasoning",
+      "query": "Why did the team move from FAISS to Qdrant?",
+      "expected": "Qdrant supports filtered similarity search in production, which FAISS did not support well enough.",
+      "answerable": true,
+      "memoryIds": ["golden_017"]
+    },
+    {
+      "id": "rag_093",
+      "category": "reasoning",
+      "query": "Why was Mistral-7B chosen instead of GPT-4 for the ticket classifier?",
+      "expected": "Keeping customer text on-prem was a hard requirement from legal, so a local fine-tuned model was required.",
+      "answerable": true,
+      "memoryIds": ["golden_005"]
+    },
+    {
+      "id": "rag_094",
+      "category": "reasoning",
+      "query": "Why was MongoDB rejected for the metrics store?",
+      "expected": "Due to weak join support and the operational cost of sharding.",
+      "answerable": true,
+      "memoryIds": ["golden_040"]
+    },
+    {
+      "id": "rag_095",
+      "category": "unanswerable",
+      "query": "What is the company's annual revenue?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_096",
+      "category": "unanswerable",
+      "query": "How many employees work in the Berlin office?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_097",
+      "category": "unanswerable",
+      "query": "What is our strategy for Series B fundraising?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_098",
+      "category": "unanswerable",
+      "query": "Who is the CEO of Helios Research Lab?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_099",
+      "category": "unanswerable",
+      "query": "What is the company's customer churn rate?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_100",
+      "category": "unanswerable",
+      "query": "How much does the lab spend on cloud infrastructure per month?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_101",
+      "category": "unanswerable",
+      "query": "What programming language does Dr. Vasquez prefer for alignment research?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_102",
+      "category": "unanswerable",
+      "query": "When is the next board meeting scheduled?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_103",
+      "category": "unanswerable",
+      "query": "What is the employee retention rate at Helios?",
+      "expected": "Not available in memory",
+      "answerable": false,
+      "memoryIds": []
+    },
+    {
+      "id": "rag_104",
+      "category": "unanswerable",
+      "query": "What external conferences does the lab attend?",
       "expected": "Not available in memory",
       "answerable": false,
       "memoryIds": []

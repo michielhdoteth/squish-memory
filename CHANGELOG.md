@@ -1,15 +1,31 @@
 # Squish Changelog
 
-## Unreleased
+## v2.1.0 — 2026-09-19
 
-- `squish_edits` — edit proposal workflow with propose/list/preview/approve/reject/correct actions and undo snapshots.
-- Corrections loop — approval/correction paths feed reinforcement feedback (`confirm`) and store `memory_snapshots` as `correction`.
-- Staleness report — read-only grouped report with at-risk items and suggested actions.
-- SDK v2 migration — `@squish/sdk` HTTP surface, `@squish/core-sdk` internal facade, zod v4 authoring.
-- `packages/mcp` upgraded to `@modelcontextprotocol/client` / `@modelcontextprotocol/server` v2 with Node 20+ transports.
-- Node engine enforced at `>=20` across root and packages.
+### What's new
 
-## v2.1.0 — 2026-09-02
+- **Places system wired through knowledge_edges** -- memories route to spatial places (WIP, Board, Ref, Sandbox, Sparks, Archive, Inbox) via `knowledge_edges` table. Place routing, retrieval, walking, and context injection all functional.
+- **Knowledge schema v2.0.0** -- `knowledge` + `knowledge_edges` tables replace the old `memories` + `memory_places` + `entity_relations` tables. Edge types: `placed_in`, `related_to`, `depends_on`, `contradicts`.
+- **Consolidation pipeline** -- merge similar memories, LLM-powered consolidation. Automatic dedup with configurable thresholds.
+- **Team memory** -- personal + team scope. Teams share memory graphs. Invitations, sharing, ACL.
+- **Edit proposal workflow** (`squish_edits`) -- propose edits, preview diffs, approve/reject/correct with undo snapshots.
+- **Scoring v2 composite ranking** -- graph boost, recency, importance, contextual retrieval, MMR, query expansion, temporal validity.
+- **19 MCP tools** -- remember, recall, forget, link, context, stats, inspect, team, loadout, compile, skill, extract, feedback, places, sessions, tier, dedup, edits, stale_report.
+- **1638/1638 tests pass** -- full suite runs in ~190s.
+
+### Benchmarks
+
+- Golden retrieval: Recall@5=0.935, MRR=0.904, Hit@1=0.870, ECE=0.055
+- Resurrection: 5/5 scenarios pass
+- Temporal validity: Recall@5=0.837, MRR=0.809, Hit@1=0.739
+
+### Migration notes
+
+- `memory_places` table no longer created on new installs. Existing data migrates to `knowledge_edges` automatically.
+- `entity_relations` table migrated to `knowledge_edges`. No manual action required.
+- Place routing now works through `knowledge_edges` -- old `memory-places.ts` functions are real implementations, not no-ops.
+
+## v2.0.0 — 2026-08-27
 
 ### What's new
 

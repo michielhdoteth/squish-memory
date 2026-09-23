@@ -66,7 +66,6 @@ describe('Search candidate correctness filters (Batch 2)', () => {
     const sqlite = (db as any).$client;
     if (sqlite && typeof sqlite.exec === 'function') {
       sqlite.exec('DELETE FROM memory_associations;');
-      sqlite.exec('DELETE FROM memory_places;');
       sqlite.exec('DELETE FROM memories;');
     }
   });
