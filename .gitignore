@@ -121,6 +121,7 @@ bench/runners/*.json
 !bench/runners/*.mjs
 
 # Root-level text dumps (test runner output captured to disk)
+# NOTE: test-*.txt rule above must come BEFORE this *.txt rule.
 *.txt
 !LICENSE
 !CHANGELOG.md
@@ -129,6 +130,11 @@ bench/runners/*.json
 !server.json
 !mcp.json.example
 !fixed-error.txt
+
+# Benchmark reports — generated at runtime, not source.
+# Keep only the release notes doc; everything else is regenerated.
+bench/reports/
+!bench/reports/v2.1.0-benchmark.md
 
 # Agent configuration (local only, do not commit)
 AGENTS.md
