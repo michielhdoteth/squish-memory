@@ -113,6 +113,23 @@ docs/ROADMAP.md
 # Developer scripts (not part of published package)
 dev-scripts/
 
+# Test output artifacts (debug logs, raw test runner output, generated reports)
+# These are generated at runtime and should never be committed.
+test-*.txt
+bench/runners/*.json
+!bench/runners/*.ts
+!bench/runners/*.mjs
+
+# Root-level text dumps (test runner output captured to disk)
+*.txt
+!LICENSE
+!CHANGELOG.md
+!README.md
+!package.json
+!server.json
+!mcp.json.example
+!fixed-error.txt
+
 # Agent configuration (local only, do not commit)
 AGENTS.md
 
