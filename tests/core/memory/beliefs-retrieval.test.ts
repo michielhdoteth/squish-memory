@@ -22,6 +22,7 @@ process.env.SQUISH_RERANKER_ENABLED ||= 'false';
 import { resetDb, getDb } from '../../../db/index.js';
 import { rememberMemory } from '../../../core/memory/memories.js';
 import { hybridSearch } from '../../../core/memory/hybrid-search.js';
+import { processMemoryAnalysisJobs } from '../../../core/memory/fact-extraction-worker.js';
 
 describe('beliefs join retrieval (Batch 6b)', () => {
   let projectId: string | undefined;
@@ -48,6 +49,9 @@ describe('beliefs join retrieval (Batch 6b)', () => {
       type: 'note',
       project: '/proj/beliefs-test',
     });
+
+    // Run queued analysis so beliefs are available through the durable worker.
+    await processMemoryAnalysisJobs({ extract: async () => ({ facts: [], summary: '', entities: [] }) });
 
     const db = await getDb();
     const sqlite = (db as any).$client;

@@ -85,7 +85,7 @@ PLAN.md
 plans/
 
 # Wiki (root-local planning wiki only; anchored so source dirs like core/wiki are tracked)
-/wiki/
+
 
 # Home directory artifacts
 ~/

@@ -6,7 +6,7 @@
  * keep the graph clean.
  */
 
-import { eq } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { addMemoryToGraph } from './graph-builder.js';
@@ -22,6 +22,8 @@ export interface SyncOptions {
   project?: string;
   dedupThreshold?: number;
   forceDedup?: boolean;
+  /** Knowledge mirror for this source memory; enables provenance-safe projection. */
+  knowledgeRecordId?: string;
 }
 
 export interface SyncResult {
@@ -142,6 +144,40 @@ export async function onMemoryStored(
         memoryId,
         error: error as Error,
       });
+    }
+  }
+
+  // Project only after extraction has stored entities and linked their names
+  // into memory metadata. Do not catch failures here: a requested projection
+  // must not silently report a successful sync without its edge operation.
+  if (options?.knowledgeRecordId && projectId) {
+    const db = await getDb();
+    const schema = await getSchema();
+    const [knowledgeRow] = await (db as any).select({ metadata: schema.knowledge.metadata })
+      .from(schema.knowledge).where(eq(schema.knowledge.id, options.knowledgeRecordId)).limit(1);
+    const rawMetadata = knowledgeRow?.metadata;
+    const metadata = typeof rawMetadata === 'string'
+      ? JSON.parse(rawMetadata) as Record<string, unknown>
+      : rawMetadata as Record<string, unknown> | null;
+    const names = Array.isArray(metadata?.entities)
+      ? [...new Set((metadata.entities as unknown[]).filter((name): name is string => typeof name === 'string'))]
+      : [];
+    if (names.length) {
+      const rows = await (db as any).select({ id: schema.entities.id })
+        .from(schema.entities)
+        .where(and(eq(schema.entities.projectId, projectId), inArray(schema.entities.name, names)));
+      for (const entity of rows) {
+        await (db as any).insert(schema.knowledgeEdges).values({
+          fromId: options.knowledgeRecordId,
+          fromKind: 'knowledge',
+          toId: entity.id,
+          toKind: 'entity',
+          edgeType: 'references',
+          metadata: (await import('../../config.js')).config.mode === 'team'
+            ? { sourceMemoryId: memoryId, projectId }
+            : JSON.stringify({ sourceMemoryId: memoryId, projectId }),
+        }).onConflictDoNothing();
+      }
     }
   }
 

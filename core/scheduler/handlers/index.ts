@@ -5,6 +5,7 @@ import { getMemoryHandlers } from './memory.js';
 import { getMaintenanceHandlers } from './maintenance.js';
 import { getConsolidationHandlers } from './consolidation.js';
 import { getInboxHandlers } from './inbox.js';
+import { getFactExtractionHandlers } from './fact-extraction.js';
 
 /**
  * Returns all registered job handlers aggregated from every handler module.
@@ -19,6 +20,7 @@ export function getAllJobHandlers(): Map<string, JobHandler> {
     getMaintenanceHandlers(),
     getConsolidationHandlers(),
     getInboxHandlers(),
+    getFactExtractionHandlers(),
   ];
 
   for (const source of sources) {

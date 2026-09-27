@@ -68,7 +68,50 @@ describe('Incremental Graph Sync', () => {
 
   // --- onMemoryStored ----------------------------------------------------
 
-  describe('onMemoryStored', () => {
+    describe('onMemoryStored', () => {
+      it('projects typed knowledge to an existing same-project entity idempotently with provenance', async () => {
+        const project = await getOrCreateProject(testDataDir);
+        const db = await getDb();
+        const schema = await (await import('../../db/schema.js')).getSchema();
+        const { and, eq } = await import('drizzle-orm');
+        const { getEdgesFrom } = await import('../knowledge/store.js');
+        const otherProject = await getOrCreateProject(`${testDataDir}-other`);
+        const foreignEntity = { id: randomUUID(), projectId: otherProject!.id, name: 'PostgreSQL', type: 'concept' };
+        await (db as any).insert(schema.entities).values(foreignEntity);
+        const priorLlmEnabled = process.env.SQUISH_LLM_ENABLED;
+        const priorGraphAutoBuild = process.env.SQUISH_GRAPH_AUTO_BUILD;
+        process.env.SQUISH_LLM_ENABLED = 'false';
+        process.env.SQUISH_GRAPH_AUTO_BUILD = 'false';
+        let mem;
+        try {
+          mem = await rememberMemory({ content: 'PostgreSQL is the project database', type: 'fact', project: testDataDir, metadata: { entities: ['PostgreSQL'] } as any });
+        } finally {
+          if (priorLlmEnabled === undefined) delete process.env.SQUISH_LLM_ENABLED;
+          else process.env.SQUISH_LLM_ENABLED = priorLlmEnabled;
+          if (priorGraphAutoBuild === undefined) delete process.env.SQUISH_GRAPH_AUTO_BUILD;
+          else process.env.SQUISH_GRAPH_AUTO_BUILD = priorGraphAutoBuild;
+        }
+        const knowledgeRows = await (db as any).select().from(schema.knowledge).where(eq(schema.knowledge.content, mem!.content)).limit(1);
+        const knowledge = knowledgeRows[0];
+        const beforeSync = await (db as any).select().from(schema.entities)
+          .where(and(eq(schema.entities.projectId, project!.id), eq(schema.entities.name, 'PostgreSQL')));
+        expect(beforeSync).toHaveLength(0);
+        const firstSync = await onMemoryStored(mem!.id, { project: testDataDir, knowledgeRecordId: knowledge.id });
+        expect(firstSync.entitiesCreated).toBeGreaterThan(0);
+        const entityRows = await (db as any).select().from(schema.entities)
+          .where(and(eq(schema.entities.projectId, project!.id), eq(schema.entities.name, 'PostgreSQL')));
+        expect(entityRows).toHaveLength(1);
+        const entity = entityRows[0];
+        const projectedBeforeResync = await getEdgesFrom(knowledge.id, 'knowledge', 'references');
+        expect(projectedBeforeResync.filter(edge => edge.toId === entity.id)).toHaveLength(1);
+        await onMemoryStored(mem!.id, { project: testDataDir, knowledgeRecordId: knowledge.id });
+        const edges = await getEdgesFrom(knowledge.id, 'knowledge', 'references');
+        expect(edges.filter(edge => edge.toId === entity.id)).toHaveLength(1);
+        expect(edges.some(edge => edge.toId === foreignEntity.id)).toBe(false);
+        const edgeMetadata = edges.find(edge => edge.toId === entity.id)?.metadata as Record<string, unknown>;
+        expect(edgeMetadata.sourceMemoryId).toBe(mem.id);
+        expect(edgeMetadata.projectId).toBe(project!.id);
+      });
     it('returns a SyncResult with all required fields', async () => {
       const mem = await rememberMemory({
         content: 'Sync test memory about PostgreSQL',

@@ -21,6 +21,7 @@ import { runEntitiesMigrations } from './entities.js';
 import { runTeamsMigrations } from './teams.js';
 import { runTeamMemoryMigration } from './team-memory.js';
 import { runKnowledgeMigrations } from './knowledge.js';
+import { runMemoryAnalysisJobsMigrations } from './memory-analysis-jobs.js';
 
 /**
  * Run all v1.2.0 migrations in order
@@ -41,6 +42,7 @@ export async function runAllMigrations(sqlite: Database): Promise<void> {
   await runTeamsMigrations(sqlite);
   await runTeamMemoryMigration(sqlite);
   await runKnowledgeMigrations(sqlite);
+  await runMemoryAnalysisJobsMigrations(sqlite);
 }
 
 // Re-export for direct usage if needed

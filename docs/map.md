@@ -63,8 +63,8 @@ squish/
 | `core/consolidation/engine.ts` (sleep-cycle DBSCAN) | Bake-off loser: tag-Jaccard found nothing under realistic tag noise; no provenance/undo. See docs/consolidation-bakeoff.md |
 | SimHash dedup in root `core/consolidation.ts` | Bake-off loser: 141 incorrect pairs vs 14 correct; auto-merge wrote a nonexistent column (orphaned flips). Dedup is owned by core/algorithms + squish_dedup |
 | `core/memory/sleep-consolidation.ts` | Dark code: zero production callers, destructive truncation semantics |
-| `core/wiki/**` + `squish_wiki` tool + wiki tables | Operator decision: NO markdown pages/documents - database only. Legacy rows migrate into memories via db/migrations/wiki-to-memory.ts |
-| Wiki half of `core/extraction/extraction.ts` | Same operator decision |
+| `core/wiki/**` + `squish_wiki` tool + wiki tables | Removed in Batch 8 (operator decision: database-only memory). Legacy SQLite pages migrate via `db/migrations/wiki-to-memory.ts`; legacy PostgreSQL pages migrate via `squish-cloud/squish-api/migrations/009-wiki-to-memory.sql`, preserving versions and links. |
+| `core/extraction/extraction.ts` wiki half | Same operator decision; skill extraction remains |
 | `core/context/context-paging.ts` | Zero callers post-composer |
 | `calculateCompositeScore` (core/retrieval) | Zero production callers; ranking served by scoring v2 |
 | `autoArchiveOldMemories` (core/places) | Unreachable safety-gated deleter; tier_maintenance owns lifecycle |

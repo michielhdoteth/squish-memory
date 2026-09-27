@@ -9,6 +9,7 @@ import { eq, and, or } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
+import { config } from '../../config.js';
 import {
   extractEntitiesAndRelations,
   type ExtractedRelation,
@@ -209,10 +210,15 @@ async function storeEntities(
           type: entity.type,
           projectId,
           description: entity.context || null,
-          properties: {
-            confidence: entity.confidence,
-            normalized: entity.normalized,
-          } as any,
+          properties: config.mode === 'team'
+            ? {
+                confidence: entity.confidence,
+                normalized: entity.normalized,
+              } as any
+            : JSON.stringify({
+                confidence: entity.confidence,
+                normalized: entity.normalized,
+              }),
         };
 
         const inserted = await (db as any)

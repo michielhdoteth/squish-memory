@@ -242,6 +242,40 @@ export const strategyBeliefEdges = pgTable('strategy_belief_edges', {
 // Graph & Context Tables
 // =============================================================================
 
+// Existing PostgreSQL migration 0000_needy_cerebro.sql defines both graph tables.
+export const entities = pgTable('entities', {
+  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  type: text('type').notNull(),
+  description: text('description'),
+  embedding: text('embedding'),
+  properties: jsonb('properties'),
+  mentionCount: integer('mention_count').default(0),
+  lastMentionedAt: timestamp('last_mentioned_at'),
+  aliases: jsonb('aliases'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('entities_project_idx').on(table.projectId),
+  index('entities_type_idx').on(table.type),
+  index('entities_name_idx').on(table.name),
+]);
+
+export const entityRelations = pgTable('entity_relations', {
+  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
+  fromEntityId: text('from_entity_id').notNull().references(() => entities.id, { onDelete: 'cascade' }),
+  toEntityId: text('to_entity_id').notNull().references(() => entities.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  weight: integer('weight').default(1),
+  properties: jsonb('properties'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('relations_from_idx').on(table.fromEntityId),
+  index('relations_to_idx').on(table.toEntityId),
+  index('relations_type_idx').on(table.type),
+]);
+
 /**
  * Graph Edges - semantic relationships between memories
  */

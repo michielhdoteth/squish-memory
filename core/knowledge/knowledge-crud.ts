@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { config } from '../../config.js';
 import { getDbClient } from '../lib/db-client.js';
 import { logger } from '../logger.js';
 import { serializeJson, toKnowledge } from './helpers.js';
@@ -24,6 +25,7 @@ import type {
  * Called lazily on first operation.
  */
 export async function ensureKnowledgeTables(): Promise<void> {
+  if (config.mode === 'team') return;
   const { raw } = await getDbClient();
   const sqlite = (raw as any).$client;
   if (!sqlite || typeof sqlite.prepare !== 'function') return;
@@ -135,80 +137,49 @@ export async function ensureKnowledgeTables(): Promise<void> {
  */
 export async function createKnowledge(input: CreateKnowledgeInput): Promise<Knowledge> {
   await ensureKnowledgeTables();
-  const { raw } = await getDbClient();
-  const sqlite = (raw as any).$client;
-  if (!sqlite) throw new Error('Database not available');
-
+  const { getDb } = await import('../../db/index.js');
+  const { getSchema } = await import('../../db/schema.js');
+  const db = await getDb();
+  const schema = await getSchema();
   const id = randomUUID();
-  const now = Math.floor(Date.now() / 1000);
-
-  sqlite.prepare(`
-    INSERT INTO knowledge (
-      id, project_id, user_id, agent_id, session_id,
-      knowledge_kind, knowledge_type,
-      content, summary,
-      embedding_json, embedding,
-      confidence, confidence_level, importance_score, importance_decay_rate, last_importance_recalc,
-      normalized_key, reason, evidence_summary, last_confirmed_at, source_count,
-      title, description, steps, success_criteria, failure_indicators,
-      usage_count, success_count, failure_count, last_used_at, last_success_at, last_failure_at,
-      status, superseded_by, contradicts_id, informed_by_id,
-      tags, metadata,
-      place_id, primary_place,
-      sector, tier, is_active,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  const now = new Date();
+  const [row] = await (db as any).insert(schema.knowledge).values({
     id,
-    input.projectId ?? null,
-    input.userId ?? null,
-    input.agentId ?? null,
-    input.sessionId ?? null,
-    input.knowledgeKind,
-    input.knowledgeType,
-    input.content,
-    input.summary ?? null,
-    input.embeddingJson ?? null,
-    input.embedding ?? null,
-    input.confidence ?? 0.5,
-    input.confidenceLevel ?? 'certain',
-    input.importanceScore ?? 0.5,
-    input.importanceDecayRate ?? 30,
-    input.lastImportanceRecalc ?? null,
-    input.normalizedKey ?? null,
-    input.reason ?? null,
-    input.evidenceSummary ?? null,
-    input.lastConfirmedAt ?? null,
-    input.sourceCount ?? 1,
-    input.title ?? null,
-    input.description ?? null,
-    input.steps ? JSON.stringify(input.steps) : null,
-    input.successCriteria ?? null,
-    input.failureIndicators ?? null,
-    input.usageCount ?? 0,
-    input.successCount ?? 0,
-    input.failureCount ?? 0,
-    input.lastUsedAt ?? null,
-    input.lastSuccessAt ?? null,
-    input.lastFailureAt ?? null,
-    input.status ?? 'active',
-    input.supersededBy ?? null,
-    input.contradictsId ?? null,
-    input.informedById ?? null,
-    input.tags ? JSON.stringify(input.tags) : null,
-    serializeJson(input.metadata ?? null),
-    input.placeId ?? null,
-    input.primaryPlace ?? null,
-    input.sector ?? 'general',
-    input.tier ?? 'episodic',
-    input.isActive ?? 1,
-    now,
-    now,
-  );
-
-  const result = await getKnowledgeById(id);
-  if (!result) throw new Error(`Failed to create knowledge record with id ${id}`);
-  return result;
+    projectId: input.projectId ?? null,
+    userId: input.userId ?? null,
+    agentId: input.agentId ?? null,
+    sessionId: input.sessionId ?? null,
+    knowledgeKind: input.knowledgeKind,
+    knowledgeType: input.knowledgeType,
+    content: input.content,
+    summary: input.summary ?? null,
+    confidence: input.confidence ?? 0.5,
+    confidenceLevel: input.confidenceLevel ?? 'certain',
+    importanceScore: input.importanceScore ?? 0.5,
+    importanceDecayRate: input.importanceDecayRate ?? 30,
+    normalizedKey: input.normalizedKey ?? null,
+    reason: input.reason ?? null,
+    evidenceSummary: input.evidenceSummary ?? null,
+    title: input.title ?? null,
+    description: input.description ?? null,
+    steps: input.steps ? JSON.stringify(input.steps) : null,
+    successCriteria: input.successCriteria ?? null,
+    failureIndicators: input.failureIndicators ?? null,
+    status: input.status ?? 'active',
+    tags: input.tags ? JSON.stringify(input.tags) : null,
+    metadata: (await import('../../config.js')).config.mode === 'team'
+      ? input.metadata ?? null
+      : serializeJson(input.metadata ?? null),
+    placeId: input.placeId ?? null,
+    primaryPlace: input.primaryPlace ?? null,
+    sector: input.sector ?? 'general',
+    tier: input.tier ?? 'episodic',
+    isActive: input.isActive ?? true,
+    createdAt: now,
+    updatedAt: now,
+  }).returning();
+  if (!row) throw new Error(`Failed to create knowledge record with id ${id}`);
+  return toKnowledge(row);
 }
 
 /**
@@ -216,11 +187,12 @@ export async function createKnowledge(input: CreateKnowledgeInput): Promise<Know
  */
 export async function getKnowledgeById(id: string): Promise<Knowledge | null> {
   await ensureKnowledgeTables();
-  const { raw } = await getDbClient();
-  const sqlite = (raw as any).$client;
-  if (!sqlite) return null;
-
-  const row = sqlite.prepare('SELECT * FROM knowledge WHERE id = ?').get(id);
+  const { getDb } = await import('../../db/index.js');
+  const { getSchema } = await import('../../db/schema.js');
+  const { eq } = await import('drizzle-orm');
+  const db = await getDb();
+  const schema = await getSchema();
+  const [row] = await (db as any).select().from(schema.knowledge).where(eq(schema.knowledge.id, id)).limit(1);
   return row ? toKnowledge(row) : null;
 }
 
@@ -251,7 +223,7 @@ export async function updateKnowledge(
     normalizedKey: ['normalized_key', (v: string) => v],
     reason: ['reason', (v: string) => v],
     evidenceSummary: ['evidence_summary', (v: string) => v],
-    lastConfirmedAt: ['last_confirmed_at', (v: number) => v],
+    lastConfirmedAt: ['last_confirmed_at', (v: number | Date) => v instanceof Date ? v.getTime() : v],
     sourceCount: ['source_count', (v: number) => v],
     title: ['title', (v: string) => v],
     description: ['description', (v: string) => v],
@@ -261,9 +233,9 @@ export async function updateKnowledge(
     usageCount: ['usage_count', (v: number) => v],
     successCount: ['success_count', (v: number) => v],
     failureCount: ['failure_count', (v: number) => v],
-    lastUsedAt: ['last_used_at', (v: number) => v],
-    lastSuccessAt: ['last_success_at', (v: number) => v],
-    lastFailureAt: ['last_failure_at', (v: number) => v],
+    lastUsedAt: ['last_used_at', (v: number | Date) => v instanceof Date ? v.getTime() : v],
+    lastSuccessAt: ['last_success_at', (v: number | Date) => v instanceof Date ? v.getTime() : v],
+    lastFailureAt: ['last_failure_at', (v: number | Date) => v instanceof Date ? v.getTime() : v],
     status: ['status', (v: string) => v],
     supersededBy: ['superseded_by', (v: string) => v],
     contradictsId: ['contradicts_id', (v: string) => v],

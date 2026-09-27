@@ -274,7 +274,7 @@ export async function buildHealthState(projectPath?: string): Promise<HealthRepo
   currentProject = `${scope.currentProject.name} (${scope.currentProject.path})`;
   nextStep = scope.nextStep;
 
-  // Legacy wiki tables in non-SQLite (team/PG) databases have no migration
+
   // path yet — the wiki-to-memory migration is SQLite-only. Warn loudly so
   // operators don't assume team-mode wiki data was preserved.
   try {
@@ -294,13 +294,12 @@ export async function buildHealthState(projectPath?: string): Promise<HealthRepo
           status: 'degraded',
           detail:
             `${wikiTableCount} legacy wiki table(s) exist in this Postgres database. ` +
-            `The wiki-to-memory migration is SQLite-only; team-mode wiki data was NOT migrated. ` +
-            `Export manually before any schema push.`,
+            `Run squish-cloud/squish-api/migrations/009-wiki-to-memory.sql to migrate and preserve legacy team-mode wiki data.`
         });
         if (severity === 'ok') severity = 'degraded';
         nextStep =
           nextStep ??
-          'Export legacy team-mode wiki tables manually (SQLite migration does not cover Postgres).';
+          'Run squish-cloud/squish-api/migrations/009-wiki-to-memory.sql to migrate legacy team-mode wiki tables.';
       }
     }
   } catch {

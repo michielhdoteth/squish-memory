@@ -18,6 +18,24 @@ export const users = sqliteTable('users', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+export const memoryAnalysisJobs = sqliteTable('memory_analysis_jobs', {
+  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
+  sourceMemoryId: text('source_memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  jobKind: text('job_kind').notNull(),
+  status: text('status').notNull().default('pending'),
+  attempts: integer('attempts').notNull().default(0),
+  availableAt: integer('available_at').notNull().default(sql`(strftime('%s','now'))`),
+  lockedAt: integer('locked_at'),
+  lastErrorCode: text('last_error_code'),
+  createdAt: integer('created_at').notNull().default(sql`(strftime('%s','now'))`),
+  updatedAt: integer('updated_at').notNull().default(sql`(strftime('%s','now'))`),
+}, (table) => [
+  unique('memory_analysis_jobs_source_kind_uq').on(table.sourceMemoryId, table.jobKind),
+  index('memory_analysis_jobs_status_available_idx').on(table.status, table.availableAt),
+  index('memory_analysis_jobs_project_idx').on(table.projectId),
+]);
+
 /**
  * Projects - workspaces that memories are scoped to
  */

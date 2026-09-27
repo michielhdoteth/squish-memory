@@ -210,6 +210,14 @@ async function ensureDefaultJobs(db: any): Promise<void> {
       enabled: true,
       jobConfig: { minMessageCount: 5, maxMessagesToProcess: 50 },
     },
+    // Bounded durable-memory fact extraction queue consumer.
+    {
+      jobName: 'memory_fact_extraction',
+      jobType: 'hourly' as JobType,
+      cronExpression: '15 * * * *',
+      enabled: true,
+      jobConfig: { batchSize: 10 },
+    },
     // Knowledge decay: belief/strategy confidence decay (different table from memories)
     {
       jobName: 'belief_decay',

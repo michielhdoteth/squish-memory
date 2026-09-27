@@ -16,7 +16,7 @@ export interface FactExtractionResult {
 /**
  * Extract facts from conversation text using Claude API
  * 
- * This function MUST return valid facts or throw an error.
+ * This function returns valid facts or a valid empty extraction, or throws on malformed output.
  * NO FALLBACKS - we need real extraction to reach 90% accuracy.
  */
 export async function extractFacts(
@@ -80,7 +80,7 @@ ${text.substring(0, 4000)}`;
       relation: typeof f.relation === 'string' ? f.relation : undefined
     }));
   
-  if (validFacts.length === 0) {
+  if (parsed.facts.length > 0 && validFacts.length === 0) {
     throw new Error(`Fact extraction failed: No valid facts after filtering. Original count: ${parsed.facts.length}`);
   }
   

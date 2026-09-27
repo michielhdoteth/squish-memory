@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { config } from '../../config.js';
 import { logger } from '../logger.js';
 import { getOrCreateProject } from '../../core/projects.js';
@@ -21,12 +21,11 @@ import { applySupersession, resolveContradictions } from './contradiction-resolv
 import { encrypt } from '../security/encrypt.js';
 import { estimateTokens } from '../context/context-window.js';
 import { getDbClient } from '../lib/db-client.js';
-import { extractBeliefs } from '../knowledge/extractor.js';
-import { upsertBeliefsForMemory, createKnowledge, createKnowledgeEdge } from '../knowledge/store.js';
-import { extractConversationStrats } from '../knowledge/extractor.js';
+import { createKnowledge, createKnowledgeEdge } from '../knowledge/store.js';
 import type { CreateKnowledgeInput } from '../knowledge/types.js';
 import { buildMemoryPolicy, buildVisibilityScopes, serializeVisibilityScopes, recommendMemoryScope } from './policy.js';
 import { onMemoryStored } from '../graph/incremental-sync.js';
+import { scheduleMentalModelRefresh } from '../knowledge/mental-models.js';
 import { parseEmbedding } from '../lib/parse-embedding.js';
 import { findOrCreateCluster, updateClusterStats } from '../clustering/cluster-engine.js';
 import { evaluateCluster } from '../clustering/consolidation-check.js';
@@ -216,137 +215,73 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     insertValues.is_encrypted = false;
   }
 
-  await withBusyRetry(() => db.insert(schema.memories).values(insertValues), {
-    label: 'rememberMemory.insert',
-  });
+  await withBusyRetry(async () => {
+    const raw = (await getDb() as any).$client;
+    if (project?.id && raw && typeof raw.exec === 'function') {
+      // Keep both writes on the same native SQLite connection and transaction.
+      raw.exec('BEGIN IMMEDIATE');
+      try {
+        await db.insert(schema.memories).values(insertValues);
+        await db.insert(schema.memoryAnalysisJobs).values({
+          id: randomUUID(),
+          sourceMemoryId: id,
+          projectId: project.id,
+          jobKind: 'analyze_memory',
+          status: 'pending',
+        });
+        raw.exec('COMMIT');
+      } catch (error) {
+        try { raw.exec('ROLLBACK'); } catch {}
+        throw error;
+      }
+    } else {
+      await db.insert(schema.memories).values(insertValues);
+    }
+  }, { label: 'rememberMemory.insert' });
 
   let knowledgeRecordId: string | null = null;
 
   if (project?.id) {
-    try {
-      const beliefs = extractBeliefs({
-        memoryId: id,
-        content: input.content,
-        type,
-        metadata: enrichedMetadata,
-      });
-      if (beliefs.length > 0) {
-        await upsertBeliefsForMemory({
-          projectId: project.id,
-          memoryId: id,
-          beliefs,
-        });
-      }
-    } catch (beliefError) {
-      logger.warn(`[Beliefs] Failed to derive beliefs for memory ${id}: ${beliefError}`);
-    }
-
-    // Extract strategies from memory content into unified knowledge table
-    try {
-      const extractedStrategies = await extractConversationStrats(input.content, {
-        projectId: project.id,
-        sourceType: 'memory',
-        sourceId: id,
-      });
-      for (const extracted of extractedStrategies) {
-        try {
-          await createKnowledge({
-            projectId: project.id,
-            knowledgeKind: 'strategy',
-            knowledgeType: extracted.strategyType,
-            content: extracted.description,
-            title: extracted.title,
-            description: extracted.description,
-            steps: extracted.steps,
-            successCriteria: extracted.successCriteria,
-            failureIndicators: extracted.failureIndicators,
-            confidence: extracted.confidence / 100,
-            tags: ['auto-extracted', 'realtime'],
-          });
-        } catch (strategyCreateError) {
-          logger.debug(`[Strategy] Failed to create strategy from memory ${id}: ${strategyCreateError}`);
-        }
-      }
-    } catch (strategyError) {
-      logger.debug(`[Strategy] Extraction failed for memory ${id}: ${strategyError}`);
-    }
 
     // Store memory in unified knowledge table
-    try {
-      const knowledgeInput: CreateKnowledgeInput = {
-        projectId: project.id,
-        userId: insertValues.userId ?? undefined,
-        sessionId: input.sessionId ?? undefined,
-        knowledgeKind: 'memory',
-        knowledgeType: type,
-        content: input.content,
-        summary: undefined,
-        confidence: importance.score / 100,
-        tags: tags,
-        metadata: enrichedMetadata,
-        // Batch 6b: mirror the routed sector instead of hardcoding episodic.
-        sector,
-        tier: importance.score >= 70 ? 'hot' : 'cold',
-      };
-      const knowledgeRecord = await createKnowledge(knowledgeInput);
-      knowledgeRecordId = knowledgeRecord.id;
-      logger.debug(`[Knowledge] Stored memory ${id} in knowledge table`);
-    } catch (knowledgeError) {
-      logger.debug(`[Knowledge] Failed to store memory in knowledge table: ${knowledgeError}`);
-    }
+    const knowledgeInput: CreateKnowledgeInput = {
+      projectId: project.id,
+      userId: insertValues.userId ?? undefined,
+      sessionId: input.sessionId ?? undefined,
+      knowledgeKind: 'memory',
+      knowledgeType: type,
+      content: input.content,
+      summary: undefined,
+      confidence: importance.score / 100,
+      tags,
+      metadata: enrichedMetadata,
+      sector,
+      tier: importance.score >= 70 ? 'hot' : 'cold',
+    };
+    const knowledgeRecord = await createKnowledge(knowledgeInput);
+    knowledgeRecordId = knowledgeRecord.id;
+    logger.debug(`[Knowledge] Stored memory ${id} in knowledge table`);
   }
 
-   // Build graph for this memory (auto-build if enabled)
-   // Uses incremental sync which tracks entity counts and runs periodic dedup
-   if (config.graphAutoBuild && project?.id) {
+  // Build graph for this memory (auto-build if enabled). The sync now projects
+  // the knowledge edge after extraction, when newly discovered entities exist.
+  if (config.graphAutoBuild && project?.id) {
      try {
        const syncResult = await onMemoryStored(id, {
          project: input.project,
+         knowledgeRecordId: knowledgeRecordId ?? undefined,
        });
-       if (syncResult.entitiesCreated > 0 || syncResult.relationsCreated > 0) {
+       if (knowledgeRecordId) {
          logger.debug(`[Graph] Synced memory ${id}: ${syncResult.entitiesCreated} entities, ${syncResult.relationsCreated} relations${syncResult.dedupRan ? ' (dedup ran)' : ''}`);
-       }
-
-       // Create knowledge_edges from knowledge record to extracted entities
-       // This bridges the knowledge table with the entity graph so that
-       // getConnectedEntities() can traverse cross-system relationships.
-       if (knowledgeRecordId && (syncResult.entitiesCreated > 0 || syncResult.relationsCreated > 0)) {
-         try {
-           const { raw } = await getDbClient();
-           const sqlite = (raw as any).$client;
-           const updatedRow = sqlite.prepare('SELECT metadata FROM memories WHERE id = ?').get(id);
-           if (updatedRow?.metadata) {
-             const meta = typeof updatedRow.metadata === 'string'
-               ? JSON.parse(updatedRow.metadata)
-               : updatedRow.metadata;
-             const entityNames: string[] = meta.entities || [];
-             if (entityNames.length > 0) {
-               const placeholders = entityNames.map(() => '?').join(',');
-               const entities = sqlite.prepare(
-                 `SELECT id, name FROM entities WHERE project_id = ? AND name IN (${placeholders})`
-               ).all(project.id, ...entityNames);
-
-               for (const entity of entities) {
-                 try {
-                    await createKnowledgeEdge({
-                      fromId: knowledgeRecordId,
-                      fromKind: 'knowledge',
-                      toId: entity.id,
-                      toKind: 'entity',
-                      edgeType: 'references',
-                    });
-                 } catch { /* edge may already exist */ }
-               }
-             }
-           }
-         } catch (edgeError) {
-           logger.debug(`[Knowledge] Failed to create entity edges: ${edgeError}`);
-         }
        }
      } catch (graphError) {
        logger.debug(`[Graph] Failed to sync memory ${id}: ${graphError}`);
      }
-   }
+  }
+
+   // Mental-model refresh is fire-and-forget and internally catches failures;
+   // it must never add latency or failure modes to the durable memory write.
+   if (config.llmEnabled && project?.id) scheduleMentalModelRefresh(project.id);
 
    // Resolve contradictions and supersede old memories (async, non-blocking)
    // Benchmarks can skip this expensive path by setting SQUISH_SKIP_CONTRADICTION=true
@@ -389,10 +324,11 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   // getConnectedPlaces() can traverse cross-system relationships.
   if (knowledgeRecordId) {
     try {
-      const { raw } = await getDbClient();
-      const sqlite = (raw as any).$client;
-      const memoryRow = sqlite.prepare('SELECT place_id FROM memories WHERE id = ?').get(id);
-      if (memoryRow?.place_id) {
+      const db = await getDb();
+      const schema = await getSchema();
+      const [memoryRow] = await (db as any).select({ placeId: schema.memories.placeId })
+        .from(schema.memories).where(eq(schema.memories.id, id)).limit(1);
+      if (memoryRow?.placeId) {
         await createKnowledgeEdge({
           fromId: knowledgeRecordId,
           fromKind: 'knowledge',

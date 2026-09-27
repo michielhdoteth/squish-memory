@@ -104,3 +104,21 @@ export {
   deduplicateKnowledge,
   runDeduplicationCycle,
 } from './deduplicator.js';
+
+// ─── Mental models ───────────────────────────────────────────────────────────
+export {
+  createMentalModel,
+  getMentalModel,
+  listMentalModels,
+  updateMentalModel,
+  deleteMentalModel,
+  refreshMentalModel,
+  refreshDueMentalModels,
+  scheduleMentalModelRefresh,
+} from './mental-models.js';
+export type {
+  MentalModel,
+  CreateMentalModelInput,
+  UpdateMentalModelInput,
+  RefreshMentalModelOptions,
+} from './mental-models.js';
