@@ -1,10 +1,10 @@
 {
   "meta": {
     "name": "squish-memory-bench",
-    "gitSha": "29a9ca4a",
-    "gitDirty": true,
-    "generatedAt": "2026-10-02T01:56:27.778Z",
-    "runtimeMs": 8377,
+    "gitSha": "234d00ed",
+    "gitDirty": false,
+    "generatedAt": "2026-10-02T03:59:54.684Z",
+    "runtimeMs": 9489,
     "embeddingsProvider": "local",
     "bundledModel": "off",
     "abstainBelow": 0.6,
@@ -945,9 +945,9 @@
       "penalty": 1,
       "guardOk": true,
       "verdict": "confident",
-      "bestConfidence": 0.9842,
+      "bestConfidence": 0.9841,
       "top1": "pf_7_fact",
-      "top1Confidence": 0.9842
+      "top1Confidence": 0.9841
     },
     {
       "benchId": "pf_8_q",
@@ -1088,7 +1088,7 @@
       "penalty": 1,
       "guardOk": true,
       "verdict": "no_reliable_memory",
-      "bestConfidence": 0.3824,
+      "bestConfidence": 0.3823,
       "top1": "cp_0_pref",
       "top1Confidence": 0.2166
     },
@@ -1231,9 +1231,9 @@
       "penalty": 0.5,
       "guardOk": true,
       "verdict": "confident",
-      "bestConfidence": 0.9909,
+      "bestConfidence": 0.9908,
       "top1": "cp_6_pref",
-      "top1Confidence": 0.9909
+      "top1Confidence": 0.9908
     },
     {
       "benchId": "cp_7_q_with",
@@ -1880,9 +1880,9 @@
       "penalty": 0,
       "guardOk": false,
       "verdict": "qualified",
-      "bestConfidence": 0.8915,
+      "bestConfidence": 0.8914,
       "top1": "noise_1",
-      "top1Confidence": 0.8915
+      "top1Confidence": 0.8914
     },
     {
       "benchId": "au_wrong-relationship_7_q",
@@ -2265,9 +2265,9 @@
       "penalty": 0,
       "guardOk": false,
       "verdict": "qualified",
-      "bestConfidence": 0.6288,
+      "bestConfidence": 0.6287,
       "top1": "noise_4",
-      "top1Confidence": 0.6288
+      "top1Confidence": 0.6287
     },
     {
       "benchId": "au_absent-entity_2_q",
@@ -2430,9 +2430,9 @@
       "penalty": 0,
       "guardOk": false,
       "verdict": "qualified",
-      "bestConfidence": 0.8915,
+      "bestConfidence": 0.8914,
       "top1": "noise_0",
-      "top1Confidence": 0.8915
+      "top1Confidence": 0.8914
     },
     {
       "benchId": "au_multi-hop-trap_1_q",
