@@ -524,7 +524,7 @@ export function assessRecall(
       bestConfidence: 0,
       tier: 'LOW',
       verdict: 'no_reliable_memory',
-      message: 'no reliable memory found for this query',
+      message: 'NO CONFIDENT MATCH — no reliable memory found for this query',
     };
   }
 
@@ -543,7 +543,7 @@ export function assessRecall(
       bestConfidence: best,
       tier: bestTier,
       verdict: 'no_reliable_memory',
-      message: 'no reliable memory found for this query',
+      message: 'NO CONFIDENT MATCH — no reliable memory found for this query',
     };
   }
 
