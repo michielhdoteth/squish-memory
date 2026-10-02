@@ -791,6 +791,49 @@ export const visibilityRules = pgTable('visibility_rules', {
   uniqueIndex('visibility_rules_unique').on(table.assetType, table.assetId, table.granteeType, table.granteeId),
 ]);
 
+// Edit Workflow Tables (mirrors migration 0000_needy_cerebro.sql)
+// ============================================================================
+
+/**
+ * Memory edit proposals - staged content edits with conflict warnings
+ */
+export const memoryEditProposals = pgTable('memory_edit_proposals', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+  memoryId: text('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
+  currentContent: text('current_content').notNull(),
+  proposedContent: text('proposed_content').notNull(),
+  reason: text('reason').notNull(),
+  conflictWarnings: jsonb('conflict_warnings').$type<string[]>(),
+  status: text('status').$type<'pending' | 'approved' | 'rejected' | 'expired'>().default('pending').notNull(),
+  version: integer('version').default(1).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  reviewedAt: timestamp('reviewed_at'),
+  reviewNotes: text('review_notes'),
+}, (table) => [
+  index('memory_edit_proposals_memory_idx').on(table.memoryId),
+  index('memory_edit_proposals_status_idx').on(table.status),
+  index('memory_edit_proposals_created_at_idx').on(table.createdAt),
+]);
+
+/**
+ * Memory snapshots - before/after content for undo and correction trails
+ */
+export const memorySnapshots = pgTable('memory_snapshots', {
+  id: text('id').primaryKey(),
+  memoryId: text('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
+  snapshotType: text('snapshot_type').notNull().$type<'before_update' | 'after_update' | 'periodic' | 'correction'>(),
+  content: text('content').notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+  diff: jsonb('diff').$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('memory_snapshots_memory_idx').on(table.memoryId),
+  index('memory_snapshots_type_idx').on(table.snapshotType),
+  index('memory_snapshots_created_idx').on(table.createdAt),
+]);
+
 // Team Tables
 // ============================================================================
 
@@ -989,3 +1032,9 @@ export type AgentLoadout = typeof agentLoadouts.$inferSelect;
 export type NewAgentLoadout = typeof agentLoadouts.$inferInsert;
 export type VisibilityRule = typeof visibilityRules.$inferSelect;
 export type NewVisibilityRule = typeof visibilityRules.$inferInsert;
+
+// Edit Workflow type exports
+export type PgMemoryEditProposal = typeof memoryEditProposals.$inferSelect;
+export type NewPgMemoryEditProposal = typeof memoryEditProposals.$inferInsert;
+export type PgMemorySnapshot = typeof memorySnapshots.$inferSelect;
+export type NewPgMemorySnapshot = typeof memorySnapshots.$inferInsert;

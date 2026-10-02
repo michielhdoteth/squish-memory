@@ -36,7 +36,7 @@ squish install
 ### Method 3: Legacy Marketplace Installation
 ```bash
 # Install via Claude Code marketplace
-/plugin marketplace add https://github.com/4m-labs/squish.git
+/plugin marketplace add https://github.com/michielhdoteth/squish-memory.git
 /plugin install squish@4m-labs-squish
 ```
 

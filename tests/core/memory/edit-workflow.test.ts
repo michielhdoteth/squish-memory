@@ -112,6 +112,23 @@ describe('edit workflow', () => {
     expect(row.content).toBe('new content');
   });
 
+  test('correct applies direct correction with correction snapshot', async () => {
+    const result = await correctMemory(memoryId, 'corrected content', 'agent had it wrong');
+    expect(result.ok).toBe(true);
+    expect(result.snapshotId).toBeTruthy();
+    expect(result.priorContent).toBe('new content');
+
+    const sqlite = (await getDb()).$client;
+    const row = sqlite.prepare('SELECT content, version FROM memories WHERE id = ?').get(memoryId);
+    expect(row.content).toBe('corrected content');
+
+    const snap = sqlite
+      .prepare("SELECT content, metadata FROM memory_snapshots WHERE memory_id = ? AND snapshot_type = 'correction'")
+      .get(memoryId);
+    expect(snap.content).toBe('new content');
+    expect(JSON.parse(snap.metadata).reason).toBe('agent had it wrong');
+  });
+
   test('approve rejects stale content when memory changed', async () => {
     const proposal = await createEditProposal(memoryId, 'stale target', 'will fail');
     const { getDb } = await import('../../../db/index.js');

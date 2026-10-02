@@ -1,13 +1,13 @@
 #!/bin/bash
 # Squish Memory Skill Installer for OpenClaw v0.9.0
-# Usage: curl -sSL https://raw.githubusercontent.com/4m-labs/squish/main/skills/squish-memory/install.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/michielhdoteth/squish-memory/main/skills/squish-memory/install.sh | bash
 
 set -e
 
 SQUISH_VERSION="0.9.0"
 INSTALL_DIR="$HOME/.openclaw/skills/squish-memory"
-GITHUB_REPO="https://github.com/4m-labs/squish"
-RAW_BASE="https://raw.githubusercontent.com/4m-labs/squish/main"
+GITHUB_REPO="https://github.com/michielhdoteth/squish-memory"
+RAW_BASE="https://raw.githubusercontent.com/michielhdoteth/squish-memory/main"
 
 echo "Squish Memory v${SQUISH_VERSION} - OpenClaw Installer"
 echo "====================================================="

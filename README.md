@@ -2,9 +2,17 @@
 
 **Your agents forget. Squish doesn't.**
 
-One memory system for every agent. Local-first. Open source. Cloud optional.
+Your AI agent's memory lies to it. Every memory tool returns an answer — but most return the same confidence regardless of whether the answer is fresh, stale, or contradicted by a newer fact. The agent repeats plausible garbage as fact.
 
-Claude Code -- Codex -- OpenCode -- MCP -- your own agents
+Squish is the only memory runtime in this space that tells your agent how much each recollection deserves to be trusted, and says "I don't know" when nothing clears the bar.
+
+- **Calibrated recall confidence** — ECE 0.055 on our eval set. When it says 90% confident, it is right about 90% of the time. Not a score. A number your agent can act on.
+- **Honest abstention** — when nothing clears the confidence bar, Squish returns NO CONFIDENT MATCH instead of its best wrong guess. Your agent stops inventing plausible garbage from half-remembered context.
+- **Temporal validity windows** — ask "what frameworks was I using in March?" and you get what was TRUE in March. Not today's setup rewritten into fake history.
+- **Local-first, open source** — one SQLite file you own. No Docker. No API keys. No config files.
+- **Zero-config install** — `npm install -g squish-memory && squish install --all`. About 30 seconds, works on day one.
+
+One memory system for every agent. Claude Code -- Codex -- OpenCode -- MCP -- your own agents
 
 ---
 
@@ -44,7 +52,7 @@ MCP is the standardized programmatic interface. There is no @squish/sdk.
 
 Visual memory browser, knowledge graph explorer, and settings. Native installers for Mac, Windows, Linux.
 
-[Download Desktop -- $99 once](https://github.com/4m-labs/squish/releases/latest)
+[Download Desktop -- $99 once](https://github.com/michielhdoteth/squish-memory/releases/latest)
 
 Own this version forever. No subscription.
 

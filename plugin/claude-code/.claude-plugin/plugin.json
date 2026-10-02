@@ -6,7 +6,7 @@
     "name": "4M Labs",
     "url": "https://github.com/4m-labs"
   },
-  "homepage": "https://github.com/4m-labs/squish-memory",
+  "homepage": "https://github.com/michielhdoteth/squish-memory-memory",
   "license": "MIT",
   "keywords": ["memory", "persistence", "context", "squish"],
   "skills": "./skills/",

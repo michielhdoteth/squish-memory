@@ -111,7 +111,7 @@ jobs:
             npx squish-install
             ```
 
-            Or visit: https://github.com/michielhdoteth/squish
+            Or visit: https://github.com/michielhdoteth/squish-memory
 
             ## Distribution
             This release is published to npm as `squish-memory`.

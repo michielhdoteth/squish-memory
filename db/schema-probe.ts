@@ -25,6 +25,8 @@ export const REQUIRED_TABLES = [
   'core_memory',
   'context_sessions',
   'memory_associations',
+  'memory_edit_proposals',
+  'memory_snapshots',
   'namespaces',
   'maintenance_jobs',
   'places',

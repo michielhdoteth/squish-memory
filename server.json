@@ -3,7 +3,7 @@
   "name": "io.github.michielhdoteth/squish",
   "description": "Memory runtime for AI agents. Local-first, 283KB, optional LLM. MCP + OAuth cloud sync.",
   "repository": {
-    "url": "https://github.com/michielhdoteth/squish",
+    "url": "https://github.com/michielhdoteth/squish-memory",
     "source": "github"
   },
   "version": "2.0.0",

@@ -2,8 +2,11 @@
 
 // Load .env file for config
 import dotenv from 'dotenv';
-import { resolve } from 'path';
-dotenv.config({ path: resolve(__dirname, '../.env'), quiet: true });
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
+// ESM-safe __dirname: bun shims it, node/tsx does not
+const esmDirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: resolve(esmDirname, '../.env'), quiet: true });
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { toNodeHandler } from "@modelcontextprotocol/node";

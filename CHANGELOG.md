@@ -97,7 +97,7 @@
 
 ### Contributors
 
-Squish is developed by Michiel Horstman and maintained at [github.com/michielhdoteth/squish](https://github.com/michielhdoteth/squish).
+Squish is developed by Michiel Horstman and maintained at [github.com/michielhdoteth/squish-memory](https://github.com/michielhdoteth/squish-memory).
 
 MIT License.
 

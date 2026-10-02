@@ -1199,7 +1199,7 @@ export type NewKnowledgeEdge = typeof knowledgeEdges.$inferInsert;
 
 export const memoryEditProposals = sqliteTable('memory_edit_proposals', {
   id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
   userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
   
   memoryId: text('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),

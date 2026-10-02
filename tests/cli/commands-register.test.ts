@@ -27,6 +27,10 @@ describe('CLI command registration', () => {
     expect(commandNames).toContain('sessions');
     expect(commandNames).toContain('cloud');
 
+    // Edit workflow + staleness report
+    expect(commandNames).toContain('edits');
+    expect(commandNames).toContain('stale-report');
+
     // Status command
     expect(commandNames).toContain('status');
 

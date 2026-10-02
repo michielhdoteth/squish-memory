@@ -4,14 +4,13 @@
   "author": "4M Labs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/4m-labs/squish.git"
+    "url": "https://github.com/michielhdoteth/squish-memory.git"
   },
-  "mcpName": "io.github.4m-labs/squish",
+  "mcpName": "io.github.michielhdoteth/squish-memory",
   "main": "config.ts",
   "dependencies": {
     "@clack/prompts": "^1.2.0",
     "@huggingface/transformers": "^4.1.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "12.11.1",
     "commander": "^15.0.0",
     "cors": "2.8.6",
@@ -52,7 +51,7 @@
   },
   "description": "Local-first memory runtime for AI coding agents. One package, three interfaces: CLI, MCP server, and desktop. Hybrid search, knowledge graphs, decay scoring, and multi-tier storage.",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "files": [
     "scripts",
@@ -120,7 +119,7 @@
     "session-persistence",
     "model-context-protocol"
   ],
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "scripts": {
     "clean": "rm -rf dist && rm -f *.log",
     "build": "node -e \"console.log('No build step required. Use npm run start or npm run mcp.')\"",

@@ -46,4 +46,4 @@ npm install -g squish-memory && squish install --all
 
 ## Full Changelog
 
-https://github.com/michielhdoteth/squish/blob/main/CHANGELOG.md
+https://github.com/michielhdoteth/squish-memory/blob/main/CHANGELOG.md

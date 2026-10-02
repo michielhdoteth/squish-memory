@@ -27,11 +27,11 @@ The product philosophy lives on the GitHub wiki, not in this directory:
 - **Compound Rules** — How memory accumulates, reinforces, and decays
 - **Promises** — What Squish promises developers who build on it
 
-See: https://github.com/michielhdoteth/squish/wiki
+See: https://github.com/michielhdoteth/squish-memory/wiki
 
 ## Quick links
 
-- [GitHub](https://github.com/michielhdoteth/squish)
+- [GitHub](https://github.com/michielhdoteth/squish-memory)
 - [npm](https://www.npmjs.com/package/squish-memory)
 - [Website](https://squishplugin.dev)
 - [Documentation (external)](https://docs.squishplugin.dev)

@@ -114,7 +114,7 @@ export async function createEditProposal(
 
   await (db as any)
     .update(memoryEditProposals)
-    .set({ conflictWarnings: conflicts })
+    .set({ conflictWarnings: toSqliteJson(conflicts) })
     .where(eq(memoryEditProposals.id, proposalId));
 
   return {
@@ -286,8 +286,8 @@ export async function correctMemory(
       memoryId,
       snapshotType: 'correction',
       content: memory.content,
-      metadata: { reason, userId: userId ?? null, kind: 'correction' },
-      diff: { from: memory.content, to: content },
+      metadata: toSqliteJson({ reason, userId: userId ?? null, kind: 'correction' }),
+      diff: toSqliteJson({ from: memory.content, to: content }),
       createdAt: now,
     });
 
@@ -359,4 +359,30 @@ export async function getEditProposals(filters: {
   const query = conditions.length > 0 ? base.where(and(...conditions)) : base;
   const proposals = await (filters.limit ? query.limit(filters.limit) : query);
   return proposals as EditProposal[];
+}
+
+/**
+ * Fetch a single proposal by ID (preview path). Returns null when missing.
+ */
+export async function getEditProposalById(proposalId: string): Promise<EditProposal | null> {
+  const proposal = await loadProposal(createDatabaseClient(await getDb()), proposalId);
+  return (proposal as EditProposal) ?? null;
+}
+
+/**
+ * Simple line-level before/after view for previews. Line-based so it stays
+ * deterministic without a diff dependency.
+ */
+export function diffProposalContent(proposal: EditProposal): {
+  removed: string[];
+  added: string[];
+} {
+  const from = proposal.currentContent.split('\n');
+  const to = proposal.proposedContent.split('\n');
+  const fromSet = new Set(from);
+  const toSet = new Set(to);
+  return {
+    removed: from.filter((l) => !toSet.has(l)),
+    added: to.filter((l) => !fromSet.has(l)),
+  };
 }

@@ -15,7 +15,9 @@ import { getClient } from '../client.js';
 import { remediationFor } from '../errors.js';
 
 export function registerEditsCommand(program: Command) {
-  program
+  // Capture the parent command: chained .command() returns the NEW subcommand,
+  // so each sibling must be registered on the `edits` command itself.
+  const edits = program
     .command('edits')
     .description('Edit proposal workflow for memory corrections')
     .addHelpText('after', `
@@ -26,8 +28,9 @@ Examples:
   squish edits approve proposal_abc --review-notes "looks good"
   squish edits reject proposal_abc --review-notes "stale"
   squish edits correct mem_123 --proposed-content "new text" --reason "learning signal"
-`)
+`);
 
+  edits
     .command('propose <memoryId>')
     .description('Stage an edit proposal for a memory')
     .requiredOption('--proposed-content <content>', 'Proposed new memory content')
@@ -64,6 +67,7 @@ Examples:
       }
     })
 
+  edits
     .command('list')
     .description('List edit proposals')
     .option('--memory-id <id>', 'Filter by memory ID')
@@ -101,6 +105,7 @@ Examples:
       }
     })
 
+  edits
     .command('preview <proposalId>')
     .description('Preview before/after diff for a proposal')
     .option('--json', 'Emit machine-readable output', false)
@@ -131,6 +136,7 @@ Examples:
       }
     })
 
+  edits
     .command('approve <proposalId>')
     .description('Approve a pending edit proposal')
     .option('--review-notes <notes>', 'Optional review notes')
@@ -162,6 +168,7 @@ Examples:
       }
     })
 
+  edits
     .command('reject <proposalId>')
     .description('Reject a pending edit proposal')
     .option('--review-notes <notes>', 'Optional review notes')
@@ -193,6 +200,7 @@ Examples:
       }
     })
 
+  edits
     .command('correct <memoryId>')
     .description('Apply a direct correction to a memory with undo snapshot')
     .requiredOption('--proposed-content <content>', 'Corrected memory content')

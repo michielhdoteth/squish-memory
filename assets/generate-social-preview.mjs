@@ -153,7 +153,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" 
 
   <!-- footer: star + repo url -->
   <polygon transform="translate(78 580)" points="${starPoints(11, 4.6)}" fill="${ACCENT}"/>
-  <text x="102" y="587" font-family="${FONT}" font-size="20" font-weight="400" letter-spacing="1" fill="${INK}">github.com/michielhdoteth/squish</text>
+  <text x="102" y="587" font-family="${FONT}" font-size="20" font-weight="400" letter-spacing="1" fill="${INK}">github.com/michielhdoteth/squish-memory</text>
 
   <!-- right-edge vertical label -->
   <text transform="translate(1256 330) rotate(-90)" text-anchor="middle" font-family="${FONT}"

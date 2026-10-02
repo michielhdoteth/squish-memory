@@ -59,6 +59,8 @@ export function registerEditsTools(ctx: ToolCtx): number {
       const {
         createEditProposal,
         getEditProposals,
+        getEditProposalById,
+        diffProposalContent,
         approveEditProposal,
         rejectEditProposal,
         correctMemory,
@@ -86,9 +88,11 @@ export function registerEditsTools(ctx: ToolCtx): number {
           if (!input.proposalId) {
             return errorResponse("missing_param", "proposalId is required for preview");
           }
-          const proposals = await getEditProposals({ limit: 1000 });
-          const result = proposals.find((p: any) => p.id === input.proposalId) ?? null;
-          return jsonResult(result, SERVER_VERSION);
+          const proposal = await getEditProposalById(input.proposalId);
+          if (!proposal) {
+            return errorResponse("not_found", "Edit proposal not found", input.proposalId);
+          }
+          return jsonResult({ proposal, diff: diffProposalContent(proposal) }, SERVER_VERSION);
         }
 
         if (input.action === "approve") {

@@ -6,7 +6,7 @@
     "name": "4M Labs",
     "url": "https://github.com/4m-labs"
   },
-  "homepage": "https://github.com/4m-labs/squish-memory",
+  "homepage": "https://github.com/michielhdoteth/squish-memory-memory",
   "license": "MIT",
   "keywords": ["memory", "persistence", "context", "squish", "recall"],
   "skills": "./skills/",
@@ -19,7 +19,7 @@
     "developerName": "4M Labs",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
-    "websiteURL": "https://github.com/4m-labs/squish-memory",
+    "websiteURL": "https://github.com/michielhdoteth/squish-memory-memory",
     "brandColor": "#3B82F6",
     "defaultPrompt": [
       "What did we decide in previous sessions?",

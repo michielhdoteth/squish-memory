@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import ts from 'typescript';
 
 const rootDir = path.join(import.meta.dir, '..', '..');
 
@@ -39,18 +38,12 @@ describe('installer plugin runtime payloads', () => {
   });
 
   test('plugin entry files are syntactically valid TypeScript', () => {
+    // TypeScript 7 removed the transpileModule JS API; Bun's built-in
+    // transpiler throws on syntax errors and validates TS syntax directly.
+    const transpiler = new Bun.Transpiler({ loader: 'ts' });
     for (const relativePath of ['plugin/opencode/index.ts', 'plugin/openclaw/index.ts']) {
       const content = fs.readFileSync(path.join(rootDir, relativePath), 'utf-8');
-      const result = ts.transpileModule(content, {
-        compilerOptions: {
-          module: ts.ModuleKind.ESNext,
-          target: ts.ScriptTarget.ES2022,
-        },
-        reportDiagnostics: true,
-      });
-
-      const errors = (result.diagnostics || []).filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
-      expect(errors).toEqual([]);
+      expect(() => transpiler.transformSync(content)).not.toThrow();
     }
   });
 });

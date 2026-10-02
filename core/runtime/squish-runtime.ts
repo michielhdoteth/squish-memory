@@ -205,6 +205,42 @@ export interface SchemaHealth {
   missingColumns: string[];
 }
 
+/** Edit proposal record (edit workflow, see core/memory/edit-workflow.ts) */
+export interface EditProposalRecord {
+  id: string;
+  memoryId: string;
+  currentContent: string;
+  proposedContent: string;
+  reason: string;
+  conflictWarnings: string[];
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  version: number;
+  createdAt: Date;
+  reviewedAt?: Date;
+  reviewNotes?: string;
+}
+
+/** Result of approve/reject/correct on an edit proposal */
+export interface EditProposalActionResult {
+  ok: boolean;
+  error?: 'not_found' | 'not_pending' | 'stale_content' | 'database_unavailable';
+  detail?: string;
+  proposal?: EditProposalRecord;
+  priorContent?: string;
+  snapshotId?: string;
+}
+
+/** Read-only staleness report (see core/memory/staleness-report.ts) */
+export interface StalenessReportResult {
+  generatedAt: string;
+  groups: Array<{
+    group: string;
+    count: number;
+    items: Array<{ memoryId: string; suggestedAction: 'review' | 'update' | 'forget' | 'pin' }>;
+    digest: string;
+  }>;
+}
+
 /** Embedding Provider Interface */
 export interface EmbeddingProvider {
   readonly name: string;
@@ -1122,6 +1158,112 @@ export class SquishRuntime {
     } catch (error) {
       if (error instanceof SquishError) throw error;
       throw new StorageError('Failed to apply feedback', error as Error);
+    }
+  }
+
+  // ─── Edit Proposal Workflow ──────────────────────────────────────────────
+
+  async createEditProposal(input: {
+    memoryId: string;
+    proposedContent: string;
+    reason: string;
+    userId?: string;
+  }): Promise<EditProposalRecord> {
+    try {
+      if (!input?.memoryId?.trim() || !input?.proposedContent?.trim() || !input?.reason?.trim()) {
+        throw new SquishError('memoryId, proposedContent, and reason are required', 'VALIDATION_ERROR');
+      }
+      const { createEditProposal } = await import('../memory/edit-workflow.js');
+      return await createEditProposal(input.memoryId.trim(), input.proposedContent, input.reason, input.userId);
+    } catch (error) {
+      if (error instanceof SquishError) throw error;
+      throw new StorageError('Failed to create edit proposal', error as Error);
+    }
+  }
+
+  async listEditProposals(filters: {
+    memoryId?: string;
+    status?: 'pending' | 'approved' | 'rejected' | 'expired';
+    limit?: number;
+  } = {}): Promise<EditProposalRecord[]> {
+    try {
+      const { getEditProposals } = await import('../memory/edit-workflow.js');
+      return await getEditProposals(filters);
+    } catch (error) {
+      if (error instanceof SquishError) throw error;
+      throw new StorageError('Failed to list edit proposals', error as Error);
+    }
+  }
+
+  async previewEditProposal(proposalId: string): Promise<{
+    proposal: EditProposalRecord;
+    diff: { removed: string[]; added: string[] };
+  } | null> {
+    try {
+      if (!proposalId?.trim()) {
+        throw new SquishError('proposalId cannot be empty', 'VALIDATION_ERROR');
+      }
+      const { getEditProposalById, diffProposalContent } = await import('../memory/edit-workflow.js');
+      const proposal = await getEditProposalById(proposalId.trim());
+      if (!proposal) return null;
+      return { proposal, diff: diffProposalContent(proposal) };
+    } catch (error) {
+      if (error instanceof SquishError) throw error;
+      throw new StorageError('Failed to preview edit proposal', error as Error);
+    }
+  }
+
+  async approveEditProposal(proposalId: string, reviewNotes?: string): Promise<EditProposalActionResult> {
+    try {
+      if (!proposalId?.trim()) {
+        throw new SquishError('proposalId cannot be empty', 'VALIDATION_ERROR');
+      }
+      const { approveEditProposal } = await import('../memory/edit-workflow.js');
+      return await approveEditProposal(proposalId.trim(), reviewNotes);
+    } catch (error) {
+      if (error instanceof SquishError) throw error;
+      throw new StorageError('Failed to approve edit proposal', error as Error);
+    }
+  }
+
+  async rejectEditProposal(proposalId: string, reviewNotes?: string): Promise<EditProposalActionResult> {
+    try {
+      if (!proposalId?.trim()) {
+        throw new SquishError('proposalId cannot be empty', 'VALIDATION_ERROR');
+      }
+      const { rejectEditProposal } = await import('../memory/edit-workflow.js');
+      return await rejectEditProposal(proposalId.trim(), reviewNotes);
+    } catch (error) {
+      if (error instanceof SquishError) throw error;
+      throw new StorageError('Failed to reject edit proposal', error as Error);
+    }
+  }
+
+  async correctMemory(memoryId: string, content: string, reason: string): Promise<EditProposalActionResult> {
+    try {
+      if (!memoryId?.trim() || !content?.trim() || !reason?.trim()) {
+        throw new SquishError('memoryId, content, and reason are required', 'VALIDATION_ERROR');
+      }
+      const { correctMemory } = await import('../memory/edit-workflow.js');
+      return await correctMemory(memoryId.trim(), content, reason);
+    } catch (error) {
+      if (error instanceof SquishError) throw error;
+      throw new StorageError('Failed to apply correction', error as Error);
+    }
+  }
+
+  async stalenessReport(options?: {
+    projectId?: string;
+    olderThanDays?: number;
+    minImportance?: number;
+    limit?: number;
+  }): Promise<StalenessReportResult> {
+    try {
+      const { buildStalenessReport } = await import('../memory/staleness-report.js');
+      return await buildStalenessReport(options);
+    } catch (error) {
+      if (error instanceof SquishError) throw error;
+      throw new StorageError('Failed to build staleness report', error as Error);
     }
   }
 

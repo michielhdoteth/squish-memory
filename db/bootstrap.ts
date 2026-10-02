@@ -414,6 +414,41 @@ CREATE TABLE IF NOT EXISTS memory_hash_cache (
 CREATE INDEX IF NOT EXISTS memory_hash_cache_project_id_idx ON memory_hash_cache(project_id);
 CREATE INDEX IF NOT EXISTS memory_hash_cache_simhash_idx ON memory_hash_cache(simhash);
 
+-- Edit Proposal Workflow tables (see core/memory/edit-workflow.ts)
+CREATE TABLE IF NOT EXISTS memory_edit_proposals (
+  id TEXT PRIMARY KEY,
+  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  current_content TEXT NOT NULL,
+  proposed_content TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  conflict_warnings TEXT,
+  status TEXT DEFAULT 'pending' NOT NULL,
+  version INTEGER DEFAULT 1 NOT NULL,
+  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
+  reviewed_at INTEGER,
+  review_notes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS memory_edit_proposals_memory_idx ON memory_edit_proposals(memory_id);
+CREATE INDEX IF NOT EXISTS memory_edit_proposals_status_idx ON memory_edit_proposals(status);
+CREATE INDEX IF NOT EXISTS memory_edit_proposals_created_at_idx ON memory_edit_proposals(created_at);
+
+CREATE TABLE IF NOT EXISTS memory_snapshots (
+  id TEXT PRIMARY KEY,
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  snapshot_type TEXT NOT NULL,
+  content TEXT NOT NULL,
+  metadata TEXT,
+  diff TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS memory_snapshots_memory_idx ON memory_snapshots(memory_id);
+CREATE INDEX IF NOT EXISTS memory_snapshots_type_idx ON memory_snapshots(snapshot_type);
+CREATE INDEX IF NOT EXISTS memory_snapshots_created_idx ON memory_snapshots(created_at);
+
 -- Batch 7: parsed agent-session cache (mtime-invalidated read-through cache
 -- for harness session stores: claude-code JSONL, codex rollouts, gemini chats).
 CREATE TABLE IF NOT EXISTS agent_session_cache (
