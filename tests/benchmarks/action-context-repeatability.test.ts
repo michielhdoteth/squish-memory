@@ -246,8 +246,8 @@ describe('action report repeatability comparison', () => {
   });
 
   test('does not certify archived runs without per-run source stability snapshots', () => {
-    const first = JSON.parse(readFileSync(resolve('bench/reports/action-context-challenge-v1-2026-10-18-current-a.json'), 'utf8')) as unknown;
-    const second = JSON.parse(readFileSync(resolve('bench/reports/action-context-challenge-v1-2026-10-18-current-b.json'), 'utf8')) as unknown;
+    const first = JSON.parse(readFileSync(resolve('benchmark/reports/action-context-challenge-v1-2026-10-18-current-a.json'), 'utf8')) as unknown;
+    const second = JSON.parse(readFileSync(resolve('benchmark/reports/action-context-challenge-v1-2026-10-18-current-b.json'), 'utf8')) as unknown;
     expect(() => compareActionReports(first, second)).toThrow('meta is missing sourceAtStart');
   });
 });

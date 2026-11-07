@@ -14,7 +14,7 @@ interface Task {
 }
 
 describe('frozen action context challenge dataset', () => {
-  const dataset = JSON.parse(readFileSync(resolve('bench/datasets/actions/action-context-challenge-v1.json'), 'utf8')) as { meta: { split: string }; tasks: Task[] };
+  const dataset = JSON.parse(readFileSync(resolve('benchmark/datasets/actions/action-context-challenge-v1.json'), 'utf8')) as { meta: { split: string }; tasks: Task[] };
 
   test('keeps a unique, balanced fixture with explicit evidence for every action case', () => {
     expect(dataset.meta.split).toBe('frozen_challenge');
@@ -45,7 +45,7 @@ describe('frozen action context challenge dataset', () => {
       metrics: { total: number; contextOnCorrect: number; contextOffCorrect: number; evidenceSupportedActions: number; expectedActionCount: number; actionOutcomeSha256: string; retrievalTraceSha256: string; modelTokens: number; networkEgressBytes: number };
       tasks: unknown[];
     };
-    const datasetBytes = readFileSync(resolve('bench/datasets/actions/action-context-challenge-v1.json'));
+    const datasetBytes = readFileSync(resolve('benchmark/datasets/actions/action-context-challenge-v1.json'));
     expect(report.meta).toMatchObject({
       gitSha: '4b7da323', gitDirty: false,
       trackedDiffSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',

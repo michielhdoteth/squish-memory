@@ -698,7 +698,7 @@ async function main() {
 
   if (auditFlagIndex >= 0) {
     const repoRoot = resolve(__dirname, '..', '..');
-    const reportsDir = resolve(repoRoot, 'bench', 'reports');
+    const reportsDir = resolve(repoRoot, 'benchmark', 'reports');
     const auditPath = resolve(repoRoot, auditArg ?? 'benchmark/reports/retrieval-signal-audit.json');
     const auditRelative = relative(reportsDir, auditPath);
     if (auditRelative === '' || auditRelative.startsWith('..') || isAbsolute(auditRelative)) {

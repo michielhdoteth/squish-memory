@@ -26,7 +26,7 @@ interface Persona {
   conversation: Record<string, unknown>;
 }
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const datasetPath = join(root, 'bench', 'datasets', 'locomo', 'locomo10.json');
+const datasetPath = join(root, 'benchmark', 'datasets', 'locomo', 'locomo10.json');
 const PINNED_OFFLINE_ENV = {
   SQUISH_PROFILE: 'fast-local',
   SQUISH_EMBEDDINGS_PROVIDER: 'none',
@@ -294,7 +294,7 @@ export async function runLoCoMoRetrieval(options?: {
         excludedQuestions,
         invalidEvidence,
       };
-      const reportDir = join(root, 'bench', 'reports');
+      const reportDir = join(root, 'benchmark', 'reports');
       const slug = `locomo-session-evidence-k${topK}-${limit ? `n${limit}` : 'full'}-${new Date().toISOString().replace(/[:.]/g, '-')}`;
       const sourceSnapshotAtEnd = sourceSnapshotSha256(root);
       assertSourceSnapshotUnchanged(sourceSnapshotAtStart, sourceSnapshotAtEnd);

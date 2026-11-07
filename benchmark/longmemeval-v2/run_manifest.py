@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 _REDACTED = "[REDACTED]"
 _REQUIRED_DATASET_FILES = ("questions.jsonl", "trajectories.jsonl")
-_EVALUATION_SOURCE_ROOTS = ("bench", "cli", "core", "db", "mcp", "packages", "plugin")
+_EVALUATION_SOURCE_ROOTS = ("benchmark", "cli", "core", "db", "mcp", "packages", "plugins")
 _SOURCE_SUFFIXES = frozenset({".cjs", ".js", ".json", ".mjs", ".py", ".ts", ".tsx"})
 _SECRET_KEY = re.compile(r"(?:api[_-]?key|secret|password|passwd|credential|authorization|access[_-]?token|refresh[_-]?token|(?:^|[_-])token(?:$|[_-](?:value|secret|key)))", re.IGNORECASE)
 _KNOWN_SECRET_VALUE = re.compile(r"(?:nvapi-[A-Za-z0-9_-]{12,}|sk-[A-Za-z0-9_-]{12,})")

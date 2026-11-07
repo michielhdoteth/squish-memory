@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 import { assertSourceSnapshotUnchanged, sourceSnapshotSha256 } from './source-snapshot.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const DEFAULT_DATASET_PATH = join(ROOT, 'bench', 'datasets', 'golden', 'golden-set.json');
-const REPORTS_DIR = join(ROOT, 'bench', 'reports');
+const DEFAULT_DATASET_PATH = join(ROOT, 'benchmark', 'datasets', 'golden', 'golden-set.json');
+const REPORTS_DIR = join(ROOT, 'benchmark', 'reports');
 const TOP_K = 10;
 export const MINIMUM_FREE_MEMORY_BYTES = 1024 ** 3;
 export const DEFAULT_MULTI_HOP_QUERY_IDS = [
