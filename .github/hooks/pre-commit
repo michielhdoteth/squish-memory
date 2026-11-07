@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+# Pre-commit hook to scan for secrets
+# This helps prevent accidental commits of API keys, tokens, and credentials
+
+# Run the secret scanner
+npm run check:secrets
+
+# Exit with the status from the scanner
+exit $?

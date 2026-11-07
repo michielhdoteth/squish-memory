@@ -41,7 +41,8 @@
     "esbuild": "^0.28.0",
     "oxlint": "^1.88.0",
     "pkg": "^5.8.1",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "zod-to-json-schema": "^3.25.2"
   },
   "bin": {
     "squish": "bin/squish.mjs",
