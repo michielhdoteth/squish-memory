@@ -1,11 +1,15 @@
 /** Feedback Tracker - Track memory usage in responses for Echo/Fizzle loop */
 
 import { logger } from '../logger.js';
+import {
+  sqlEpochSeconds
+} from '../lib/timestamps.js';
 import { config } from '../../config.js';
 import { getDb } from '../../db/index.js';
 import { memoryFeedback, memories, type MemoryFeedback } from '../../db/drizzle/schema-sqlite.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { findMemoryRefs, hasMemoryRefs } from './response-analyzer.js';
+import { isStrictTrustPolicy, TrustBoundaryError } from '../acl/trust-policy.js';
 
 interface InjectionRecord {
   memoryIds: string[];
@@ -20,6 +24,7 @@ export async function recordInjection(
   memoryIds: string[],
   memoryContent: Map<string, string>
 ): Promise<void> {
+  if (isStrictTrustPolicy()) return;
   if (!config.feedbackTrackingEnabled) return;
 
   injectionTracker.set(sessionId, {
@@ -55,6 +60,7 @@ export async function analyzeAndRecordFeedback(
   sessionId: string,
   responseText: string
 ): Promise<void> {
+  if (isStrictTrustPolicy()) return;
   if (!config.feedbackTrackingEnabled) return;
 
   const injection = injectionTracker.get(sessionId);
@@ -132,28 +138,31 @@ async function applyFizzlePenalty(memoryIds: string[]): Promise<void> {
 }
 
 export async function updateRetrievalPriority(memoryId: string, delta: number): Promise<void> {
+  if (isStrictTrustPolicy()) return;
   const db = await getDb();
   if (!db) return;
 
   try {
     const sqliteDb = db as any;
-    const [memory] = await sqliteDb
-      .select({ retrievalPriority: memories.retrievalPriority })
-      .from(memories)
-      .where(eq(memories.id, memoryId))
-      .limit(1);
-
-    if (!memory) return;
-
-    const currentPriority = memory.retrievalPriority ?? 50;
-    const newPriority = Math.max(0, Math.min(100, currentPriority + delta));
-
-    await sqliteDb
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const updated = await sqliteDb
       .update(memories)
-      .set({ retrievalPriority: newPriority })
-      .where(eq(memories.id, memoryId));
+      .set({
+        retrievalPriority: sql`MAX(0, MIN(100, COALESCE(${memories.retrievalPriority}, 50) + ${delta}))`,
+      })
+      .where(and(
+        eq(memories.id, memoryId),
+        eq(memories.status, 'active'),
+        eq(memories.isActive, true),
+        sql`(${memories.validFrom} IS NULL OR ${sql.raw(sqlEpochSeconds('memories.valid_from'))} <= ${nowSeconds})`,
+        sql`(${memories.validTo} IS NULL OR ${sql.raw(sqlEpochSeconds('memories.valid_to'))} > ${nowSeconds})`,
+        sql`(${memories.expiresAt} IS NULL OR ${sql.raw(sqlEpochSeconds('memories.expires_at'))} > ${nowSeconds})`,
+      ))
+      .returning({ retrievalPriority: memories.retrievalPriority });
 
-    logger.debug(`[FeedbackTracker] Updated priority for ${memoryId}: ${currentPriority} -> ${newPriority}`);
+    if (updated.length === 0) return;
+
+    logger.debug(`[FeedbackTracker] Updated priority for active memory ${memoryId} by ${delta}`);
   } catch (error) {
     logger.error('[FeedbackTracker] Failed to update retrieval priority:', error);
   }
@@ -165,6 +174,7 @@ export async function getMemoryFeedbackStats(memoryId: string): Promise<{
   echoRate: number;
   averagePriorityDelta: number;
 }> {
+  if (isStrictTrustPolicy()) throw new TrustBoundaryError('Memory feedback stats require caller-scoped provenance and ACL checks under strict trust');
   const db = await getDb();
   if (!db) {
     return { totalInjections: 0, totalReferences: 0, echoRate: 0, averagePriorityDelta: 0 };
@@ -191,10 +201,30 @@ export async function getMemoryFeedbackStats(memoryId: string): Promise<{
 }
 
 export function cleanupInjectionTracker(maxAgeMs: number = 3600000): void {
+  if (isStrictTrustPolicy()) {
+    injectionTracker.clear();
+    return;
+  }
   const now = Date.now();
   for (const [sessionId, injection] of injectionTracker.entries()) {
     if (now - injection.injectedAt.getTime() > maxAgeMs) {
       injectionTracker.delete(sessionId);
     }
   }
+}
+
+/** Remove deleted or revised memories and their copied content from pending injections. */
+export function evictMemoriesFromInjectionTracker(memoryIds: readonly string[]): number {
+  const ids = new Set(memoryIds);
+  if (ids.size === 0) return 0;
+  let affectedSessions = 0;
+  for (const [sessionId, injection] of injectionTracker) {
+    const retainedIds = injection.memoryIds.filter((id) => !ids.has(id));
+    if (retainedIds.length === injection.memoryIds.length) continue;
+    affectedSessions++;
+    for (const id of ids) injection.memoryContent.delete(id);
+    if (retainedIds.length === 0) injectionTracker.delete(sessionId);
+    else injection.memoryIds = retainedIds;
+  }
+  return affectedSessions;
 }

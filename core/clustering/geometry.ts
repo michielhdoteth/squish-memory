@@ -1,9 +1,8 @@
 /**
  * Geometry Utilities for Memory Consolidation (GAC Layer 1)
  *
- * Implements the Geometry-Aware Consolidation (GAC) system based on:
- * - "The Geometry of Consolidation" (NeurIPS 2026)
- * - Embedding dimensionality estimation papers
+ * Implements geometry-aware consolidation (GAC) utilities for measuring
+ * cluster spread and local embedding dimensionality.
  *
  * Core principle: Before consolidating a cluster, measure whether it's
  * geometrically safe. Compute mean pairwise cosine distance (d_bar) and
@@ -42,7 +41,7 @@ export function computeCentroid(vectors: number[][]): number[] {
 /**
  * Computes the mean pairwise cosine distance between ALL pairs of vectors.
  *
- * This is the correct GAC formula (NeurIPS 2026):
+ * Pairwise cluster-spread formula:
  *   d_bar = 1 - mean(cosine_similarity(v_i, v_j)) for all i < j
  *
  * Unlike the centroid-based approach, this measures the true spread of the

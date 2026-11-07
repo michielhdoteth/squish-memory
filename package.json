@@ -1,6 +1,6 @@
 {
   "name": "squish-memory",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "author": "4M Labs",
   "repository": {
     "type": "git",
@@ -39,6 +39,7 @@
     "@types/pg": "^8.15.6",
     "drizzle-kit": "^0.31.10",
     "esbuild": "^0.28.0",
+    "oxlint": "^1.88.0",
     "pkg": "^5.8.1",
     "typescript": "^7.0.2"
   },
@@ -49,7 +50,7 @@
   "bugs": {
     "url": "https://github.com/michielhdoteth/squish-memory/issues"
   },
-  "description": "Local-first memory runtime for AI coding agents. One package, three interfaces: CLI, MCP server, and desktop. Hybrid search, knowledge graphs, decay scoring, and multi-tier storage.",
+  "description": "Persistent memory for AI agents. Local-first SQLite runtime with a CLI, MCP server, hybrid retrieval, temporal facts, and graph relationships. MIT licensed; Squish Cloud is optional.",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -72,6 +73,11 @@
     "!db/**/*.d.ts.map",
     "plugin",
     "!plugin/**/db/**",
+    "!plugin/**/__tests__/**",
+    "!plugin/**/*.test.ts",
+    "!plugin/**/*.test.js",
+    "!plugin/**/*.spec.ts",
+    "!plugin/**/*.spec.js",
     "!plugin/**/*.map",
     "!plugin/**/*.d.ts.map",
     "cli",
@@ -84,7 +90,11 @@
     ".env.example",
     "LICENSE",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "!**/.carto",
+    "!**/.carto/**",
+    "!**/__pycache__/**",
+    "!**/*.py[cod]"
   ],
   "funding": {
     "type": "github",
@@ -119,7 +129,7 @@
     "session-persistence",
     "model-context-protocol"
   ],
-  "license": "AGPL-3.0",
+  "license": "MIT",
   "scripts": {
     "clean": "rm -rf dist && rm -f *.log",
     "build": "node -e \"console.log('No build step required. Use npm run start or npm run mcp.')\"",
@@ -128,12 +138,14 @@
     "dev": "tsx --watch core/index.ts",
     "dev:mcp": "tsx --watch mcp/index.ts",
     "test": "bun test --isolate",
-    "bench": "bun bench/index.ts",
-    "bench:retrieval": "bun bench/runners/retrieval.ts",
-    "bench:rag": "bun bench/runners/rag.ts",
-    "bench:locomo": "bun bench/runners/locomo.ts",
-    "bench:resurrection": "bun bench/runners/resurrection.ts",
-    "eval": "bun bench/runners/retrieval.ts",
+    "lint": "oxlint --deny no-debugger --deny no-unreachable --deny no-constant-condition --quiet .",
+    "typecheck": "tsc --noEmit",
+    "bench": "bun benchmark/index.ts",
+    "bench:retrieval": "bun benchmark/runners/retrieval.ts",
+    "bench:rag": "bun benchmark/runners/rag.ts",
+    "bench:locomo": "bun benchmark/runners/locomo.ts",
+    "bench:resurrection": "bun benchmark/runners/resurrection.ts",
+    "eval": "bun benchmark/runners/retrieval.ts",
     "bench:memory": "bun scripts/run-memory-bench.ts",
     "report:calibration": "bun scripts/calibration-report.ts",
     "verify:mcp": "tsx mcp/index.ts --health"

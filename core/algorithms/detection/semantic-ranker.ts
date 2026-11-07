@@ -5,6 +5,19 @@
 
 import type { Memory } from '../../../db/drizzle/schema.js';
 import { cosineSimilarity, DimensionMismatchError } from '../../../core/utils/vector-operations.js';
+import { embeddingModelFor } from '../../../core/embeddings.js';
+
+export class EmbeddingSpaceMismatchError extends Error {
+  constructor(model1: string, model2: string) {
+    super(`Cannot compare embeddings from different vector spaces: ${model1} vs ${model2}`);
+    this.name = 'EmbeddingSpaceMismatchError';
+  }
+}
+
+function modelIdentity(memory: Memory, embedding: number[]): string | null {
+  return embeddingModelFor(embedding)
+    ?? (typeof memory.embeddingModel === 'string' && memory.embeddingModel.length > 0 ? memory.embeddingModel : null);
+}
 
 export interface RankedCandidate {
   memoryId1: string;
@@ -129,6 +142,9 @@ export async function rankCandidates(
     // Batch 4 mismatch policy: skip mixed-model pairs explicitly (they can
     // never be genuine duplicates across embedding spaces).
     if (embedding1.length !== embedding2.length) continue;
+    const model1 = modelIdentity(memory1, embedding1);
+    const model2 = modelIdentity(memory2, embedding2);
+    if (model1 && model2 && model1 !== model2) continue;
 
     const similarity = cosineSimilarity(embedding1, embedding2);
 
@@ -188,6 +204,9 @@ export function analyzePair(
   if (embedding1.length !== embedding2.length) {
     throw new DimensionMismatchError(embedding1.length, embedding2.length);
   }
+  const model1 = modelIdentity(memory1, embedding1);
+  const model2 = modelIdentity(memory2, embedding2);
+  if (model1 && model2 && model1 !== model2) throw new EmbeddingSpaceMismatchError(model1, model2);
   const similarity = cosineSimilarity(embedding1, embedding2);
   const confidence = calculateConfidence(memory1, memory2, similarity);
   const mergeReason = generateMergeReason(memory1, memory2, similarity, confidence);

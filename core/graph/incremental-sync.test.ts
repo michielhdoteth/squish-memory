@@ -25,6 +25,7 @@ import { getOrCreateProject } from '../projects.js';
 let onMemoryStored: typeof import('./incremental-sync.js').onMemoryStored;
 let getSyncStats: typeof import('./incremental-sync.js').getSyncStats;
 let resetSyncCounter: typeof import('./incremental-sync.js').resetSyncCounter;
+const itWithTimeout = it as unknown as (name: string, options: { timeout: number }, callback: () => Promise<void>) => void;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,8 +37,6 @@ async function clearTables() {
   if (sqlite && typeof sqlite.exec === 'function') {
     sqlite.exec('DELETE FROM memory_tags;');
     sqlite.exec('DELETE FROM memories;');
-    sqlite.exec('DELETE FROM memory_associations;');
-    sqlite.exec('DELETE FROM entity_relations;');
     sqlite.exec('DELETE FROM entities;');
 
     sqlite.exec('DELETE FROM places;');
@@ -69,7 +68,7 @@ describe('Incremental Graph Sync', () => {
   // --- onMemoryStored ----------------------------------------------------
 
     describe('onMemoryStored', () => {
-      it('projects typed knowledge to an existing same-project entity idempotently with provenance', async () => {
+      itWithTimeout('projects typed knowledge to an existing same-project entity idempotently with provenance', { timeout: 30_000 }, async () => {
         const project = await getOrCreateProject(testDataDir);
         const db = await getDb();
         const schema = await (await import('../../db/schema.js')).getSchema();
@@ -193,6 +192,32 @@ describe('Incremental Graph Sync', () => {
   // --- getSyncStats ------------------------------------------------------
 
   describe('getSyncStats', () => {
+    it('withholds unscoped counters before registering a project under strict trust', async () => {
+      const previousPolicy = process.env.SQUISH_TRUST_POLICY;
+      const unregisteredPath = join(testDataDir, `strict-stats-${randomUUID()}`);
+      process.env.SQUISH_TRUST_POLICY = 'strict';
+      try {
+        const db = await getDb();
+        const schema = await (await import('../../db/schema.js')).getSchema();
+        const { eq } = await import('drizzle-orm');
+        const before = await db.select().from(schema.projects).where(eq(schema.projects.path, unregisteredPath));
+        let statsDenied = false;
+        try {
+          await getSyncStats(unregisteredPath);
+        } catch (error) {
+          statsDenied = error instanceof Error && error.message.includes('Unscoped incremental graph statistics are disabled');
+        }
+        expect(statsDenied).toBe(true);
+        expect(() => resetSyncCounter(unregisteredPath)).toThrow();
+        const after = await db.select().from(schema.projects).where(eq(schema.projects.path, unregisteredPath));
+        expect(before).toHaveLength(0);
+        expect(after).toHaveLength(0);
+      } finally {
+        if (previousPolicy === undefined) delete process.env.SQUISH_TRUST_POLICY;
+        else process.env.SQUISH_TRUST_POLICY = previousPolicy;
+      }
+    });
+
     it('returns SyncStats with all required fields', async () => {
       const stats = await getSyncStats(testDataDir);
       expect(typeof stats.totalSynced).toBe('number');

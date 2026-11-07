@@ -10,6 +10,7 @@
  *   squish edits correct <memoryId> --proposed-content <content> --reason <reason>
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { remediationFor } from '../errors.js';
@@ -37,8 +38,7 @@ Examples:
     .requiredOption('--reason <reason>', 'Why this edit is needed')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (memoryId: string, options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const client = getClient();
         const result = await client.createEditProposal({
@@ -60,10 +60,7 @@ Examples:
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     })
 
@@ -75,8 +72,7 @@ Examples:
     .option('--limit <number>', 'Max results', '20')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const client = getClient();
         const result = await client.listEditProposals({
@@ -98,10 +94,7 @@ Examples:
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     })
 
@@ -110,8 +103,7 @@ Examples:
     .description('Preview before/after diff for a proposal')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (proposalId: string, options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const client = getClient();
         const result = await client.previewEditProposal(proposalId);
@@ -129,10 +121,7 @@ Examples:
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     })
 
@@ -142,8 +131,7 @@ Examples:
     .option('--review-notes <notes>', 'Optional review notes')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (proposalId: string, options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const client = getClient();
         const result = await client.approveEditProposal(proposalId, options.reviewNotes);
@@ -161,10 +149,7 @@ Examples:
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     })
 
@@ -174,8 +159,7 @@ Examples:
     .option('--review-notes <notes>', 'Optional review notes')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (proposalId: string, options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const client = getClient();
         const result = await client.rejectEditProposal(proposalId, options.reviewNotes);
@@ -193,10 +177,7 @@ Examples:
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     })
 
@@ -207,8 +188,7 @@ Examples:
     .requiredOption('--reason <reason>', 'Why this correction is needed')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (memoryId: string, options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const client = getClient();
         const result = await client.correctMemory(memoryId, options.proposedContent, options.reason);
@@ -226,10 +206,7 @@ Examples:
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     });
 }

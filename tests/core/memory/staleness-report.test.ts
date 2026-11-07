@@ -52,6 +52,8 @@ describe('staleness report', () => {
     const cutoff = Math.floor((Date.now() - 40 * 24 * 60 * 60 * 1000) / 1000);
     sqlite.prepare('UPDATE memories SET updated_at = ? WHERE id = ?').run(cutoff, oldMemoryId);
     sqlite.prepare('UPDATE memories SET updated_at = ? WHERE id = ?').run(cutoff, tempMemoryId);
+    sqlite.prepare('UPDATE memories SET importance_score = 80 WHERE id = ?').run(oldMemoryId);
+    sqlite.prepare('UPDATE memories SET importance_score = 20 WHERE id = ?').run(tempMemoryId);
   });
 
   test('groups stale memories by first tag/source', async () => {
@@ -75,5 +77,12 @@ describe('staleness report', () => {
     const report = await buildStalenessReport({ olderThanDays: 1, limit: 100 });
     const staleIds = report.groups.flatMap((g) => g.items.map((item) => item.memoryId));
     expect(staleIds).not.toContain(recentMemoryId);
+  });
+
+  test('respects minimum normalized importance', async () => {
+    const report = await buildStalenessReport({ olderThanDays: 30, minImportance: 0.7, limit: 100 });
+    const staleIds = report.groups.flatMap((group) => group.items.map((item) => item.memoryId));
+    expect(staleIds).toContain(oldMemoryId);
+    expect(staleIds).not.toContain(tempMemoryId);
   });
 });

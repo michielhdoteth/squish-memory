@@ -7,6 +7,7 @@
  *   squish recall --recent [days] [--limit N]
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
 import { client } from '../program.js';
 import { shouldReturnRawFallback } from '../../core/ingestion/signal-engine.js';
@@ -14,6 +15,7 @@ import { getMemorySnapshot } from '../../core/snapshots/retrieval.js';
 import { filterByDateRange } from '../../core/lib/utils.js';
 import { remediationFor } from '../errors.js';
 import { colors } from '../colors.js';
+import { buildRecallResponse } from '../../core/retrieval/recall-response.js';
 
 // --- Formatting helpers (absorbed from export.ts) ---
 
@@ -98,17 +100,23 @@ export function registerRecallCommand(program: Command) {
     .option('-P, --pretty', 'Human-friendly output', false)
     .option('-p, --project <project>', 'Project path')
     .option('--json', 'Emit machine-readable output', false)
+    .option('--max-tokens <number>', 'Bound compact JSON recall output (128–20000 tokens; requires --json)')
+    .option('--reference-date <date>', 'Fixed ISO 8601 clock for reproducible time-relative recall')
+    .option('--time-zone <iana-zone>', 'IANA zone for relative past queries such as yesterday or last night')
+    .option('--latest-only', 'Return facts valid at the reference date or now, excluding superseded history', false)
+    .option('--valid-time-from <date>', 'Include memories valid on or after this ISO 8601 time')
+    .option('--valid-time-to <date>', 'Include memories valid before this ISO 8601 time')
     // Export flags (absorbed from export.ts)
     .option('-f, --format <format>', 'Export format: markdown, json, csv')
     .option('-o, --output <file>', 'Output file (default: stdout)')
     // Recent flags (absorbed from recent.ts)
     .option('--recent [period]', 'Show recent memories (today/yesterday/thisweek/7days/14days/30days/90days or Ndays)')
     .action(async (query: string | undefined, options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) {
-        process.env.SQUISH_QUIET = '1';
-      }
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
+        if (options.maxTokens !== undefined && (!options.json || options.format || options.recent !== undefined)) {
+          throw new Error('--max-tokens requires standard query recall with --json');
+        }
         // --- Mode 1: Export (absorbed from export command) ---
         if (options.format) {
           const format = options.format.toLowerCase();
@@ -236,6 +244,11 @@ export function registerRecallCommand(program: Command) {
           const searchResults = await client.search(query, {
             limit,
             project: options.project,
+            referenceDate: options.referenceDate,
+            timeZone: options.timeZone,
+            latestOnly: options.latestOnly,
+            validTimeFrom: options.validTimeFrom,
+            validTimeTo: options.validTimeTo,
           });
 
           result = await Promise.all(searchResults.map(async (sr: any) => {
@@ -259,27 +272,21 @@ export function registerRecallCommand(program: Command) {
               const snapshot = await getMemorySnapshot(rawFallbackSnapshotId);
               return {
                 ...memory,
+                recallConfidence: sr.recallConfidence,
                 rawFallback: snapshot?.content ?? null,
               };
             }
 
-            return memory;
+            return { ...memory, recallConfidence: sr.recallConfidence };
           }));
         }
 
         if (options.json) {
-          console.log(JSON.stringify({
-            ok: true,
-            count: result.length,
-            results: result.map((r: any) => ({
-              id: r.id,
-              type: r.type,
-              content: r.content,
-              tags: r.tags,
-              similarity: r.similarity ?? r.score,
-              createdAt: r.createdAt
-            }))
-          }, null, 2));
+          const response = buildRecallResponse(query, result, {
+            ...(options.maxTokens !== undefined ? { maxTokens: Number(options.maxTokens) } : {}),
+            exactId: isUuid,
+          });
+          console.log(JSON.stringify(response));
           return;
         }
 
@@ -312,13 +319,7 @@ export function registerRecallCommand(program: Command) {
         console.error(options.json ? JSON.stringify(payload) : `${colors.red('Error')}: ${error.message}\nHint: ${remediation}`);
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) {
-            delete process.env.SQUISH_QUIET;
-          } else {
-            process.env.SQUISH_QUIET = previousQuiet;
-          }
-        }
+        restoreQuiet();
       }
     });
 }

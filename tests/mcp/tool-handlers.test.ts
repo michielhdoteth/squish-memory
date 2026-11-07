@@ -286,13 +286,19 @@ describe("MCP Tool Handlers", () => {
       async () => {
         const resp = await sharedServer.callTool("squish_stats", {}, TEST_TIMEOUT);
         const parsed = parseToolResult(resp);
-        if (parsed._raw !== undefined) {
-          // Non-JSON response is acceptable
-          expect(typeof parsed._raw).toBe("string");
-        } else {
-          expect(parsed.ok).toBeDefined();
-          expect(parsed.version).toBe("2.1.0");
-        }
+        expect(parsed._raw).toBeUndefined();
+        expect(parsed.ok).toBe(true);
+        // Shape-checked rather than pinned: this used to assert a hardcoded
+        // "2.1.0" behind a non-JSON tolerance branch, which hid the fact that
+        // squish_stats only started returning JSON once the auto-detected
+        // project scope was registered instead of throwing.
+        expect(parsed.version).toMatch(/^\d+\.\d+\.\d+/);
+        expect(parsed.retrieval?.profile?.name).toMatch(/^(fast-local|high-recall)$/);
+        expect(parsed.retrieval?.features?.reranker).toHaveProperty('source');
+        expect(parsed.health?.checks).toBeArray();
+        expect(['available', 'unavailable']).toContain(parsed.qmd);
+        expect(parsed).toHaveProperty('watcher');
+        expect(parsed).toHaveProperty('consolidation');
       },
       TEST_TIMEOUT
     );
@@ -372,43 +378,104 @@ describe("MCP Tool Handlers", () => {
       },
       TEST_TIMEOUT
     );
+
+    it(
+      "retains source and application context with ordinary memories",
+      async () => {
+        const content = "Use the verified dry-run path before a production migration.";
+        const sourceId = `source-${crypto.randomUUID()}`;
+        const procedureKey = `database-migration-${crypto.randomUUID()}`;
+        const resp = await sharedServer.callTool("squish_remember", {
+          content,
+          type: "context",
+          sourceId,
+          observedAt: "2026-10-14T12:00:00.000Z",
+          reasoning: "This avoids applying an unreviewed migration.",
+          examples: "Check the migration diff and row counts first.",
+          exceptions: "Emergency rollback follows the incident procedure.",
+          outcome: "success",
+          outcomeEvidenceId: `deploy-receipt-${crypto.randomUUID()}`,
+          procedureKey,
+        }, TEST_TIMEOUT);
+        const stored = parseToolResult(resp);
+        expect(stored.ok).toBe(true);
+
+        const recalledResponse = await sharedServer.callTool("squish_recall", {
+          query: stored.id,
+        }, TEST_TIMEOUT);
+        const recalled = parseToolResult(recalledResponse);
+        const memory = recalled.memories.find((item: { id: string }) => item.id === stored.id);
+        expect(memory).toBeDefined();
+        expect(Object.keys(memory).every((key: string) => ["confidence", "content", "id", "type"].includes(key))).toBe(true);
+      },
+      TEST_TIMEOUT
+    );
+
+    it("requires source evidence for a reported procedure outcome", async () => {
+      const response = await sharedServer.callTool("squish_remember", {
+        content: "The migration procedure succeeded.",
+        outcome: "success",
+      }, TEST_TIMEOUT);
+      const parsed = parseToolResult(response);
+      expect(parsed.ok).not.toBe(true);
+      expect(JSON.stringify(parsed)).toContain("outcomeEvidenceId");
+    });
+
+    it("requires the outcome memory to retain its source record ID", async () => {
+      const response = await sharedServer.callTool("squish_remember", {
+        content: "The migration procedure succeeded.",
+        outcome: "success",
+        outcomeEvidenceId: `receipt-${crypto.randomUUID()}`,
+        procedureKey: `migration-${crypto.randomUUID()}`,
+      }, TEST_TIMEOUT);
+      const parsed = parseToolResult(response);
+      expect(parsed.ok).not.toBe(true);
+      expect(JSON.stringify(parsed)).toContain("sourceId");
+    });
   });
 
   describe("squish_recall", () => {
-    let storedId: string;
+    // Global memory is visible from every project scope, so these assertions
+    // test scope resolution rather than which rows happen to be stored.
+    const GLOBAL_MEMORY = "Recall test memory for unique query verification";
+    const REGISTERED_SCOPE = "/squish-tool-handlers/registered-scope";
+    const UNREGISTERED_SCOPE = "/squish-tool-handlers/never-registered-scope";
 
     beforeAll(async () => {
-      // Store a memory to recall
-      const content = "Recall test memory for unique query verification";
       const resp = await sharedServer.callTool(
         "squish_remember",
-        { content, type: "fact" },
+        { content: GLOBAL_MEMORY, type: "fact", global: true },
         TEST_TIMEOUT
       );
-      const parsed = parseToolResult(resp);
-      storedId = parsed.id;
-    });
+      expect(parseToolResult(resp).ok).toBe(true);
+
+      // Register REGISTERED_SCOPE up front so the recall tests below exercise a
+      // registered-project read. squish_context action=session-start is the
+      // MCP surface that passes ensureProject:true.
+      const registerResp = await sharedServer.callTool(
+        "squish_context",
+        { project: REGISTERED_SCOPE, action: "session-start" },
+        TEST_TIMEOUT
+      );
+      expect(registerResp.result).toBeDefined();
+    }, TEST_TIMEOUT);
 
     it(
       "searches by query text",
       async () => {
         const resp = await sharedServer.callTool(
           "squish_recall",
-          { query: "Recall test memory" },
+          { query: GLOBAL_MEMORY, project: REGISTERED_SCOPE },
           TEST_TIMEOUT
         );
         expect(resp.result).toBeDefined();
         const parsed = parseToolResult(resp);
-        // Recall may return ok:true with results, or a non-JSON error (e.g. "Failed to search memories")
-        // when vector/embedding infrastructure is unavailable in test env
-        if (parsed._raw !== undefined) {
-          expect(typeof parsed._raw).toBe("string");
-        } else {
-          expect(parsed.ok).toBe(true);
-          expect(parsed.count).toBeGreaterThanOrEqual(1);
-          expect(parsed.results.length).toBeGreaterThanOrEqual(1);
-          expect(parsed.results[0].content).toContain("Recall test memory");
-        }
+        expect(parsed._raw).toBeUndefined();
+        expect(["ok", "partial"].includes(parsed.status)).toBe(true);
+        expect(parsed.missing).toBeArray();
+        expect(
+          parsed.memories.some((r: { content: string }) => r.content.includes(GLOBAL_MEMORY))
+        ).toBe(true);
       },
       TEST_TIMEOUT
     );
@@ -418,16 +485,54 @@ describe("MCP Tool Handlers", () => {
       async () => {
         const resp = await sharedServer.callTool(
           "squish_recall",
-          { query: "test", limit: 1 },
+          { query: "test", limit: 1, project: REGISTERED_SCOPE },
           TEST_TIMEOUT
         );
         const parsed = parseToolResult(resp);
-        if (parsed._raw !== undefined) {
-          expect(typeof parsed._raw).toBe("string");
-        } else {
-          expect(parsed.ok).toBe(true);
-          expect(parsed.results.length).toBeLessThanOrEqual(1);
-        }
+        expect(parsed._raw).toBeUndefined();
+        expect(["ok", "partial", "none"].includes(parsed.status)).toBe(true);
+        expect(parsed.memories.length).toBeLessThanOrEqual(1);
+      },
+      TEST_TIMEOUT
+    );
+
+    it(
+      "returns ID-addressable compact evidence within an optional output budget",
+      async () => {
+        const resp = await sharedServer.callTool(
+          "squish_recall",
+          { query: GLOBAL_MEMORY, project: REGISTERED_SCOPE, maxTokens: 128 },
+          TEST_TIMEOUT
+        );
+        const raw = resp.result?.content?.find((item: { type: string }) => item.type === "text")?.text ?? "";
+        const parsed = JSON.parse(raw);
+        expect(Math.ceil(raw.length / 3)).toBeLessThanOrEqual(128);
+        expect(parsed.memories[0].id).toBeDefined();
+        expect(parsed.memories[0].content).toContain(GLOBAL_MEMORY);
+        expect(Object.keys(parsed).sort()).toEqual(["memories", "missing", "status"]);
+      },
+      TEST_TIMEOUT
+    );
+
+    it(
+      "expands a compact evidence ID through the direct-ID recall path",
+      async () => {
+        const write = await sharedServer.callTool(
+          "squish_remember",
+          { content: "Direct ID expansion fixture for compact recall", type: "fact", global: true },
+          TEST_TIMEOUT
+        );
+        const id = parseToolResult(write).id;
+        const resp = await sharedServer.callTool(
+          "squish_recall",
+          { query: id, maxTokens: 128 },
+          TEST_TIMEOUT
+        );
+        const parsed = parseToolResult(resp);
+        expect(parsed.status).toBe("ok");
+        expect(parsed.missing).toEqual([]);
+        expect(parsed.memories[0].id).toBe(id);
+        expect(parsed.memories[0].content).toContain("Direct ID expansion fixture");
       },
       TEST_TIMEOUT
     );
@@ -437,20 +542,57 @@ describe("MCP Tool Handlers", () => {
       async () => {
         const resp = await sharedServer.callTool(
           "squish_recall",
-          { query: "Recall test memory" },
+          { query: GLOBAL_MEMORY, project: REGISTERED_SCOPE },
           TEST_TIMEOUT
         );
-        const parsed = parseToolResult(resp);
-        // Should not crash regardless of search infrastructure availability
         expect(resp.result).toBeDefined();
-        if (parsed._raw === undefined && parsed.ok) {
-          if (parsed.results.length > 0) {
-            expect(parsed.results[0].type).toBeDefined();
-          }
-        }
+        const parsed = parseToolResult(resp);
+        expect(parsed._raw).toBeUndefined();
+        expect(["ok", "partial"].includes(parsed.status)).toBe(true);
+        expect(parsed.memories.length).toBeGreaterThanOrEqual(1);
+        expect(parsed.memories[0].type).toBeDefined();
       },
       TEST_TIMEOUT
     );
+
+    it(
+      "returns results for a project scope that was never registered",
+      async () => {
+        // Previously requireProject threw ProjectNotFoundError here and
+        // squish_recall failed 100% of the time for any scope the write path
+        // had not already created. The chosen behaviour is auto-registration:
+        // the read succeeds and still keeps other projects isolated.
+        const resp = await sharedServer.callTool(
+          "squish_recall",
+          { query: GLOBAL_MEMORY, project: UNREGISTERED_SCOPE },
+          TEST_TIMEOUT
+        );
+        expect(resp.result).toBeDefined();
+        const parsed = parseToolResult(resp);
+        expect(parsed._raw).toBeUndefined();
+        expect(["ok", "partial"].includes(parsed.status)).toBe(true);
+        expect(
+          parsed.memories.some((r: { content: string }) => r.content.includes(GLOBAL_MEMORY))
+        ).toBe(true);
+      },
+      TEST_TIMEOUT
+    );
+  });
+
+  describe("squish_sessions recovery", () => {
+    it("exposes compact captured-memory recovery with a session id", async () => {
+      const resp = await sharedServer.callTool("squish_sessions", {
+        action: "recover",
+        sessionId: "not-captured-session-0001",
+        query: "distinctive absent session recovery test phrase",
+        budgetTokens: 128,
+      }, TEST_TIMEOUT);
+      const parsed = parseToolResult(resp);
+      expect(parsed.ok).toBe(true);
+      expect(parsed.sessionId).toBe("not-captured-session-0001");
+      expect(parsed.evidence).toEqual([]);
+      expect(parsed.omittedCount).toBe(0);
+    }, TEST_TIMEOUT);
   });
 
   describe("squish_context", () => {
@@ -539,7 +681,7 @@ describe("MCP Tool Handlers", () => {
         TEST_TIMEOUT
       );
       memoryId2 = parseToolResult(resp2).id;
-    });
+    }, TEST_TIMEOUT);
 
     it(
       "add creates association between memories",
@@ -588,7 +730,7 @@ describe("MCP Tool Handlers", () => {
       );
       const parsed = parseToolResult(resp);
       forgetMemoryId = parsed.id;
-    });
+    }, TEST_TIMEOUT);
 
     it(
       "deletes a memory by ID",

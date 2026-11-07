@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "name": "squish-sandbox-action-memory-v1",
+    "version": 1,
+    "deterministic": true,
+    "sideEffects": "in-memory state only",
+    "purpose": "Development smoke evaluation for retrieving ordinary procedure memories and applying a constrained action"
+  },
+  "tasks": [
+    {
+      "id": "release-blocked-channel",
+      "query": "What should happen to the release channel when the release is blocked?",
+      "memory": "Release procedure: When release_status is blocked, set release_channel to manual.",
+      "initialState": { "release_status": "blocked", "release_channel": "automatic" },
+      "expectedState": { "release_status": "blocked", "release_channel": "manual" },
+      "expectedAbstain": false
+    },
+    {
+      "id": "approval-pending-publication",
+      "query": "How do we handle publication while legal approval is pending?",
+      "memory": "Publication procedure: When legal_approval is pending, set publication_state to hold.",
+      "initialState": { "legal_approval": "pending", "publication_state": "ready" },
+      "expectedState": { "legal_approval": "pending", "publication_state": "hold" },
+      "expectedAbstain": false
+    },
+    {
+      "id": "credential-rotation-unverified",
+      "query": "What is the rotation action if the new credential is not verified?",
+      "memory": "Credential procedure: When credential_status is unverified, set rotation_action to stop.",
+      "initialState": { "credential_status": "unverified", "rotation_action": "continue" },
+      "expectedState": { "credential_status": "unverified", "rotation_action": "stop" },
+      "expectedAbstain": false
+    },
+    {
+      "id": "retention-guard-no-action",
+      "query": "When should an expired retention record be quarantined?",
+      "memory": "Retention procedure: When retention_state is expired, set retention_action to quarantine.",
+      "initialState": { "retention_state": "valid", "retention_action": "keep" },
+      "expectedState": { "retention_state": "valid", "retention_action": "keep" },
+      "expectedAbstain": true
+    }
+  ]
+}

@@ -1,21 +1,30 @@
 /**
  * Relationship Extractor
  *
- * Populates entity_relations table with typed relationships extracted
+ * Populates the canonical entity graph with typed relationships extracted
  * from memory content.
  */
 
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and, gt, isNull, lte, or } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
+import { getRawClient } from '../../db/utils.js';
 import { logger } from '../logger.js';
 import { config } from '../../config.js';
+import { signGraphRelationProvenance } from '../acl/provenance.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyUnscopedGraphOperation } from './strict-gates.js';
+import { filterStrictEntityEdges } from './strict-access.js';
+import { deserializeJson } from '../knowledge/helpers.js';
 import {
   extractEntitiesAndRelations,
+  type LLMExtractionResult,
   type ExtractedRelation,
   type RelationType,
 } from './llm-entity-extractor.js';
 import type { ExtractedEntity } from '../memory/entity-extractor.js';
+import { createKnowledgeEdge, getEdgesFrom, getEdgesTo, getEdgesForNode, reviseKnowledgeEdge } from '../knowledge/knowledge-edges.js';
+import type { KnowledgeEdge, KnowledgeEdgeType } from '../knowledge/types.js';
 
 // Fallback relationship types for non-LLM extraction
 const FALLBACK_RELATION_TYPES = {
@@ -24,20 +33,26 @@ const FALLBACK_RELATION_TYPES = {
   SEQUENTIAL: 'mentioned_before' as RelationType,
 };
 
+function findEntityMentions(content: string, name: string): Array<{ start: number; end: number }> {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'giu');
+  return Array.from(content.matchAll(pattern), (match) => ({
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+  }));
+}
+
 /**
  * Generate fallback relationships from entity co-occurrence when LLM is unavailable.
  * Creates edges between entities that appear in the same memory or sentence.
  */
-function generateCoOccurrenceRelations(
+export function generateCoOccurrenceRelations(
   entities: ExtractedEntity[],
   content: string
 ): ExtractedRelation[] {
   const relations: ExtractedRelation[] = [];
 
   if (entities.length < 2) return relations;
-
-  // Split content into sentences
-  const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
 
   // For each pair of entities, determine relationship strength based on proximity
   for (let i = 0; i < entities.length; i++) {
@@ -48,48 +63,69 @@ function generateCoOccurrenceRelations(
       // Skip if same entity
       if (e1.name.toLowerCase() === e2.name.toLowerCase()) continue;
 
-      // Check if they appear in the same sentence
-      const sameSentence = sentences.some(sentence => {
-        return sentence.toLowerCase().includes(e1.name.toLowerCase()) &&
-               sentence.toLowerCase().includes(e2.name.toLowerCase());
+      const e1Mentions = findEntityMentions(content, e1.name);
+      const e2Mentions = findEntityMentions(content, e2.name);
+      // A short entity name inside a longer entity mention is not independent
+      // evidence that the two entities co-occurred.
+      const independentPairs = e1Mentions.flatMap((first) => e2Mentions
+        .filter((second) => first.end <= second.start || second.end <= first.start)
+        .map((second) => ({ first, second })));
+      if (independentPairs.length === 0) continue;
+
+      const sameSentence = independentPairs.some(({ first, second }) => {
+        const start = Math.min(first.start, second.start);
+        const end = Math.max(first.end, second.end);
+        return !/[.!?]/.test(content.slice(start, end));
       });
 
-      // Check if e1 appears before e2 in text
-      const e1Index = content.toLowerCase().indexOf(e1.name.toLowerCase());
-      const e2Index = content.toLowerCase().indexOf(e2.name.toLowerCase());
-      const sequential = e1Index >= 0 && e2Index >= 0 && e1Index < e2Index;
+      // Use the earliest independent pair so nested names cannot reverse the
+      // direction of a later, real mention.
+      independentPairs.sort((left, right) =>
+        Math.min(left.first.start, left.second.start) - Math.min(right.first.start, right.second.start)
+        || Math.max(left.first.start, left.second.start) - Math.max(right.first.start, right.second.start));
+      const { first: firstMention, second: secondMention } = independentPairs[0]!;
+      const sequential = firstMention.start < secondMention.start;
 
-      // Determine relation type and confidence
-      let relationType: RelationType;
-      let confidence: number;
-
+      // Co-occurrence is symmetric, but mention order is directional. Do not
+      // manufacture a reverse `mentioned_before` edge for the same pair.
       if (sameSentence) {
-        relationType = FALLBACK_RELATION_TYPES.SAME_SENTENCE;
-        confidence = 0.7;
+        relations.push(
+          {
+            fromEntity: e1.name,
+            toEntity: e2.name,
+            relationType: FALLBACK_RELATION_TYPES.SAME_SENTENCE,
+            confidence: 0.7,
+            context: `Co-occurrence in memory (${FALLBACK_RELATION_TYPES.SAME_SENTENCE})`,
+          },
+          {
+            fromEntity: e2.name,
+            toEntity: e1.name,
+            relationType: FALLBACK_RELATION_TYPES.SAME_SENTENCE,
+            confidence: 0.7,
+            context: `Co-occurrence in memory (${FALLBACK_RELATION_TYPES.SAME_SENTENCE})`,
+          },
+        );
       } else if (sequential) {
-        relationType = FALLBACK_RELATION_TYPES.SEQUENTIAL;
-        confidence = 0.5;
+        relations.push({
+          fromEntity: e1.name,
+          toEntity: e2.name,
+          relationType: FALLBACK_RELATION_TYPES.SEQUENTIAL,
+          confidence: 0.5,
+          context: `Co-occurrence in memory (${FALLBACK_RELATION_TYPES.SEQUENTIAL})`,
+        });
       } else {
-        relationType = FALLBACK_RELATION_TYPES.CO_OCCURS;
-        confidence = 0.3;
+        // Not sequential: the earliest independent pair mentions the second
+        // entity first, so the ordered edge points back at e1. (The old third
+        // `else if (!sequential)` plus a trailing `else` made this the only
+        // reachable branch; the CO_OCCURS block after it was dead.)
+        relations.push({
+          fromEntity: e2.name,
+          toEntity: e1.name,
+          relationType: FALLBACK_RELATION_TYPES.SEQUENTIAL,
+          confidence: 0.5,
+          context: `Co-occurrence in memory (${FALLBACK_RELATION_TYPES.SEQUENTIAL})`,
+        });
       }
-
-      // Create bidirectional relationships
-      relations.push({
-        fromEntity: e1.name,
-        toEntity: e2.name,
-        relationType,
-        confidence,
-        context: `Co-occurrence in memory (${relationType})`,
-      });
-
-      relations.push({
-        fromEntity: e2.name,
-        toEntity: e1.name,
-        relationType,
-        confidence,
-        context: `Co-occurrence in memory (${relationType})`,
-      });
     }
   }
 
@@ -124,8 +160,23 @@ export async function extractAndStoreRelations(
   relations: number;
   source: 'llm' | 'regex' | 'fallback';
 }> {
-  // Step 1: Extract entities and relations from content
+  if (isStrictTrustPolicy()) await denyUnscopedGraphOperation('extract_and_store_relations', memoryId);
   const extraction = await extractEntitiesAndRelations(content, options);
+  return storeExtractedRelations(memoryId, content, projectId, extraction);
+}
+
+/** Persist a previously extracted memory graph result. */
+export async function storeExtractedRelations(
+  memoryId: string,
+  content: string,
+  projectId: string,
+  extraction: LLMExtractionResult
+): Promise<{
+  entities: number;
+  relations: number;
+  source: 'llm' | 'regex' | 'fallback';
+}> {
+  if (isStrictTrustPolicy()) await denyUnscopedGraphOperation('store_extracted_relations', memoryId);
 
   if (extraction.entities.length === 0 && extraction.relations.length === 0) {
     return { entities: 0, relations: 0, source: extraction.source === 'none' ? 'fallback' : extraction.source };
@@ -145,10 +196,10 @@ export async function extractAndStoreRelations(
   }
 
   // Step 4: Store relations between entities
-  const storedRelations = await storeRelations(relationsToStore, entityIdMap);
+  const storedRelations = await storeEntityRelations(relationsToStore, entityIdMap, memoryId);
 
   // Step 5: Link entities to the memory record
-  await linkEntitiesToMemory(memoryId, extraction.entities, projectId);
+  await linkEntitiesToMemory(memoryId, extraction.entities);
 
   logger.info('Extracted and stored entities/relations', {
     memoryId,
@@ -238,15 +289,14 @@ async function storeEntities(
 }
 
 /**
- * Store extracted relations in the entity_relations table.
- * Deduplicates by from+to+type.
+ * Store extracted relations in canonical temporal edges only. Deduplicate by
+ * direction and relation type; legacy rows are imported by the migration.
  */
-async function storeRelations(
+export async function storeEntityRelations(
   relations: ExtractedRelation[],
-  entityIdMap: Map<string, string>
+  entityIdMap: Map<string, string>,
+  sourceMemoryId?: string,
 ): Promise<number> {
-  const db = await getDb();
-  const schema = await getSchema();
   let storedCount = 0;
 
   for (const relation of relations) {
@@ -260,44 +310,34 @@ async function storeRelations(
     }
 
     try {
-      // Check if relation already exists
-      const existing = await (db as any)
-        .select()
-        .from(schema.entityRelations)
-        .where(
-          and(
-            eq(schema.entityRelations.fromEntityId, fromId),
-            eq(schema.entityRelations.toEntityId, toId),
-            eq(schema.entityRelations.type, relation.relationType)
-          )
-        )
-        .limit(1);
-
-      if (existing.length > 0) {
-        // Strengthen existing relation
-        await (db as any)
-          .update(schema.entityRelations)
-          .set({
-            weight: Math.min(10, (existing[0].weight || 1) + 1),
-            properties: {
-              ...(existing[0].properties as Record<string, unknown> || {}),
-              confidence: relation.confidence,
-              context: relation.context,
-              lastSeen: new Date().toISOString(),
-            } as any,
-          })
-          .where(eq(schema.entityRelations.id, existing[0].id));
+      const currentEdges = await getEdgesFrom(fromId, 'entity', relation.relationType);
+      const currentEdge = currentEdges.find(edge => edge.toKind === 'entity' && edge.toId === toId);
+      const previousMetadata = currentEdge?.metadata ?? {};
+      const nextMetadata = {
+        ...previousMetadata,
+        ...(sourceMemoryId ? {
+          sourceMemoryIds: [...new Set([
+            ...(Array.isArray(previousMetadata.sourceMemoryIds)
+              ? previousMetadata.sourceMemoryIds.filter((id): id is string => typeof id === 'string')
+              : []),
+            sourceMemoryId,
+          ])],
+        } : {}),
+        confidence: relation.confidence,
+        context: relation.context,
+        ...(currentEdge ? { lastSeen: new Date().toISOString() } : {}),
+      };
+      if (currentEdge) {
+        await reviseKnowledgeEdge(currentEdge.id, {
+          weight: Math.min(10, (currentEdge.weight || 1) + 1),
+          metadata: nextMetadata,
+        });
       } else {
-        // Create new relation
-        await (db as any).insert(schema.entityRelations).values({
-          fromEntityId: fromId,
-          toEntityId: toId,
-          type: relation.relationType,
+        await createKnowledgeEdge({
+          fromId, fromKind: 'entity', toId, toKind: 'entity',
+          edgeType: relation.relationType as KnowledgeEdgeType,
           weight: Math.round(relation.confidence * 10),
-          properties: {
-            confidence: relation.confidence,
-            context: relation.context,
-          } as any,
+          metadata: nextMetadata,
         });
       }
 
@@ -320,8 +360,7 @@ async function storeRelations(
  */
 async function linkEntitiesToMemory(
   memoryId: string,
-  entities: ExtractedEntity[],
-  projectId: string
+  entities: ExtractedEntity[]
 ): Promise<void> {
   const db = await getDb();
   const schema = await getSchema();
@@ -364,49 +403,23 @@ export async function getEntityRelations(
   entityIds: string[],
   relationTypes?: RelationType[]
 ): Promise<StoredRelation[]> {
-  const db = await getDb();
-  const schema = await getSchema();
-
-  const whereConditions = relationTypes
-    ? and(
-        or(...entityIds.map(id => eq(schema.entityRelations.fromEntityId, id))),
-        or(...relationTypes.map(type => eq(schema.entityRelations.type, type)))
-      )
-    : or(...entityIds.map(id => eq(schema.entityRelations.fromEntityId, id)));
-
-  const relations = await (db as any)
-    .select()
-    .from(schema.entityRelations)
-    .where(whereConditions);
-
-  // Also get incoming relations
-  const incomingRelations = await (db as any)
-    .select()
-    .from(schema.entityRelations)
-    .where(or(...entityIds.map(id => eq(schema.entityRelations.toEntityId, id))));
-
-  // Combine and deduplicate
-  const allRelations = [...relations, ...incomingRelations];
-  const seen = new Set<string>();
-  const unique: StoredRelation[] = [];
-
-  for (const r of allRelations) {
-    if (!seen.has(r.id)) {
-      seen.add(r.id);
-      unique.push({
-        id: r.id,
-        fromEntityId: r.fromEntityId,
-        toEntityId: r.toEntityId,
-        fromEntityName: '', // Will be populated by caller if needed
-        toEntityName: '',
-        relationType: r.type as RelationType,
-        weight: r.weight || 1,
-        properties: r.properties as Record<string, unknown> | null,
-      });
-    }
+  if (entityIds.length === 0) return [];
+  const allowed = relationTypes ? new Set<string>(relationTypes) : null;
+  const edges = (await Promise.all(entityIds.flatMap(id => [
+    getEdgesFrom(id, 'entity'), getEdgesTo(id, 'entity'),
+  ]))).flat();
+  const visibleEdges = isStrictTrustPolicy() ? await filterStrictEntityEdges(edges) : edges;
+  const byRelation = new Map<string, StoredRelation>();
+  for (const edge of visibleEdges) {
+    if (edge.fromKind !== 'entity' || edge.toKind !== 'entity' || (allowed && !allowed.has(edge.edgeType))) continue;
+    const key = `${edge.fromId}\u0000${edge.toId}\u0000${edge.edgeType}`;
+    byRelation.set(key, {
+      id: edge.id, fromEntityId: edge.fromId, toEntityId: edge.toId,
+      fromEntityName: '', toEntityName: '', relationType: edge.edgeType as RelationType,
+      weight: edge.weight || 1, properties: edge.metadata,
+    });
   }
-
-  return unique;
+  return [...byRelation.values()];
 }
 
 /**
@@ -419,7 +432,7 @@ export async function getProjectEntities(
   const db = await getDb();
   const schema = await getSchema();
 
-  const entities = await (db as any)
+  const entityQuery = (db as any)
     .select({
       id: schema.entities.id,
       name: schema.entities.name,
@@ -427,8 +440,33 @@ export async function getProjectEntities(
       description: schema.entities.description,
     })
     .from(schema.entities)
-    .where(eq(schema.entities.projectId, projectId))
-    .limit(limit);
+    .where(eq(schema.entities.projectId, projectId));
+  const entities = isStrictTrustPolicy() ? await entityQuery : await entityQuery.limit(limit);
+
+  if (isStrictTrustPolicy()) {
+    const now = new Date();
+    const edgeRows = await db.select().from(schema.knowledgeEdges).where(and(
+      eq(schema.knowledgeEdges.fromKind, 'entity'),
+      eq(schema.knowledgeEdges.toKind, 'entity'),
+      lte(schema.knowledgeEdges.validFrom, now),
+      or(isNull(schema.knowledgeEdges.validTo), gt(schema.knowledgeEdges.validTo, now)),
+      lte(schema.knowledgeEdges.recordedAt, now),
+      or(isNull(schema.knowledgeEdges.recordedTo), gt(schema.knowledgeEdges.recordedTo, now)),
+    )) as Array<Omit<KnowledgeEdge, 'metadata'> & { metadata: unknown }>;
+    const normalizedEdges = edgeRows.map((edge) => ({
+      ...edge,
+      metadata: typeof edge.metadata === 'string'
+        ? deserializeJson<Record<string, unknown>>(edge.metadata)
+        : edge.metadata && typeof edge.metadata === 'object' && !Array.isArray(edge.metadata)
+          ? edge.metadata as Record<string, unknown>
+          : null,
+    }));
+    const visibleEdges = await filterStrictEntityEdges(normalizedEdges);
+    const visibleIds = new Set(visibleEdges.flatMap((edge) => [edge.fromId, edge.toId]));
+    return entities.filter((entity: { id: string }) => visibleIds.has(entity.id)).slice(0, limit).map((entity: {
+      id: string; name: string;
+    }) => ({ id: entity.id, name: entity.name, type: 'entity', description: null }));
+  }
 
   return entities;
 }
@@ -437,6 +475,7 @@ export async function getProjectEntities(
  * Delete all entities and relations for a project (for graph rebuild).
  */
 export async function clearProjectGraph(projectId: string): Promise<void> {
+  if (isStrictTrustPolicy()) await denyUnscopedGraphOperation('clear_project_graph', projectId);
   const db = await getDb();
   const schema = await getSchema();
 
@@ -449,16 +488,23 @@ export async function clearProjectGraph(projectId: string): Promise<void> {
   const entityIds = projectEntities.map((e: any) => e.id);
 
   if (entityIds.length > 0) {
-    // Delete relations involving these entities
+    const edgeIds = new Set<string>();
     for (const entityId of entityIds) {
-      await (db as any)
-        .delete(schema.entityRelations)
-        .where(
-          or(
-            eq(schema.entityRelations.fromEntityId, entityId),
-            eq(schema.entityRelations.toEntityId, entityId)
-          )
-        );
+      for (const edge of await getEdgesForNode(entityId, 'entity')) edgeIds.add(edge.id);
+    }
+    const closedAt = new Date();
+    for (const edgeId of edgeIds) {
+      await reviseKnowledgeEdge(edgeId, { validTo: closedAt, recordedAt: closedAt });
+    }
+    const raw = getRawClient(db);
+    const legacyTable = raw?.prepare?.("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'entity_relations'").get();
+    if (legacyTable && raw?.prepare) {
+      for (let offset = 0; offset < entityIds.length; offset += 400) {
+        const batch = entityIds.slice(offset, offset + 400);
+        const placeholders = batch.map(() => '?').join(', ');
+        raw.prepare(`DELETE FROM entity_relations WHERE from_entity_id IN (${placeholders}) OR to_entity_id IN (${placeholders})`)
+          .run(...batch, ...batch);
+      }
     }
   }
 

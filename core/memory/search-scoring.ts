@@ -15,6 +15,8 @@ import { getSchema } from '../../db/schema.js';
 import { eq, and, inArray } from 'drizzle-orm';
 import { getRelatedMemories } from '../associations.js';
 import type { SearchDbContext } from './vector-search.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 import {
   addBoost,
   initScoreFields,
@@ -75,9 +77,16 @@ export async function getMemoryPlacesByType(
 export async function getMemoriesByIndexedTags(
   tags: string[],
   limit: number,
-  ctx?: SearchDbContext
+  ctx?: SearchDbContext,
 ): Promise<Array<{ memoryId: string; tag: string }>> {
   if (tags.length === 0) return [];
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(
+      'memory_tags',
+      'memory_tag_index',
+      'Unscoped memory tag-index reads are disabled under strict trust',
+    );
+  }
   const db = ctx?.db ?? await getDb();
   if (!db) return [];
   const schema = await getSchema();
@@ -232,6 +241,7 @@ export async function applyTagOverlapBoost(
   ctx?: SearchDbContext
 ): Promise<SearchResult[]> {
   if (!queryTags || queryTags.length === 0) return results;
+  if (isStrictTrustPolicy()) return results;
 
   // Normalize query tags for matching
   const normalizedQueryTags = queryTags.map(t => t.toLowerCase().trim().replace(/\s+/g, '-'));

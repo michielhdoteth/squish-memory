@@ -7,6 +7,7 @@ import { getDb } from '../../db/index.js';
 import { maintenanceJobs, maintenanceJobHistory } from '../../db/drizzle/schema-sqlite.js';
 import { eq } from 'drizzle-orm';
 import { getAllJobHandlers } from './handlers/index.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
 
 // Re-export types for external consumers
 export type { JobType, JobStatus, JobHandler, ScheduledJob, JobExecutionContext } from './types.js';
@@ -17,6 +18,7 @@ const activeTasks = new Map<string, any>(); // node-cron ScheduledTask type
 let shuttingDown = false;
 const inFlightJobs = new Map<string, Promise<void>>();
 const runningJobs = new Set<string>(); // Per-job lock to prevent concurrent execution
+const STARTUP_CATCH_UP_DELAY_MS = 60_000;
 
 // Job interval by type (in ms) - used for catch-up detection
 const JOB_INTERVALS: Record<JobType, number> = {
@@ -37,6 +39,10 @@ for (const [name, handler] of getAllJobHandlers()) {
 }
 
 export async function initializeScheduler(): Promise<void> {
+  if (isStrictTrustPolicy()) {
+    logger.info('[Scheduler] Strict trust is active; background maintenance is withheld');
+    return;
+  }
   if (!config.cronEnabled) {
     logger.info('[Scheduler] Cron scheduling disabled, using heartbeat fallback');
     return;
@@ -51,9 +57,6 @@ export async function initializeScheduler(): Promise<void> {
   try {
     await ensureDefaultJobs(db);
 
-    // Check for missed jobs (catch-up after machine wake from sleep)
-    await checkMissedJobs();
-
     const sqliteDb = db as any;
     const jobs = await sqliteDb
       .select()
@@ -65,6 +68,14 @@ export async function initializeScheduler(): Promise<void> {
     }
 
     logger.info(`[Scheduler] Initialized with ${jobs.length} scheduled jobs`);
+
+    // Serve normal MCP calls before running potentially expensive missed-job
+    // catch-up against the same local database. Cron jobs are scheduled first,
+    // so deferring catch-up does not leave the scheduler uninitialized.
+    const catchUpTimer = setTimeout(() => {
+      void checkMissedJobs();
+    }, STARTUP_CATCH_UP_DELAY_MS);
+    catchUpTimer.unref?.();
   } catch (error) {
     logger.error('[Scheduler] Failed to initialize:', error);
   }
@@ -329,6 +340,12 @@ async function ensureDefaultJobs(db: any): Promise<void> {
 }
 
 export async function scheduleJob(job: ScheduledJob): Promise<void> {
+  if (isStrictTrustPolicy()) {
+    activeTasks.get(job.jobName)?.stop();
+    activeTasks.delete(job.jobName);
+    logger.info(`[Scheduler] Withholding ${job.jobName} under strict trust`);
+    return;
+  }
   const existingTask = activeTasks.get(job.jobName);
   if (existingTask) {
     existingTask.stop();
@@ -448,6 +465,10 @@ async function executeJobBody(
 }
 
 export async function executeJob(job: ScheduledJob): Promise<void> {
+  if (isStrictTrustPolicy()) {
+    logger.info(`[Scheduler] Withholding ${job.jobName} execution under strict trust`);
+    return;
+  }
   // Reject new jobs once shutdown is requested
   if (shuttingDown) {
     logger.info(`[Scheduler] Skipping job ${job.jobName} -- shutting down`);

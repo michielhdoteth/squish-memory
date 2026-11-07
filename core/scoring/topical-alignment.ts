@@ -17,6 +17,26 @@
  *   null           -> either side could not be parsed; the caller stays
  *                     neutral. NEVER penalize what cannot be parsed.
  *
+ * WS2b entity-precedence rule: an entity is itself a PARSED piece of
+ * attribution evidence. When BOTH sides parse an entity and they name
+ * different subjects, the pair is judged cannot-answer (alignment 0) even
+ * when either ATTRIBUTE failed to map - a memory about Olga cannot answer a
+ * question about Renata, and a lexicon miss on either side must not re-open
+ * that door. Three principled exemptions keep it honest rather than
+ * overreaching:
+ *  - identity-shaped queries with no asked attribute ("What is X?",
+ *    q.attribute null) stay NEUTRAL - "cannot answer" is only a verdict
+ *    against a specific ask, and a relation mention may still define X;
+ *  - queries whose parsed entity is the OBJECT of the asked relation
+ *    (family C "Who <verb> <Entity>?", family G last-resort
+ *    "Which <thing> <relates> <Entity>?") keep the old attribute-gated
+ *    semantics - there the answer is by design a different entity;
+ *  - when the caller also passes the memory's raw content and it MENTIONS
+ *    the query entity outside the subject slot, the pair reads as the 0.7
+ *    partial tier (related, but not stated about the subject), not a hard 0.
+ * Missing attributes stay neutral for same-entity pairs, where the attribute
+ * comparison genuinely needs both sides.
+ *
  * First-person attribution rule (Batch B12-2b): a memory that OPENS with a
  * first-person marker ("My ...", "We ...", "I ...", "Our ...") carries its
  * implicit subject on its sleeve - the AUTHOR. That is positive evidence,
@@ -61,6 +81,17 @@ export interface QueryTopic {
    * ever set on memory-side topics; query topics leave it undefined.
    */
   firstPerson?: boolean;
+  /**
+   * Batch WS2b: which slot of the asked relation the parsed ENTITY occupies.
+   * 'object' is set by family C ("Who <verb> <Entity>?") and family G
+   * ("Which <thing> <relates> <Entity>?") - the stored name is the RECIPIENT
+   * of the relation and the expected answer is a different entity by design,
+   * so entity-mismatch precedence must not judge such pairs cannot-answer on
+   * attribution alone. Subject queries (every other family) leave it
+   * undefined: the parsed entity is the subject, and a memory naming a
+   * different subject is judged 0.
+   */
+  entityRole?: 'object';
 }
 
 const NULL_TOPIC: QueryTopic = { entity: null, attribute: null };
@@ -108,6 +139,10 @@ const ATTR_KEYWORDS: Readonly<Record<string, string>> = {
   device: 'phone',
   mobile: 'phone',
   use: 'phone',
+  // Batch WS2b: the software relation of a device - "Which app does X use?"
+  // and "X uses a budgeting app." state the same phone/device/software
+  // relation, so 'app' belongs in the existing bucket, not a new one.
+  app: 'phone',
   // current residence (deliberately NOT birth records)
   live: 'location',
   reside: 'location',
@@ -129,6 +164,9 @@ const ATTR_KEYWORDS: Readonly<Record<string, string>> = {
   employer: 'employer',
   job: 'employer',
   occupation: 'employer',
+  // Batch WS2b: 'profession' is the direct synonym of the existing
+  // 'occupation' in the same class as job/employ/workplace.
+  profession: 'employer',
   employ: 'employer',
   workplace: 'employer',
   // education
@@ -201,6 +239,19 @@ const ATTR_KEYWORDS: Readonly<Record<string, string>> = {
   car: 'car',
   drive: 'car',
   vehicle: 'car',
+  // Batch WS2b: product-brand attribute. Personal corpora state brands
+  // ("prefers the Moleskine brand", "stocks Brand X pods"), so "which brand"
+  // questions parse to a first-class bucket the content scan can verify.
+  brand: 'brand',
+  branded: 'brand',
+  manufacturer: 'brand',
+  // Inspections, expiry, and animal breed are answer relations in the
+  // unanswerable fixture set and common operational memories.
+  expire: 'expiration',
+  expiry: 'expiration',
+  expiration: 'expiration',
+  expires: 'expiration',
+  breed: 'breed',
   // money
   salary: 'salary',
   income: 'salary',
@@ -282,6 +333,9 @@ export const TOPIC_ATTRIBUTE_BUCKETS: readonly string[] = [
   'drink', 'sport', 'pace', 'team', 'car', 'salary', 'instrument', 'language', 'pet', 'collection', 'name', 'person',
   // Batch B12-4: kinship relations and guide/overseer relations.
   'family', 'mentorship',
+  // Batch WS2b: product-brand attribute (see ATTR_KEYWORDS).
+  'brand',
+  'expiration', 'breed',
 ];
 
 /**
@@ -459,8 +513,54 @@ export function parseQueryTopic(query: string): QueryTopic {
     if (run) {
       return { entity: run.text.toLowerCase(), attribute: normalizeQueryAttribute(tokenize(familyA.groups.np).map(t => t.raw)) };
     }
-    // Entity not a recognizable proper noun ("What do we use...?") -> stay silent.
-    return NULL_TOPIC;
+    // Preserve an explicitly asked-for relation when the grammatical
+    // subject is a common noun ("the office") rather than a proper name.
+    // If the lazy noun phrase swallowed an auxiliary ("What does Mireia do
+    // ...?"), this is a false family-A match; allow family A2 to parse it.
+    if (!/\b(?:does|do|did)\b/i.test(familyA.groups.np)) {
+      const attribute = normalizeQueryAttribute(tokenize(familyA.groups.np).map(t => t.raw));
+      return attribute !== null && (TOPIC_ATTRIBUTE_BUCKETS as readonly string[]).includes(attribute)
+        ? { entity: null, attribute }
+        : NULL_TOPIC;
+    }
+    // Batch WS2b: the lazy np can consume the FIRST auxiliary in
+    // "What does <Entity> do ...?" and strand the tail ("...do on weekends"),
+    // so a null run here does NOT mean the query is unparseable - it means
+    // family A mis-split it. Fall through to family A2, which owns the bare
+    // form; every later family still enforces the same proper-noun contract,
+    // so questions with genuinely unrecognizable entities ("What do we
+    // use...?") end at honest nulls exactly as before. Hard-returning here
+    // starved the B12-2b first-person rule and entity attribution of the
+    // entire "What does X do..." question family.
+  }
+
+  // Family D2: "What <attribute> is <entity/thing>?" without the optional
+  // article in family D. Keep the relation even when its subject is a common
+  // noun, and capture a leading proper name when present ("Hana's sister's
+  // dog" -> Hana).
+  const whatAttrIs = /^(?:what|which)\s+(?<attr>.+?)\s+(?:is|are)\s+(?<rest>.+)$/i.exec(text);
+  if (whatAttrIs?.groups) {
+    const restTokens = tokenize(whatAttrIs.groups.rest);
+    const run = capitalizedRunAt(restTokens, 0);
+    const attribute = normalizeQueryAttribute(tokenize(whatAttrIs.groups.attr).map(t => t.raw));
+    // This template is ambiguous for possessive attributes such as
+    // "What color is Kenji's car?" Keep the narrow relation families with an
+    // explicit content detector; other forms remain neutral until parsed by
+    // a dedicated grammar.
+    if (attribute === null || !['brand', 'breed'].includes(attribute)) return NULL_TOPIC;
+    return {
+      entity: run ? depossessQueryToken(run.text).toLowerCase() : null,
+      attribute,
+    };
+  }
+
+  // Time-framed operational questions often use a common-noun subject:
+  // "When does the extinguisher inspection expire?" There is no reliable
+  // entity attribution, but the requested relation can still gate confidence.
+  const whenDoes = /^when\s+(?:does|do|did|is|are|was|were)\s+(.+)$/i.exec(text);
+  if (whenDoes) {
+    const attribute = normalizeQueryAttribute(tokenize(whenDoes[1]).map(t => t.raw));
+    if (attribute !== whenDoes[1].toLowerCase()) return { entity: null, attribute };
   }
 
   // Family A2: "What does/do/did <Entity> <verb ...>?" - the bare form with
@@ -576,7 +676,13 @@ export function parseQueryTopic(query: string): QueryTopic {
       }
     }
     const entity = afterVerbRun ?? lastRun;
-    if (entity) return { entity: entity.toLowerCase(), attribute: verbBucket ?? 'person' };
+    // Batch WS2b: family C's capitalized run is the OBJECT of the asked
+    // relation ("Who mentors Fatima?" -> fatima is mentored; the ANSWER is a
+    // different person). Tagging the role keeps entity-mismatch precedence
+    // (which judges WRONG-SUBJECT memories) from misfiring on these: for
+    // object-role queries a memory naming another entity is exactly what a
+    // correct answer looks like, so only the attribute-gated path applies.
+    if (entity) return { entity: entity.toLowerCase(), attribute: verbBucket ?? 'person', entityRole: 'object' };
     return { entity: null, attribute: verbBucket ?? 'person' };
   }
 
@@ -625,7 +731,10 @@ export function parseQueryTopic(query: string): QueryTopic {
         if (!run) continue;
         const preWords = midTokens.slice(0, i).map(t => stripPunct(t.raw));
         const attribute = preWords.length > 0 ? normalizeQueryAttribute(preWords) : null;
-        return { entity: run.text.toLowerCase(), attribute };
+        // Batch WS2b: family G's capitalized run sits INSIDE the relation
+        // phrase ("Which project depends on PaperTrail...") - the queried
+        // thing answers the relation, PaperTrail is its object. Object role.
+        return { entity: run.text.toLowerCase(), attribute, entityRole: 'object' };
       }
     }
   }
@@ -782,6 +891,22 @@ export function topicsAboutSameEntity(a: string, b: string): boolean {
 }
 
 /**
+ * Case-insensitive whole-phrase mention scan (word boundaries, no prefix
+ * matching). Used by the entity-precedence softener: a memory whose TEXT
+ * mentions the queried entity outside the subject slot ("Project Borealis
+ * is the benchmark built with Nordwind Energy") is related coverage, not a
+ * wrong-subject answer - it must not take the full mismatch discount, nor
+ * the full neutral pass. Pure + deterministic.
+ */
+export function contentMentionsEntity(content: string, entity: string): boolean {
+  if (!content || !entity) return false;
+  const phrase = entity.trim().toLowerCase();
+  if (!phrase || /[^\p{L}\p{N}' ]/u.test(phrase)) return false; // only plain word phrases
+  const boundary = new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+  return boundary.test(content);
+}
+
+/**
  * Compare a parsed query topic against a parsed memory topic.
  *
  * First-person rule (Batch B12-2b): a memory that opens with a first-person
@@ -791,19 +916,44 @@ export function topicsAboutSameEntity(a: string, b: string): boolean {
  * about itself) stays null: self-queries may legitimately be answered by
  * first-person memories.
  *
+ * Entity-precedence rule (Batch WS2b): both entities parsed + different
+ * subjects -> judged cannot-answer (0) even when an attribute is missing
+ * (positive attribution evidence beats a lexicon gap). Exempt: identity
+ * queries (no asked attribute) and object-role query entities (families C/G)
+ * keep the attribute-gated semantics; if memoryContent is provided and the
+ * memory text mentions the query entity, the verdict softens to 0.7 partial.
+ *
  * Otherwise returns null whenever either side lacks entity or attribute -
  * absence of evidence is never treated as mismatch. Only fully-parsed pairs
  * receive a 0 / 0.7 / 1 verdict (see module header for the truth table).
  */
-export function topicalAlignment(q: QueryTopic, m: QueryTopic): number | null {
+export function topicalAlignment(q: QueryTopic, m: QueryTopic, memoryContent?: string): number | null {
   if (!q || !m) return null;
   // Batch B12-2b first-person attribution rule. Ordered BEFORE the parse
   // gate on purpose: first-person phrasing is evidence ABOUT attribution,
   // so it converts what used to be an unjudgeable null into a verdict.
   if (m.firstPerson === true && q.entity !== null) return 0;
+
+  // Batch WS2b entity-precedence: both subjects parsed, different subjects,
+  // the query actually ASKS for something (attribute non-null), and the
+  // parsed entity is the query's SUBJECT (not a family-C/G object) -> judged
+  // cannot-answer regardless of attribute parsing. A content mention of the
+  // query entity outside the subject slot softens this to partial (0.7):
+  // related coverage, not a stated answer, not a hard mismatch.
+  if (
+    q.entity !== null &&
+    m.entity !== null &&
+    q.attribute !== null &&
+    q.entityRole !== 'object' &&
+    !topicsAboutSameEntity(q.entity, m.entity)
+  ) {
+    if (typeof memoryContent === 'string' && contentMentionsEntity(memoryContent, q.entity)) return 0.7;
+    return 0;
+  }
+
   if (q.entity === null || m.entity === null || q.attribute === null || m.attribute === null) return null;
 
-  if (!topicsAboutSameEntity(q.entity, m.entity)) return 0; // wrong subject entirely
+  if (!topicsAboutSameEntity(q.entity, m.entity)) return 0; // wrong subject entirely (attribute-gated path: object-role pairs keep the old semantics)
 
   const qa = q.attribute.toLowerCase();
   const ma = m.attribute.toLowerCase();

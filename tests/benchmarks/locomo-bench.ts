@@ -1,4 +1,4 @@
 /**
- * @deprecated Moved to bench/runners/locomo.ts. This file re-exports for backward compatibility.
+ * @deprecated Moved to benchmark/runners/locomo.ts. This file re-exports for backward compatibility.
  */
-export { runLoCoMoBenchmark } from '../../bench/runners/locomo.js';
+export { runLoCoMoBenchmark } from '../../benchmark/runners/locomo.js';

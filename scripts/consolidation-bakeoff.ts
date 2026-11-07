@@ -52,34 +52,43 @@ interface Seed {
   truth: string;
 }
 
-const TOPIC_A = [
+/**
+ * One corpus row, as a `[content, tags]` tuple. The annotation matters: a bare
+ * array literal infers as `(string | string[])[]`, which is not assignable to
+ * `push()`'s `Array<[string, string[]]>` parameter and loses the per-element
+ * types when destructured. Annotating here keeps every corpus array a tuple
+ * array at its source, so no call site needs a cast.
+ */
+type CorpusRow = [string, string[]];
+
+const TOPIC_A: CorpusRow[] = [
   ['We chose PostgreSQL as the main datastore for the service', ['database', 'decision']],
   ['Postgres won the database decision for our main datastore', ['db', 'choices']],
   ['The team picked PostgreSQL when selecting the primary datastore', ['postgres', 'architecture']],
   ['Decision recorded: PostgreSQL is the datastore we run in production', ['decisions', 'storage']],
 ];
-const TOPIC_B = [
+const TOPIC_B: CorpusRow[] = [
   ['Kafka was rejected for the event pipeline because of operating cost', ['kafka', 'eventing']],
   ['We dropped Kafka from the event pipeline after costing the ops burden', ['messaging', 'cost']],
   ['The event pipeline will not use Kafka; running it was judged too expensive', ['event-bus', 'decision']],
   ['Reason Kafka is out: operational cost of the event pipeline', ['infrastructure']],
 ];
-const TOPIC_C = [
+const TOPIC_C: CorpusRow[] = [
   ['New engineers follow the onboarding runbook in week one', ['people', 'onboarding']],
   ['Week one onboarding follows the runbook for new engineers', ['hiring']],
   ['The onboarding runbook is the checklist every new engineer starts with', ['docs', 'checklist']],
   ['First-week checklist for new engineers lives in the onboarding runbook', ['process']],
 ];
-const VERBATIM = [
+const VERBATIM: CorpusRow[] = [
   ['Deploy failed because the DATABASE_URL env var was missing in staging', ['deploy', 'incident']],
   ['Deploy failed because the DATABASE_URL env var was missing in staging', ['deploy', 'incident']],
   ['Deploy failed since the DATABASE_URL env var was missing in staging.', ['deploy', 'staging']],
 ];
-const CONTRADICTION = [
+const CONTRADICTION: CorpusRow[] = [
   ['Redis stays as the session cache after the Postgres evaluation', ['redis', 'session-cache']],
   ['Redis was removed in favor of Postgres for the session cache', ['cache', 'migration']],
 ];
-const SINGLETONS = [
+const SINGLETONS: CorpusRow[] = [
   ['Design review for the billing page is scheduled for Friday', ['design']],
   ['The mobile app targets iOS 17 as the minimum supported version', ['mobile']],
   ['Customer escalation POL-2211 was resolved with a refund', ['support']],
@@ -125,6 +134,9 @@ async function seedProject(dataDir: string): Promise<string> {
   const { estimateTokens } = await import('../core/context/context-window.js');
 
   const project = await ensureProject('bakeoff');
+  // The declared return type is `ProjectRecord | null`; a null here would
+  // otherwise surface as an opaque "cannot read properties of null" later.
+  if (!project) throw new Error('ensureProject("bakeoff") returned no project record');
   const projectId = project.id;
   const { db, schema } = await getDbClient();
   const old = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000); // 120 days ago

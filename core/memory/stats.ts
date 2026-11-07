@@ -3,7 +3,7 @@
  * Provides memory usage statistics for CLI and MCP
  */
 
-import { eq, sql, asc, desc } from 'drizzle-orm';
+import { eq, and, sql, asc, desc } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { config } from '../../config.js';
@@ -11,9 +11,19 @@ import { getProjectByPath } from '../../core/projects.js';
 import { createDatabaseClient } from '../storage/database.js';
 import { getProjectSignalStats } from '../session/working-set.js';
 import { logger } from '../logger.js';
+import { getMemoryAssociationRows } from '../associations.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 
 export interface MemoryStats {
   totalMemories: number;
+  /**
+   * Live durable memories: rows in this project that are still active.
+   * Unlike the working-set signal counter (stats.signal.durable), which is
+   * an append-only capture count that never decreases on delete/merge/supersede,
+   * this is a live row count and can therefore never exceed totalMemories.
+   */
+  durableMemories?: number;
   byType: Record<string, number>;
   totalNotes: number;
   notesByCategory: Record<string, number>;
@@ -40,6 +50,10 @@ export interface MemoryStats {
  * Get memory statistics for a project
  */
 export async function getMemoryStats(projectPath?: string): Promise<MemoryStats> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface('memory_statistics', 'memory', 'Unscoped memory statistics are disabled under strict trust');
+  }
+
   let db: any;
   try {
     db = createDatabaseClient(await getDb());
@@ -54,6 +68,7 @@ export async function getMemoryStats(projectPath?: string): Promise<MemoryStats>
     // No project registered yet — return empty stats instead of throwing
     return {
       totalMemories: 0,
+      durableMemories: 0,
       byType: {},
       totalNotes: 0,
       notesByCategory: {},
@@ -86,9 +101,19 @@ export async function getMemoryStats(projectPath?: string): Promise<MemoryStats>
 
     stats.totalMemories = countResult.length;
 
+    // Live durable count: still-active memory rows in this project.
+    // (signal.durable below is the cumulative capture counter - it inflates
+    // past this whenever a memory is deleted or merged away.)
+    const durableCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.memories)
+      .where(and(eq(schema.memories.projectId, project.id), eq(schema.memories.isActive, true)));
+
+    stats.durableMemories = Number(durableCount[0]?.count ?? 0);
+
     // Count by type - get all and count in memory
     const allMemories = await db
-      .select({ type: schema.memories.type })
+      .select({ id: schema.memories.id, type: schema.memories.type })
      .from(schema.memories)
      .where(eq(schema.memories.projectId, project.id));
 
@@ -144,18 +169,9 @@ export async function getMemoryStats(projectPath?: string): Promise<MemoryStats>
       stats.learningsByType[type] = (stats.learningsByType[type] || 0) + 1;
     }
 
-    // Links
-    // Links are scoped via their associated memories
-    // SQLite - get all and filter in memory
-    const allLinks = await db
-      .select({
-        fromProjectId: schema.memories.projectId,
-        toProjectId: schema.memories.projectId
-      })
-      .from(schema.memoryAssociations)
-      .innerJoin(schema.memories, eq(schema.memoryAssociations.fromMemoryId, schema.memories.id))
-      .where(project ? eq(schema.memories.projectId, project.id) : undefined);
-    stats.totalLinks = allLinks.length;
+    const projectMemoryIds = new Set<string>(allMemories.map((memory: { id: string }) => memory.id));
+    stats.totalLinks = (await getMemoryAssociationRows())
+      .filter((association) => projectMemoryIds.has(association.fromMemoryId)).length;
 
   } catch (error) {
     // Return empty stats on error

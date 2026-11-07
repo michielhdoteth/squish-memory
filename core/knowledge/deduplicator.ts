@@ -66,20 +66,10 @@ async function mergeKnowledge(
   keep: Knowledge,
   supersede: Knowledge,
 ): Promise<void> {
-  // Merge tags
+  // Merge tags (Knowledge.tags is a parsed string[] since the read-boundary fix)
   const allTags = new Set<string>();
-  if (keep.tags) {
-    try {
-      const tags: string[] = JSON.parse(keep.tags);
-      for (const tag of tags) allTags.add(tag);
-    } catch { /* ignore */ }
-  }
-  if (supersede.tags) {
-    try {
-      const tags: string[] = JSON.parse(supersede.tags);
-      for (const tag of tags) allTags.add(tag);
-    } catch { /* ignore */ }
-  }
+  for (const tag of keep.tags ?? []) allTags.add(tag);
+  for (const tag of supersede.tags ?? []) allTags.add(tag);
 
   // Merge metadata
   const mergedMetadata = { ...(keep.metadata ?? {}), ...(supersede.metadata ?? {}) };
@@ -165,18 +155,32 @@ export async function deduplicateKnowledge(
     limit: 500,
   });
 
+  // Memory knowledge rows are projections of authoritative `memories` rows.
+  // This legacy merger only edits knowledge and cannot safely revise the
+  // source row, its provenance, indexes, or lifecycle edges.
+  if (kind === 'memory') {
+    return { merged: 0, kept: knowledge.map((record) => record.id) };
+  }
+
+  // Provenance envelopes authenticate evidence and lineage in metadata. A
+  // merge changes that metadata and cannot be re-signed without the source
+  // owner and signing key, so only unsigned standalone records are eligible.
+  const mergeable = knowledge.filter((record) => !Object.hasOwn(record.metadata ?? {}, '__squishProvenance'));
+
   const processed = new Set<string>();
-  const kept: string[] = [];
+  const kept: string[] = knowledge
+    .filter((record) => Object.hasOwn(record.metadata ?? {}, '__squishProvenance'))
+    .map((record) => record.id);
   let merged = 0;
 
-  for (let i = 0; i < knowledge.length; i++) {
-    const a = knowledge[i];
+  for (let i = 0; i < mergeable.length; i++) {
+    const a = mergeable[i];
     if (processed.has(a.id)) continue;
 
     // Find all records similar to this one
     const similar: string[] = [];
-    for (let j = i + 1; j < knowledge.length; j++) {
-      const b = knowledge[j];
+    for (let j = i + 1; j < mergeable.length; j++) {
+      const b = mergeable[j];
       if (processed.has(b.id)) continue;
 
       const similarity = computeSimilarity(a, b);
@@ -187,7 +191,7 @@ export async function deduplicateKnowledge(
 
     if (similar.length > 0) {
       // Find the record with highest confidence among the group
-      const group = [a, ...knowledge.filter((s) => similar.includes(s.id))];
+      const group = [a, ...mergeable.filter((s) => similar.includes(s.id))];
       const best = group.reduce((prev, curr) =>
         (curr.confidence > prev.confidence) ? curr : prev,
       );

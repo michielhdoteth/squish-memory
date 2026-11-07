@@ -219,6 +219,21 @@ describe('finalScore identity and serving modes', () => {
     expect(v2[1].similarity).toBeCloseTo(0.99, 6);
   });
 
+  it('preserves unclamped composite order when distinct scores both clamp to one', () => {
+    const lexicallyFirst = initScoreFields([{
+      ...makeResult({ id: 'a', content: 'alpha' }), similarity: 0.80,
+    }])[0];
+    const lexicallyLast = initScoreFields([{
+      ...makeResult({ id: 'z', content: 'zeta' }), similarity: 0.90,
+    }])[0];
+    const lowerComposite = addBoost(lexicallyFirst, 'temporal', 0.30);
+    const higherComposite = addBoost(lexicallyLast, 'temporal', 0.30);
+
+    const served = finalizeScores([lowerComposite, higherComposite], true);
+    expect(served.map((row) => row.content)).toEqual(['zeta', 'alpha']);
+    expect(served.map((row) => row.finalScore)).toEqual([1, 1]);
+  });
+
   it('replacement (reranker) keeps the three-field identity via rerankResidual', () => {
     const r = initScoreFields([makeResult({ similarity: 0.90 })])[0];
     const replaced = applyReplacement(r, 0.42);

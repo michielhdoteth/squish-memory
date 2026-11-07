@@ -5,10 +5,9 @@
  * Strengthens useful paths, prunes stale nodes, tunes edge weights.
  */
 
-import { eq, and, sql } from 'drizzle-orm';
-import { getDb } from '../../db/index.js';
-import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
+import { adjustAssociationsForMemory } from '../associations.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -32,6 +31,8 @@ export interface FeedbackStats {
 // ─── In-Memory Feedback Buffer ───────────────────────────────────────────────
 
 const feedbackBuffer = new Map<string, RetrievalFeedback[]>();
+const invalidatedFeedback = new WeakSet<RetrievalFeedback>();
+const inFlightSnapshots = new Set<Map<string, RetrievalFeedback[]>>();
 const MAX_BUFFER_SIZE = 1000;
 const FLUSH_INTERVAL_MS = 60000; // 1 minute
 
@@ -46,6 +47,7 @@ export function recordFeedback(
   query: string,
   options?: { sessionId?: string }
 ): void {
+  if (isStrictTrustPolicy()) return;
   const key = options?.sessionId || 'default';
   const buffer = feedbackBuffer.get(key) || [];
 
@@ -78,6 +80,7 @@ export function recordUsefulRetrieval(
     sessionId?: string;
   }
 ): void {
+  if (isStrictTrustPolicy()) return;
   const key = options?.sessionId || 'default';
   const buffer = feedbackBuffer.get(key) || [];
 
@@ -113,6 +116,7 @@ export async function recordCitation(
   responseId: string,
   options?: { sessionId?: string; relevance?: number; answerConfidence?: number }
 ): Promise<void> {
+  if (isStrictTrustPolicy()) return;
   const key = options?.sessionId || 'default';
   const buffer = feedbackBuffer.get(key) || [];
 
@@ -145,6 +149,7 @@ export async function recordCitation(
  * Get feedback statistics for a specific memory.
  */
 export function getRetrievalStats(memoryId: string): FeedbackStats {
+  if (isStrictTrustPolicy()) return emptyFeedbackStats();
   let totalRetrievals = 0;
   let usefulRetrievals = 0;
   let citedRetrievals = 0;
@@ -172,6 +177,7 @@ export function getRetrievalStats(memoryId: string): FeedbackStats {
  * Get overall feedback statistics.
  */
 export function getOverallFeedbackStats(): FeedbackStats {
+  if (isStrictTrustPolicy()) return emptyFeedbackStats();
   let totalRetrievals = 0;
   let usefulRetrievals = 0;
   let citedRetrievals = 0;
@@ -193,6 +199,36 @@ export function getOverallFeedbackStats(): FeedbackStats {
   };
 }
 
+/** Remove buffered query/feedback records for memories that were revised or erased. */
+export function evictMemoriesFromRetrievalFeedback(memoryIds: readonly string[]): number {
+  const ids = new Set(memoryIds);
+  if (ids.size === 0) return 0;
+  let removed = 0;
+  for (const [sessionId, buffer] of feedbackBuffer) {
+    const retained = buffer.filter((feedback) => {
+      if (!ids.has(feedback.memoryId)) return true;
+      if (!invalidatedFeedback.has(feedback)) {
+        invalidatedFeedback.add(feedback);
+        removed++;
+      }
+      return false;
+    });
+    if (retained.length === 0) feedbackBuffer.delete(sessionId);
+    else if (retained.length !== buffer.length) feedbackBuffer.set(sessionId, retained);
+  }
+  for (const snapshot of inFlightSnapshots) {
+    for (const buffer of snapshot.values()) {
+      for (const feedback of buffer) {
+        if (ids.has(feedback.memoryId) && !invalidatedFeedback.has(feedback)) {
+          invalidatedFeedback.add(feedback);
+          removed++;
+        }
+      }
+    }
+  }
+  return removed;
+}
+
 /**
  * Flush feedback to the database, updating association weights.
  */
@@ -201,12 +237,14 @@ export async function flushFeedback(): Promise<{
   weakened: number;
   total: number;
 }> {
-  const db = await getDb();
-  const schema = await getSchema();
-
+  if (isStrictTrustPolicy()) {
+    feedbackBuffer.clear();
+    return { strengthened: 0, weakened: 0, total: 0 };
+  }
   // Swap-and-flush: snapshot current buffer, replace with empty map
   // so new writes during flush go to the new map (no lost updates)
   const snapshot = new Map(feedbackBuffer);
+  inFlightSnapshots.add(snapshot);
   feedbackBuffer.clear();
 
   let strengthened = 0;
@@ -215,40 +253,19 @@ export async function flushFeedback(): Promise<{
 
   for (const [, buffer] of snapshot) {
     for (const feedback of buffer) {
+      if (invalidatedFeedback.has(feedback)) continue;
       total++;
 
       try {
-        // Get associations involving this memory
-        const associations = await (db as any)
-          .select()
-          .from(schema.memoryAssociations)
-          .where(
-            sql`${schema.memoryAssociations.fromMemoryId} = ${feedback.memoryId} OR ${schema.memoryAssociations.toMemoryId} = ${feedback.memoryId}`
-          );
-
-        for (const assoc of associations) {
-          if (feedback.wasUseful) {
-            // Strengthen: increase weight and coactivation count
-            await (db as any)
-              .update(schema.memoryAssociations)
-              .set({
-                weight: sql`${schema.memoryAssociations.weight} + 1`,
-                coactivationCount: sql`${schema.memoryAssociations.coactivationCount} + 1`,
-                lastCoactivatedAt: new Date(),
-              })
-              .where(eq(schema.memoryAssociations.id, assoc.id));
-            strengthened++;
-          } else {
-            // Weaken: decrease weight slightly (but don't go below 1)
-            await (db as any)
-              .update(schema.memoryAssociations)
-              .set({
-                weight: sql`GREATEST(${schema.memoryAssociations.weight} - 0.5, 1)`,
-              })
-              .where(eq(schema.memoryAssociations.id, assoc.id));
-            weakened++;
-          }
-        }
+        const updated = await adjustAssociationsForMemory(
+          feedback.memoryId,
+          feedback.wasUseful ? 1 : -0.5,
+          1,
+          feedback.wasUseful,
+          () => !invalidatedFeedback.has(feedback),
+        );
+        if (feedback.wasUseful) strengthened += updated;
+        else weakened += updated;
       } catch (error) {
         logger.debug('Error updating association weights', {
           memoryId: feedback.memoryId,
@@ -259,6 +276,7 @@ export async function flushFeedback(): Promise<{
   }
 
   logger.info('Feedback flushed', { strengthened, weakened, total });
+  inFlightSnapshots.delete(snapshot);
 
   return { strengthened, weakened, total };
 }
@@ -289,4 +307,8 @@ export function stopFeedbackFlushTimer(): void {
     flushTimer = null;
     logger.info('Feedback flush timer stopped');
   }
+}
+
+function emptyFeedbackStats(): FeedbackStats {
+  return { totalRetrievals: 0, usefulRetrievals: 0, citedRetrievals: 0, usefulnessRate: 0, citationRate: 0 };
 }

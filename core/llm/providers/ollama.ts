@@ -9,6 +9,7 @@ import { config } from '../../../config.js';
 import { logger } from '../../logger.js';
 import { validateOutboundUrl } from '../../lib/url-validator.js';
 import type { LLMProvider, LLMCallOptions } from '../types.js';
+import { reportLLMTokenUsage } from '../usage.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -16,17 +17,21 @@ export const ollamaProvider: LLMProvider = {
   name: 'ollama',
 
   isAvailable(): boolean {
-    return config.llmEnabled && Boolean(config.ollamaUrl);
+    // "Configured" check only: the master SQUISH_LLM_ENABLED switch lives in
+    // the client router (getActiveProvider), so the decision layer can reuse
+    // this provider with its own independent opt-in.
+    return Boolean(config.ollamaUrl);
   },
 
   async call(options: LLMCallOptions): Promise<string | null> {
     if (!this.isAvailable()) return null;
 
     const baseUrl = config.ollamaUrl || 'http://localhost:11434';
-    const model = config.llmExtractionModel;
+    const model = options.model ?? config.llmExtractionModel;
     if (!model) return null;
 
     const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
     const timeout = setTimeout(
       () => controller.abort(),
       options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -65,7 +70,7 @@ export const ollamaProvider: LLMProvider = {
             num_predict: options.maxTokens ?? 300,
           },
         }),
-        signal: controller.signal,
+        signal,
       });
 
       clearTimeout(timeout);
@@ -77,7 +82,10 @@ export const ollamaProvider: LLMProvider = {
 
       const data = (await response.json()) as {
         message?: { content?: string };
+        prompt_eval_count?: unknown;
+        eval_count?: unknown;
       };
+      reportLLMTokenUsage(options, data, { inputTokens: 'prompt_eval_count', outputTokens: 'eval_count' });
       return data.message?.content?.trim() ?? null;
     } catch (err: unknown) {
       clearTimeout(timeout);

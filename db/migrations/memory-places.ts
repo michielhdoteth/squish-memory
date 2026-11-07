@@ -13,7 +13,7 @@ export async function runMemoryPlacesMigrations(sqlite: Database): Promise<void>
   if (!memoryPlacesTableCheck) return;
 
   const memoryPlacesInfo = sqlite.prepare("PRAGMA table_info(memory_places)").all() as Array<{ name: string; notnull: number }>;
-  const existingMemoryPlacesColumns = new Set(memoryPlacesInfo.map(col => col.name));
+  let existingMemoryPlacesColumns = new Set(memoryPlacesInfo.map(col => col.name));
 
   // v1.5.0: Check if place_id is NOT NULL - if so, we need to recreate the table
   // because the new schema uses place_type instead of place_id as the primary routing column
@@ -22,25 +22,26 @@ export async function runMemoryPlacesMigrations(sqlite: Database): Promise<void>
   );
 
   if (placeIdNotNull) {
-    // Recreate memory_places with the v1.5.0 schema
+    // Recreate memory_places atomically. A failed copy or index build must
+    // leave the legacy source table intact so startup can be retried safely.
     logger.info('[Migration] Recreating memory_places table for v1.5.0 multi-place routing...');
-    
-    // 1. Create new table with correct schema
-    sqlite.exec(`
-      CREATE TABLE IF NOT EXISTS memory_places_new (
-        id TEXT PRIMARY KEY,
-        memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-        place_type TEXT NOT NULL,
-        weight REAL NOT NULL DEFAULT 1.0,
-        reason TEXT,
-        source TEXT NOT NULL DEFAULT 'heuristic',
-        is_primary INTEGER DEFAULT 0,
-        created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
-      )
-    `);
 
-    // 2. Copy existing data, resolving placeId -> placeType
-    try {
+    const migrate = sqlite.transaction(() => {
+      sqlite.exec(`
+        CREATE TABLE memory_places_new (
+          id TEXT PRIMARY KEY,
+          memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+          place_type TEXT NOT NULL,
+          weight REAL NOT NULL DEFAULT 1.0,
+          reason TEXT,
+          source TEXT NOT NULL DEFAULT 'heuristic',
+          is_primary INTEGER DEFAULT 0,
+          created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
+          place_sort_order INTEGER DEFAULT 0
+        )
+      `);
+
+      const sourceCount = (sqlite.prepare('SELECT COUNT(*) AS count FROM memory_places').get() as { count: number }).count;
       sqlite.exec(`
         INSERT INTO memory_places_new (id, memory_id, place_type, weight, source, is_primary, created_at)
         SELECT
@@ -54,23 +55,26 @@ export async function runMemoryPlacesMigrations(sqlite: Database): Promise<void>
         FROM memory_places mp
         LEFT JOIN places p ON mp.place_id = p.id
       `);
-    } catch (e) {
-      logger.debug(`[Migration] Memory places data copy: ${e}`);
-    }
+      const copiedCount = (sqlite.prepare('SELECT COUNT(*) AS count FROM memory_places_new').get() as { count: number }).count;
+      if (copiedCount !== sourceCount) {
+        throw new Error(`Memory places migration count mismatch: ${sourceCount} source rows, ${copiedCount} copied rows`);
+      }
 
-    // 3. Drop old table and rename new
-    sqlite.exec('DROP TABLE IF EXISTS memory_places');
-    sqlite.exec('ALTER TABLE memory_places_new RENAME TO memory_places');
+      sqlite.exec('DROP TABLE memory_places');
+      sqlite.exec('ALTER TABLE memory_places_new RENAME TO memory_places');
 
-    // 4. Recreate indexes
-    sqlite.exec('CREATE INDEX IF NOT EXISTS memory_places_memory_idx ON memory_places(memory_id)');
-    sqlite.exec('CREATE INDEX IF NOT EXISTS memory_places_place_type_idx ON memory_places(place_type)');
-    sqlite.exec('CREATE INDEX IF NOT EXISTS memory_places_place_weight_idx ON memory_places(place_type, weight)');
-    sqlite.exec('CREATE INDEX IF NOT EXISTS memory_places_memory_primary_idx ON memory_places(memory_id, is_primary)');
-    sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS memory_places_unique ON memory_places(memory_id, place_type, source)');
+      sqlite.exec('CREATE INDEX memory_places_memory_idx ON memory_places(memory_id)');
+      sqlite.exec('CREATE INDEX memory_places_place_type_idx ON memory_places(place_type)');
+      sqlite.exec('CREATE INDEX memory_places_place_weight_idx ON memory_places(place_type, weight)');
+      sqlite.exec('CREATE INDEX memory_places_memory_primary_idx ON memory_places(memory_id, is_primary)');
+      sqlite.exec('CREATE UNIQUE INDEX memory_places_unique ON memory_places(memory_id, place_type, source)');
+    });
+    migrate.immediate();
+    existingMemoryPlacesColumns = new Set(
+      (sqlite.prepare('PRAGMA table_info(memory_places)').all() as Array<{ name: string }>).map((column) => column.name)
+    );
 
     logger.info('[Migration] memory_places table recreated for v1.5.0');
-    return; // Skip individual column migrations below
   }
 
   // Standard column migrations for tables that already have the new schema

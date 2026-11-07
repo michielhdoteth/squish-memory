@@ -1,0 +1,7 @@
+{
+  "name": "squish-memory-codex-plugin",
+  "version": "2.2.0",
+  "description": "Squish Memory plugin for Codex - uses the installed squish CLI for memory actions",
+  "type": "module",
+  "main": "index.ts"
+}

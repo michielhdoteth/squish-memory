@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const repoRoot = join(import.meta.dir, '..', '..');
 const runtimeExecutable = process.execPath;
@@ -25,6 +26,7 @@ function readConfig(env: Record<string, string>) {
             ollamaEmbeddingModel: config.ollamaEmbeddingModel,
             lmStudioEmbeddingModel: config.lmStudioEmbeddingModel,
             transformersLocalModel: config.transformersLocalModel,
+            localEmbeddingDevice: config.localEmbeddingDevice,
             llmExtractionModel: config.llmExtractionModel,
             llmReasoningModel: config.llmReasoningModel,
             llmEnabled: config.llmEnabled,
@@ -50,6 +52,7 @@ function readConfig(env: Record<string, string>) {
           SQUISH_OLLAMA_EMBEDDING_MODEL: '',
           SQUISH_LM_STUDIO_EMBEDDING_MODEL: '',
           SQUISH_LOCAL_MODEL: '',
+          SQUISH_LOCAL_EMBEDDING_DEVICE: 'cpu',
           SQUISH_LLM_EXTRACTION_MODEL: '',
           SQUISH_LLM_REASONING_MODEL: '',
           ...env,
@@ -64,19 +67,29 @@ function readConfig(env: Record<string, string>) {
   }
 }
 
+/**
+ * Runs a child process in the given cwd that reports the resolved data
+ * directory with and without directory creation.
+ *
+ * The config module is imported through an absolute file URL so the child can
+ * run from an arbitrary project directory — which is exactly the situation the
+ * data-directory rules must hold in: a CLI or MCP process launched from some
+ * workspace, not from the package itself.
+ */
 function inspectDataDir(cwd: string, env: Record<string, string> = {}) {
-  const result = spawnSync(
+  const configUrl = pathToFileURL(join(repoRoot, 'config.ts')).href;
+  const script = [
+    `const { config, getDataDir, globalDataDir } = await import(${JSON.stringify(configUrl)});`,
+    'console.log(JSON.stringify({',
+    '  dataDir: config.dataDir,',
+    '  ensuredDataDir: getDataDir(),',
+    '  globalDir: globalDataDir(),',
+    '}));',
+  ].join('\n');
+
+  return spawnSync(
     runtimeExecutable,
-    [
-      '-e',
-      `
-        import { config, getDataDir } from './config.ts';
-        console.log(JSON.stringify({
-          dataDir: config.dataDir,
-          ensuredDataDir: getDataDir()
-        }));
-      `,
-    ],
+    ['-e', script],
     {
       cwd,
       encoding: 'utf8',
@@ -85,50 +98,13 @@ function inspectDataDir(cwd: string, env: Record<string, string> = {}) {
         DATABASE_URL: '',
         SUPABASE_URL: '',
         NEON_PROJECT_ID: '',
+        // setup-batch4 pins SQUISH_DATA_DIR in the test runner process; that
+        // value must not leak into the child unless a test passes one.
+        SQUISH_DATA_DIR: '',
         ...env,
       },
     },
   );
-
-  return result;
-}
-
-async function loadDataDirSnapshot(
-  cwd: string,
-  env: Record<string, string> = {},
-  options: { ensureExists?: boolean } = {},
-) {
-  const previousCwd = process.cwd();
-  const previousEnv = { ...process.env };
-
-  process.chdir(cwd);
-  delete process.env.SQUISH_DATA_DIR;
-
-  Object.assign(process.env, {
-    DATABASE_URL: '',
-    SUPABASE_URL: '',
-    NEON_PROJECT_ID: '',
-    ...env,
-  });
-
-  try {
-    const module = await import(`../../config.ts?case=${Date.now()}-${Math.random()}`);
-    const snapshot: { dataDir: string; ensuredDataDir?: string } = {
-      dataDir: module.config.dataDir as string,
-    };
-
-    if (options.ensureExists) {
-      snapshot.ensuredDataDir = module.getDataDir() as string;
-    }
-
-    return snapshot;
-  } finally {
-    process.chdir(previousCwd);
-    for (const key of Object.keys(process.env)) {
-      delete process.env[key];
-    }
-    Object.assign(process.env, previousEnv);
-  }
 }
 
 describe('launch config defaults and overrides', () => {
@@ -151,6 +127,38 @@ describe('launch config defaults and overrides', () => {
     expect(config.nestedLlmEnabled).toBe(false);
     expect(config.graphAutoBuild).toBe(true);
     expect(config.nestedGraphAutoBuild).toBe(true);
+    expect(config.localEmbeddingDevice).toBe('cpu');
+  });
+
+  test('explicit WebGPU selection reaches resolved config', () => {
+    const config = readConfig({ SQUISH_LOCAL_EMBEDDING_DEVICE: 'webgpu' });
+    expect(config.localEmbeddingDevice).toBe('webgpu');
+  });
+
+  test('unsupported local embedding devices fail instead of silently using CPU', () => {
+    const tempDataDir = mkdtempSync(join(tmpdir(), 'squish-config-device-'));
+    try {
+      const result = spawnSync(
+        runtimeExecutable,
+        ['-e', "import { config } from './config.ts'; console.log(config.localEmbeddingDevice);"],
+        {
+          cwd: repoRoot,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            DATABASE_URL: '',
+            SUPABASE_URL: '',
+            NEON_PROJECT_ID: '',
+            SQUISH_DATA_DIR: tempDataDir,
+            SQUISH_LOCAL_EMBEDDING_DEVICE: 'cuda',
+          },
+        },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('SQUISH_LOCAL_EMBEDDING_DEVICE must be "cpu" or "webgpu"');
+    } finally {
+      rmSync(tempDataDir, { recursive: true, force: true });
+    }
   });
 
   test('mode is always local in OSS', () => {
@@ -224,24 +232,94 @@ describe('launch config defaults and overrides', () => {
     expect(config.llmReasoningModel).toBe('example-reasoning-model');
   });
 
-  test('relative data dir resolves absolutely without import-time filesystem writes', async () => {
-    const tempWorkspace = mkdtempSync(join(tmpdir(), 'squish-data-dir-'));
-    const expectedDataDir = join(tempWorkspace, '.squish');
+  test(
+    'data dir defaults to global and no .squish is created in the project directory',
+    () => {
+      const tempHome = mkdtempSync(join(tmpdir(), 'squish-data-home-'));
+      const tempProject = mkdtempSync(join(tmpdir(), 'squish-data-dir-'));
+      try {
+        const result = inspectDataDir(tempProject, {
+          HOME: tempHome,
+          USERPROFILE: tempHome,
+          SQUISH_WORKING_DIRECTORY: tempProject,
+        });
 
-    try {
-      expect(existsSync(expectedDataDir)).toBe(false);
+        expect(result.status).toBe(0);
+        const snapshot = JSON.parse(result.stdout ?? '') as {
+          dataDir: string;
+          ensuredDataDir: string;
+          globalDir: string;
+        };
+        expect(snapshot.dataDir).toBe(snapshot.globalDir);
+        expect(snapshot.ensuredDataDir).toBe(snapshot.globalDir);
+        expect(existsSync(join(tempProject, '.squish'))).toBe(false);
+      } finally {
+        rmSync(tempHome, { recursive: true, force: true });
+        rmSync(tempProject, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
 
-      const snapshot = await loadDataDirSnapshot(tempWorkspace);
-      expect(snapshot.dataDir).toBe(expectedDataDir);
-      expect(existsSync(expectedDataDir)).toBe(false);
+  test(
+    'relative SQUISH_DATA_DIR resolves to the global dir, not the working directory',
+    () => {
+      const tempHome = mkdtempSync(join(tmpdir(), 'squish-data-home-'));
+      const tempProject = mkdtempSync(join(tmpdir(), 'squish-data-dir-'));
+      try {
+        const result = inspectDataDir(tempProject, {
+          HOME: tempHome,
+          USERPROFILE: tempHome,
+          SQUISH_DATA_DIR: 'relative-data',
+          SQUISH_WORKING_DIRECTORY: tempProject,
+        });
 
-      const ensured = await loadDataDirSnapshot(tempWorkspace, {}, { ensureExists: true });
-      expect(ensured.ensuredDataDir).toBe(expectedDataDir);
-      expect(existsSync(expectedDataDir)).toBe(true);
-    } finally {
-      rmSync(tempWorkspace, { recursive: true, force: true });
-    }
-  });
+        expect(result.status).toBe(0);
+        const snapshot = JSON.parse(result.stdout ?? '') as {
+          dataDir: string;
+          ensuredDataDir: string;
+          globalDir: string;
+        };
+        expect(snapshot.dataDir).toBe(snapshot.globalDir);
+        expect(snapshot.ensuredDataDir).toBe(snapshot.globalDir);
+        expect(existsSync(join(tempProject, 'relative-data'))).toBe(false);
+        expect(existsSync(join(tempProject, '.squish'))).toBe(false);
+        // The rejection is surfaced so the operator can fix the setting.
+        expect(result.stderr).toContain('is a relative path');
+      } finally {
+        rmSync(tempHome, { recursive: true, force: true });
+        rmSync(tempProject, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  test(
+    'absolute SQUISH_DATA_DIR is honored and nothing is written to the project directory',
+    () => {
+      const tempProject = mkdtempSync(join(tmpdir(), 'squish-data-dir-'));
+      const tempData = mkdtempSync(join(tmpdir(), 'squish-data-abs-'));
+      try {
+        const result = inspectDataDir(tempProject, {
+          SQUISH_DATA_DIR: tempData,
+          SQUISH_WORKING_DIRECTORY: tempProject,
+        });
+
+        expect(result.status).toBe(0);
+        const snapshot = JSON.parse(result.stdout ?? '') as {
+          dataDir: string;
+          ensuredDataDir: string;
+        };
+        expect(snapshot.dataDir).toBe(tempData);
+        expect(snapshot.ensuredDataDir).toBe(tempData);
+        expect(existsSync(join(tempProject, '.squish'))).toBe(false);
+      } finally {
+        rmSync(tempProject, { recursive: true, force: true });
+        rmSync(tempData, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
 
   test('getDataDir uses global ~/.squish/ when no data.dir configured', async () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'squish-global-'));
@@ -330,11 +408,50 @@ describe('launch config defaults and overrides', () => {
     }
   });
 
-  test('getDataDir with explicit data.dir in settings.json still respected', async () => {
-    // The repo's settings.json has data.dir: ".squish" which should still work
-    const { getDataDir } = await import('../../config.js');
-    const dir = getDataDir();
-    expect(dir).toBeTruthy();
-    expect(typeof dir).toBe('string');
+  describe('absoluteDataDir helper', () => {
+    test('relative values are rejected with a one-time warning, not resolved against cwd', async () => {
+      const { absoluteDataDir } = await import('../../config.ts');
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      };
+      try {
+        expect(absoluteDataDir('.squish', 'test')).toBeNull();
+        expect(absoluteDataDir('./data', 'test')).toBeNull();
+        expect(absoluteDataDir('data', 'test')).toBeNull();
+      } finally {
+        console.warn = originalWarn;
+      }
+      expect(warnings.length).toBe(1);
+      expect(warnings[0]).toContain('is a relative path');
+    });
+
+    test('absolute values pass through untouched', async () => {
+      const { absoluteDataDir } = await import('../../config.ts');
+      const abs = join(tmpdir(), 'squish-abs-data');
+      expect(absoluteDataDir(abs, 'test')).toBe(abs);
+    });
+
+    test('~ values expand and count as absolute', async () => {
+      const { absoluteDataDir } = await import('../../config.ts');
+      const { homedir } = await import('os');
+      expect(absoluteDataDir('~/.squish', 'test')).toBe(join(homedir(), '.squish'));
+    });
+
+    test('empty values are ignored without a warning', async () => {
+      const { absoluteDataDir } = await import('../../config.ts');
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      };
+      try {
+        expect(absoluteDataDir('', 'test')).toBeNull();
+      } finally {
+        console.warn = originalWarn;
+      }
+      expect(warnings.length).toBe(0);
+    });
   });
 });

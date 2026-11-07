@@ -1,18 +1,26 @@
 /**
  * SquishClient.listRecent - empty-query recency listing with hoursBack filter.
  *
- * Regression coverage for the squish_extract empty-query crash: the tool
- * previously called search("", ...) which throws "Query cannot be empty".
+ * Regression coverage for recent-memory listing, including empty-query paths.
  */
 
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { mkdirSync, existsSync, rmSync } from 'fs';
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { generateKeyPairSync } from 'node:crypto';
 
 let testDataDir: string;
 let savedDataDir: string | undefined;
 let savedDatabaseUrl: string | undefined;
+const trustEnvKeys = [
+  'SQUISH_TRUST_POLICY',
+  'SQUISH_TRUSTED_CALLER_ID',
+  'SQUISH_PROVENANCE_PRIVATE_KEY',
+  'SQUISH_PROVENANCE_PUBLIC_KEY',
+  'SQUISH_PROVENANCE_KEY_ID',
+] as const;
+const savedTrustEnv = new Map<string, string | undefined>();
 let client: import('../../core/runtime/squish-runtime.js').SquishRuntime;
 let getDb: typeof import('../../db/index.js').getDb;
 let resetDb: typeof import('../../db/index.js').resetDb;
@@ -23,6 +31,7 @@ describe('SquishClient.listRecent', () => {
   beforeAll(async () => {
     savedDataDir = process.env.SQUISH_DATA_DIR;
     savedDatabaseUrl = process.env.DATABASE_URL;
+    for (const key of trustEnvKeys) savedTrustEnv.set(key, process.env[key]);
     testDataDir = join(tmpdir(), `squish-list-recent-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     process.env.SQUISH_DATA_DIR = testDataDir;
     process.env.DATABASE_URL = '';
@@ -61,6 +70,10 @@ describe('SquishClient.listRecent', () => {
     else process.env.SQUISH_DATA_DIR = savedDataDir;
     if (savedDatabaseUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = savedDatabaseUrl;
+    for (const [key, value] of savedTrustEnv) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     try {
       rmSync(testDataDir, { recursive: true, force: true });
       rmSync(PROJECT, { recursive: true, force: true });
@@ -76,7 +89,10 @@ describe('SquishClient.listRecent', () => {
     expect(contents[0]).toContain('gamma');
     expect(contents[contents.length - 1]).toContain('alpha');
 
-    const times = memories.map((m) => m.createdAt.getTime());
+    const times = memories.map((memory) => {
+      expect(memory.createdAt).toBeInstanceOf(Date);
+      return memory.createdAt!.getTime();
+    });
     for (let i = 1; i < times.length; i++) {
       expect(times[i - 1]).toBeGreaterThanOrEqual(times[i]);
     }
@@ -92,6 +108,35 @@ describe('SquishClient.listRecent', () => {
 
     const emptyWindow = await client.listRecent({ limit: 10, project: PROJECT, hoursBack: 0.1 });
     expect(emptyWindow.length).toBe(0);
+  });
+
+  test('strict reads omit unsigned timestamps and hoursBack excludes unknown age', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    process.env.SQUISH_TRUST_POLICY = 'strict';
+    process.env.SQUISH_TRUSTED_CALLER_ID = 'strict-list-recent-caller';
+    process.env.SQUISH_PROVENANCE_PRIVATE_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    process.env.SQUISH_PROVENANCE_PUBLIC_KEY = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    process.env.SQUISH_PROVENANCE_KEY_ID = 'strict-list-recent-test';
+
+    const memory = await client.remember('strict 48-hour list recent fixture', {
+      project: PROJECT,
+      type: 'note',
+      user: 'strict-list-recent-caller',
+    });
+    expect(memory.createdAt).toBeUndefined();
+    expect(memory.updatedAt).toBeUndefined();
+    const sqlite = (await getDb() as any).$client;
+    sqlite.prepare('UPDATE memories SET created_at = ? WHERE id = ?')
+      .run(Math.floor((Date.now() - 48 * 60 * 60 * 1000) / 1000), memory.id);
+
+    const recent = await client.getRecent(50, PROJECT);
+    const strictMemory = recent.find((candidate) => candidate.id === memory.id);
+    expect(strictMemory).toBeDefined();
+    expect(strictMemory?.createdAt).toBeUndefined();
+    expect(strictMemory?.updatedAt).toBeUndefined();
+
+    const withinWindow = await client.listRecent({ limit: 50, project: PROJECT, hoursBack: 24 });
+    expect(withinWindow.some((candidate) => candidate.id === memory.id)).toBe(false);
   });
 
   test('project scoping excludes memories from other projects', async () => {

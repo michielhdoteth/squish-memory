@@ -65,7 +65,6 @@ describe('Search candidate correctness filters (Batch 2)', () => {
     const db = await getDb();
     const sqlite = (db as any).$client;
     if (sqlite && typeof sqlite.exec === 'function') {
-      sqlite.exec('DELETE FROM memory_associations;');
       sqlite.exec('DELETE FROM memories;');
     }
   });
@@ -73,7 +72,7 @@ describe('Search candidate correctness filters (Batch 2)', () => {
   /** Seed a memory and optionally patch its lifecycle columns via raw SQL. */
   async function seed(
     content: string,
-    patch: { status?: string; consolidated?: boolean } = {}
+    patch: { status?: string; consolidated?: boolean; isActive?: boolean } = {}
   ): Promise<string> {
     await rememberMemory({ content, type: 'fact', project: TEST_PROJECT });
     const db = await getDb();
@@ -85,6 +84,9 @@ describe('Search candidate correctness filters (Batch 2)', () => {
     }
     if (patch.consolidated) {
       sqlite.prepare('UPDATE memories SET is_consolidated = 1 WHERE id = ?').run(row.id);
+    }
+    if (patch.isActive === false) {
+      sqlite.prepare('UPDATE memories SET is_active = 0 WHERE id = ?').run(row.id);
     }
     return row.id as string;
   }
@@ -158,6 +160,25 @@ describe('Search candidate correctness filters (Batch 2)', () => {
     expect(got.has(consId)).toBe(false);
   });
 
+  test('keywordSearch excludes inactive memories just like vectorSearch', async () => {
+    const inactiveId = await seed('lifecyclefence retired memory still status active', { isActive: false });
+    const activeId = await seed('lifecyclefence current memory still active', {});
+
+    const keywordResults = await keywordSearch(
+      { query: 'lifecyclefence memory', project: TEST_PROJECT },
+      10
+    );
+    const vectorResults = await vectorSearch(
+      { query: 'lifecyclefence memory', project: TEST_PROJECT },
+      { limit: 10 }
+    );
+
+    expect(ids(keywordResults).has(inactiveId)).toBe(false);
+    expect(ids(vectorResults).has(inactiveId)).toBe(false);
+    expect(ids(keywordResults).has(activeId)).toBe(true);
+    expect(ids(vectorResults).has(activeId)).toBe(true);
+  });
+
   test('end-to-end search() excludes expired/archived rows', async () => {
     const expiredId = await seed('emberfold retired migration checklist', { status: 'expired' });
     const archivedId = await seed('emberfold frozen migration checklist', { status: 'archived' });
@@ -168,6 +189,37 @@ describe('Search candidate correctness filters (Batch 2)', () => {
     expect(got.has(activeId)).toBe(true);
     expect(got.has(expiredId)).toBe(false);
     expect(got.has(archivedId)).toBe(false);
+  });
+
+  test('project-scoped recall includes global memories and excludes other projects', async () => {
+    const globalContent = 'crossagent global recall context stored without a project';
+    const otherProjectContent = 'crossagent unrelated project private context';
+    await rememberMemory({ content: globalContent, type: 'fact' });
+    await rememberMemory({ content: otherProjectContent, type: 'fact', project: 'proj-other-memory-scope' });
+    const db = await getDb();
+    const sqlite = (db as any).$client;
+    const globalRow = sqlite.prepare('SELECT id FROM memories WHERE content = ?').get(globalContent) as { id: string };
+    const knowledgeLink = sqlite.prepare('SELECT metadata FROM knowledge WHERE json_extract(metadata, "$.sourceMemoryId") = ?').get(globalRow.id) as { metadata: string } | undefined;
+    expect(knowledgeLink).toBeDefined();
+    expect(JSON.parse(knowledgeLink!.metadata).sourceMemoryId).toBe(globalRow.id);
+
+    const vectorResults = await vectorSearch(
+      { query: 'crossagent global recall context', project: TEST_PROJECT },
+      { limit: 20 }
+    );
+    expect(vectorResults.some((result) => result.content === globalContent)).toBe(true);
+    expect(vectorResults.some((result) => result.content === otherProjectContent)).toBe(false);
+
+    const keywordResults = await keywordSearch(
+      { query: 'crossagent global recall context', project: TEST_PROJECT },
+      20
+    );
+    expect(keywordResults.some((result) => result.content === globalContent)).toBe(true);
+    expect(keywordResults.some((result) => result.content === otherProjectContent)).toBe(false);
+
+    const recalled = await search({ query: 'crossagent global recall context', project: TEST_PROJECT });
+    expect(recalled.some((result) => result.content === globalContent)).toBe(true);
+    expect(recalled.some((result) => result.content === otherProjectContent)).toBe(false);
   });
 
   test('recency fallback also filters when only dead candidates match', async () => {

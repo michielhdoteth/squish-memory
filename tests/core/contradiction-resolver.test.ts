@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, mock } from 'bun:test';
 import {
   detectContradictions,
   resolveContradictions,
+  hasUpdateIndicator,
   ContradictionCheck,
 } from '../../core/memory/contradiction-resolver.js';
 
@@ -72,6 +73,41 @@ describe('contradiction-resolver', () => {
       );
       
       expect(result.shouldProceed).toBe(true);
+    });
+  });
+
+  describe('hasUpdateIndicator - state-change verb lexicon (WS2b generalization)', () => {
+    // The bar for entry is a GENERAL synonym class, not an eval query: any
+    // replacement/migration/transition phrasing must count as an update
+    // signal so scenario 2 links the version chain.
+    it('recognizes the state-change verb class (unseen phrasings)', () => {
+      expect(hasUpdateIndicator('The vector store migrated from FAISS to Qdrant.')).toBe(true);
+      expect(hasUpdateIndicator('We adopted OpenTelemetry for tracing.')).toBe(true);
+      expect(hasUpdateIndicator('Ruff replaces flake8, isort and black.')).toBe(true);
+      expect(hasUpdateIndicator('The team switched the scheduler after the audit.')).toBe(true);
+      expect(hasUpdateIndicator('In May the annotation pipeline moved from CSV exports to the staging API.')).toBe(true);
+      expect(hasUpdateIndicator('The ingestion service transitioned to batch mode.')).toBe(true);
+      expect(hasUpdateIndicator('We upgraded the primary database last sprint.')).toBe(true);
+    });
+
+    it('plain statements without a change verb are NOT flagged (no over-triggering)', () => {
+      expect(hasUpdateIndicator('The vector store is running inside the cluster.')).toBe(false);
+      expect(hasUpdateIndicator('Kenji was born in Osaka and lived there until twelve.')).toBe(false);
+      expect(hasUpdateIndicator('Preference: use ruff for linting.')).toBe(false);
+    });
+
+    it('keeps the legacy indicator phrases working (byte-compatible)', () => {
+      expect(hasUpdateIndicator('The atlas project now uses MySQL instead of PostgreSQL.')).toBe(true);
+      expect(hasUpdateIndicator('Actually, the deadline is Friday.')).toBe(true);
+      expect(hasUpdateIndicator('She used to be the reviewer.')).toBe(true);
+      expect(hasUpdateIndicator('No longer supported.')).toBe(true);
+    });
+
+    it('is not stateful across repeated calls (lastIndex guard on module regexes)', () => {
+      const content = 'We adopted OpenTelemetry.';
+      for (let i = 0; i < 3; i++) {
+        expect(hasUpdateIndicator(content)).toBe(true);
+      }
     });
   });
 });

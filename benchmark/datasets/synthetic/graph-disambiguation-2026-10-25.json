@@ -1,0 +1,1155 @@
+{
+  "meta": {
+    "name": "squish-synthetic-graph-disambiguation-2026-10-25",
+    "notes": "A multi-hop query names a project but omits the distinct hosting entity; graph links can connect project to store and store to hosting environment. mustHit is the bridge memory; mayHit is the project-to-store memory.",
+    "version": 1,
+    "description": "Deterministic offline graph retrieval diagnostic with 20 paired cross-memory questions, 40 answer-bearing target/bridge memories, and 60 unrelated distractors. Synthetic fixtures only; not a public or general-purpose benchmark.",
+    "graphAblationQueryIds": [
+      "q_multidoc_001",
+      "q_multidoc_002",
+      "q_multidoc_003",
+      "q_multidoc_004",
+      "q_multidoc_005",
+      "q_multidoc_006",
+      "q_multidoc_007",
+      "q_multidoc_008",
+      "q_multidoc_009",
+      "q_multidoc_010",
+      "q_multidoc_011",
+      "q_multidoc_012",
+      "q_multidoc_013",
+      "q_multidoc_014",
+      "q_multidoc_015",
+      "q_multidoc_016",
+      "q_multidoc_017",
+      "q_multidoc_018",
+      "q_multidoc_019",
+      "q_multidoc_020"
+    ],
+    "deterministic": true
+  },
+  "queries": [
+    {
+      "id": "q_multidoc_001",
+      "mustHit": [
+        "bridge_001"
+      ],
+      "mayHit": [
+        "target_001"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Aurelia North's deployment records?"
+    },
+    {
+      "id": "q_multidoc_002",
+      "mustHit": [
+        "bridge_002"
+      ],
+      "mayHit": [
+        "target_002"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Boreal Finch's deployment records?"
+    },
+    {
+      "id": "q_multidoc_003",
+      "mustHit": [
+        "bridge_003"
+      ],
+      "mayHit": [
+        "target_003"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Cedar Harbor's deployment records?"
+    },
+    {
+      "id": "q_multidoc_004",
+      "mustHit": [
+        "bridge_004"
+      ],
+      "mayHit": [
+        "target_004"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Delta Grove's deployment records?"
+    },
+    {
+      "id": "q_multidoc_005",
+      "mustHit": [
+        "bridge_005"
+      ],
+      "mayHit": [
+        "target_005"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Ember Valley's deployment records?"
+    },
+    {
+      "id": "q_multidoc_006",
+      "mustHit": [
+        "bridge_006"
+      ],
+      "mayHit": [
+        "target_006"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Fable Ridge's deployment records?"
+    },
+    {
+      "id": "q_multidoc_007",
+      "mustHit": [
+        "bridge_007"
+      ],
+      "mayHit": [
+        "target_007"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Garnet Shore's deployment records?"
+    },
+    {
+      "id": "q_multidoc_008",
+      "mustHit": [
+        "bridge_008"
+      ],
+      "mayHit": [
+        "target_008"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Helio Meadow's deployment records?"
+    },
+    {
+      "id": "q_multidoc_009",
+      "mustHit": [
+        "bridge_009"
+      ],
+      "mayHit": [
+        "target_009"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Indigo Summit's deployment records?"
+    },
+    {
+      "id": "q_multidoc_010",
+      "mustHit": [
+        "bridge_010"
+      ],
+      "mayHit": [
+        "target_010"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Juniper Bay's deployment records?"
+    },
+    {
+      "id": "q_multidoc_011",
+      "mustHit": [
+        "bridge_011"
+      ],
+      "mayHit": [
+        "target_011"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Kestrel Point's deployment records?"
+    },
+    {
+      "id": "q_multidoc_012",
+      "mustHit": [
+        "bridge_012"
+      ],
+      "mayHit": [
+        "target_012"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Lumen Prairie's deployment records?"
+    },
+    {
+      "id": "q_multidoc_013",
+      "mustHit": [
+        "bridge_013"
+      ],
+      "mayHit": [
+        "target_013"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Mosaic Creek's deployment records?"
+    },
+    {
+      "id": "q_multidoc_014",
+      "mustHit": [
+        "bridge_014"
+      ],
+      "mayHit": [
+        "target_014"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Nimbus Field's deployment records?"
+    },
+    {
+      "id": "q_multidoc_015",
+      "mustHit": [
+        "bridge_015"
+      ],
+      "mayHit": [
+        "target_015"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Orchid Vale's deployment records?"
+    },
+    {
+      "id": "q_multidoc_016",
+      "mustHit": [
+        "bridge_016"
+      ],
+      "mayHit": [
+        "target_016"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Pioneer Glen's deployment records?"
+    },
+    {
+      "id": "q_multidoc_017",
+      "mustHit": [
+        "bridge_017"
+      ],
+      "mayHit": [
+        "target_017"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Quartz Meadow's deployment records?"
+    },
+    {
+      "id": "q_multidoc_018",
+      "mustHit": [
+        "bridge_018"
+      ],
+      "mayHit": [
+        "target_018"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Riverstone Bay's deployment records?"
+    },
+    {
+      "id": "q_multidoc_019",
+      "mustHit": [
+        "bridge_019"
+      ],
+      "mayHit": [
+        "target_019"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Solstice Ridge's deployment records?"
+    },
+    {
+      "id": "q_multidoc_020",
+      "mustHit": [
+        "bridge_020"
+      ],
+      "mayHit": [
+        "target_020"
+      ],
+      "category": "multi-hop",
+      "query": "Across sessions, which hosting environment supports Tandem Harbor's deployment records?"
+    }
+  ],
+  "memories": [
+    {
+      "id": "target_001",
+      "type": "fact",
+      "content": "Aurelia North stores deployment records in Birch Ledger. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_001",
+      "type": "fact",
+      "content": "Birch Ledger is hosted by Marigold Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_002",
+      "type": "fact",
+      "content": "Boreal Finch stores deployment records in Copper Archive. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_002",
+      "type": "fact",
+      "content": "Copper Archive is hosted by Northstar Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_003",
+      "type": "fact",
+      "content": "Cedar Harbor stores deployment records in Drift Journal. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_003",
+      "type": "fact",
+      "content": "Drift Journal is hosted by Opal Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_004",
+      "type": "fact",
+      "content": "Delta Grove stores deployment records in Elm Register. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_004",
+      "type": "fact",
+      "content": "Elm Register is hosted by Prairie Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_005",
+      "type": "fact",
+      "content": "Ember Valley stores deployment records in Flint Catalog. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_005",
+      "type": "fact",
+      "content": "Flint Catalog is hosted by Quarry Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_006",
+      "type": "fact",
+      "content": "Fable Ridge stores deployment records in Granite Record. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_006",
+      "type": "fact",
+      "content": "Granite Record is hosted by Redwood Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_007",
+      "type": "fact",
+      "content": "Garnet Shore stores deployment records in Hazel Vault. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_007",
+      "type": "fact",
+      "content": "Hazel Vault is hosted by Silver Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_008",
+      "type": "fact",
+      "content": "Helio Meadow stores deployment records in Ivory Logbook. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_008",
+      "type": "fact",
+      "content": "Ivory Logbook is hosted by Tundra Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_009",
+      "type": "fact",
+      "content": "Indigo Summit stores deployment records in Jasper Index. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_009",
+      "type": "fact",
+      "content": "Jasper Index is hosted by Umber Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_010",
+      "type": "fact",
+      "content": "Juniper Bay stores deployment records in Kelp Archive. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_010",
+      "type": "fact",
+      "content": "Kelp Archive is hosted by Verdant Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_011",
+      "type": "fact",
+      "content": "Kestrel Point stores deployment records in Larch Ledger. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_011",
+      "type": "fact",
+      "content": "Larch Ledger is hosted by Willow Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_012",
+      "type": "fact",
+      "content": "Lumen Prairie stores deployment records in Marble Register. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_012",
+      "type": "fact",
+      "content": "Marble Register is hosted by Xenon Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_013",
+      "type": "fact",
+      "content": "Mosaic Creek stores deployment records in Nectar Journal. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_013",
+      "type": "fact",
+      "content": "Nectar Journal is hosted by Yellowstone Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_014",
+      "type": "fact",
+      "content": "Nimbus Field stores deployment records in Onyx Catalog. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_014",
+      "type": "fact",
+      "content": "Onyx Catalog is hosted by Zephyr Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_015",
+      "type": "fact",
+      "content": "Orchid Vale stores deployment records in Pine Record. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_015",
+      "type": "fact",
+      "content": "Pine Record is hosted by Amber Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_016",
+      "type": "fact",
+      "content": "Pioneer Glen stores deployment records in Quartz Vault. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_016",
+      "type": "fact",
+      "content": "Quartz Vault is hosted by Bluebird Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_017",
+      "type": "fact",
+      "content": "Quartz Meadow stores deployment records in Reed Logbook. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_017",
+      "type": "fact",
+      "content": "Reed Logbook is hosted by Cobalt Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_018",
+      "type": "fact",
+      "content": "Riverstone Bay stores deployment records in Slate Index. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_018",
+      "type": "fact",
+      "content": "Slate Index is hosted by Dawn Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_019",
+      "type": "fact",
+      "content": "Solstice Ridge stores deployment records in Timber Archive. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_019",
+      "type": "fact",
+      "content": "Timber Archive is hosted by Evergreen Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "target_020",
+      "type": "fact",
+      "content": "Tandem Harbor stores deployment records in Umber Ledger. Retention is seven years and the review happens each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "id": "bridge_020",
+      "type": "fact",
+      "content": "Umber Ledger is hosted by Foxglove Cloud. The recovery window is fifteen minutes and its replica is in Harbor District.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "noise_001",
+      "type": "observation",
+      "content": "The Stone Valley team completed its sensor calibration review in cycle 1. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_002",
+      "type": "observation",
+      "content": "The Willow Creek team completed its archive retention review in cycle 2. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_003",
+      "type": "observation",
+      "content": "The Cobalt Ridge team completed its shipment routing review in cycle 3. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_004",
+      "type": "observation",
+      "content": "The Silver Meadow team completed its lab inventory review in cycle 4. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_005",
+      "type": "observation",
+      "content": "The Pine Harbor team completed its weather analysis review in cycle 5. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_006",
+      "type": "observation",
+      "content": "The Amber Field team completed its billing reconciliation review in cycle 6. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_007",
+      "type": "observation",
+      "content": "The North Grove team completed its network monitoring review in cycle 7. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_008",
+      "type": "observation",
+      "content": "The Copper Bay team completed its document review review in cycle 8. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_009",
+      "type": "observation",
+      "content": "The Granite Hill team completed its safety inspection review in cycle 9. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_010",
+      "type": "observation",
+      "content": "The Cedar Point team completed its field sampling review in cycle 10. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_011",
+      "type": "observation",
+      "content": "The Maple Island team completed its workstation setup review in cycle 11. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_012",
+      "type": "observation",
+      "content": "The Dawn Prairie team completed its release scheduling review in cycle 12. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_013",
+      "type": "observation",
+      "content": "The Fox Hollow team completed its incident response review in cycle 13. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_014",
+      "type": "observation",
+      "content": "The River Gate team completed its backup rotation review in cycle 14. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_015",
+      "type": "observation",
+      "content": "The Ivory Coast team completed its equipment repair review in cycle 15. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_016",
+      "type": "observation",
+      "content": "The Jasper Lake team completed its grant reporting review in cycle 16. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_017",
+      "type": "observation",
+      "content": "The Larch Park team completed its quality control review in cycle 17. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_018",
+      "type": "observation",
+      "content": "The Mosaic Hill team completed its staff onboarding review in cycle 18. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_019",
+      "type": "observation",
+      "content": "The Quartz Cove team completed its access reviews review in cycle 19. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_020",
+      "type": "observation",
+      "content": "The Tundra Glen team completed its catalog migration review in cycle 20. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_021",
+      "type": "observation",
+      "content": "The Stone Valley team completed its sensor calibration review in cycle 21. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_022",
+      "type": "observation",
+      "content": "The Willow Creek team completed its archive retention review in cycle 22. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_023",
+      "type": "observation",
+      "content": "The Cobalt Ridge team completed its shipment routing review in cycle 23. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_024",
+      "type": "observation",
+      "content": "The Silver Meadow team completed its lab inventory review in cycle 24. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_025",
+      "type": "observation",
+      "content": "The Pine Harbor team completed its weather analysis review in cycle 25. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_026",
+      "type": "observation",
+      "content": "The Amber Field team completed its billing reconciliation review in cycle 26. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_027",
+      "type": "observation",
+      "content": "The North Grove team completed its network monitoring review in cycle 27. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_028",
+      "type": "observation",
+      "content": "The Copper Bay team completed its document review review in cycle 28. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_029",
+      "type": "observation",
+      "content": "The Granite Hill team completed its safety inspection review in cycle 29. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_030",
+      "type": "observation",
+      "content": "The Cedar Point team completed its field sampling review in cycle 30. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_031",
+      "type": "observation",
+      "content": "The Maple Island team completed its workstation setup review in cycle 31. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_032",
+      "type": "observation",
+      "content": "The Dawn Prairie team completed its release scheduling review in cycle 32. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_033",
+      "type": "observation",
+      "content": "The Fox Hollow team completed its incident response review in cycle 33. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_034",
+      "type": "observation",
+      "content": "The River Gate team completed its backup rotation review in cycle 34. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_035",
+      "type": "observation",
+      "content": "The Ivory Coast team completed its equipment repair review in cycle 35. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_036",
+      "type": "observation",
+      "content": "The Jasper Lake team completed its grant reporting review in cycle 36. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_037",
+      "type": "observation",
+      "content": "The Larch Park team completed its quality control review in cycle 37. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_038",
+      "type": "observation",
+      "content": "The Mosaic Hill team completed its staff onboarding review in cycle 38. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_039",
+      "type": "observation",
+      "content": "The Quartz Cove team completed its access reviews review in cycle 39. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_040",
+      "type": "observation",
+      "content": "The Tundra Glen team completed its catalog migration review in cycle 40. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_041",
+      "type": "observation",
+      "content": "The Stone Valley team completed its sensor calibration review in cycle 41. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_042",
+      "type": "observation",
+      "content": "The Willow Creek team completed its archive retention review in cycle 42. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_043",
+      "type": "observation",
+      "content": "The Cobalt Ridge team completed its shipment routing review in cycle 43. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_044",
+      "type": "observation",
+      "content": "The Silver Meadow team completed its lab inventory review in cycle 44. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_045",
+      "type": "observation",
+      "content": "The Pine Harbor team completed its weather analysis review in cycle 45. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_046",
+      "type": "observation",
+      "content": "The Amber Field team completed its billing reconciliation review in cycle 46. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_047",
+      "type": "observation",
+      "content": "The North Grove team completed its network monitoring review in cycle 47. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_048",
+      "type": "observation",
+      "content": "The Copper Bay team completed its document review review in cycle 48. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_049",
+      "type": "observation",
+      "content": "The Granite Hill team completed its safety inspection review in cycle 49. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_050",
+      "type": "observation",
+      "content": "The Cedar Point team completed its field sampling review in cycle 50. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_051",
+      "type": "observation",
+      "content": "The Maple Island team completed its workstation setup review in cycle 51. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_052",
+      "type": "observation",
+      "content": "The Dawn Prairie team completed its release scheduling review in cycle 52. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_053",
+      "type": "observation",
+      "content": "The Fox Hollow team completed its incident response review in cycle 53. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_054",
+      "type": "observation",
+      "content": "The River Gate team completed its backup rotation review in cycle 54. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_055",
+      "type": "observation",
+      "content": "The Ivory Coast team completed its equipment repair review in cycle 55. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_056",
+      "type": "observation",
+      "content": "The Jasper Lake team completed its grant reporting review in cycle 56. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_057",
+      "type": "observation",
+      "content": "The Larch Park team completed its quality control review in cycle 57. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_058",
+      "type": "observation",
+      "content": "The Mosaic Hill team completed its staff onboarding review in cycle 58. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_059",
+      "type": "observation",
+      "content": "The Quartz Cove team completed its access reviews review in cycle 59. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "id": "noise_060",
+      "type": "observation",
+      "content": "The Tundra Glen team completed its catalog migration review in cycle 60. The next check is scheduled for the first Monday of the next quarter.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    }
+  ]
+}

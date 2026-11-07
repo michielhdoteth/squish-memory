@@ -27,10 +27,12 @@ import { getRetrievalConfig, getPrecisionStackFlags, getGraphBoostFlags, type Sq
 import { questionPlaceType } from '../places/question-router.js';
 import { getAdjacentPlaces as getQuestionAdjacentPlaces } from '../places/rules.js';
 import { normalizeVisibilityScopes, type VisibilityScope } from '../lib/utils.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import type { StrictMemoryCandidateFilter } from '../acl/read-gate.js';
 
 // Enhanced retrieval modules
 import { rerankResults } from '../retrieval/cross-encoder-reranker.js';
-import { enrichContent } from '../retrieval/contextual-enrichment.js';
+import { enrichContent, enrichQuery, enrichQueryBatch } from '../retrieval/contextual-enrichment.js';
 import { smartMMR } from '../retrieval/mmr-diversity.js';
 
 // Advanced retrieval modules
@@ -39,7 +41,7 @@ import { extractQueryEntities, entityBoost } from '../retrieval/entity-aware-ret
 // Temporal validity v2: query-conditioned validity-at-T (replaces the retired
 // flat staleness penalty - see core/retrieval/temporal-validity.ts).
 import { parseTimeReference, stripTemporalRelationTokens } from '../retrieval/temporal-query.js';
-import { applyTemporalEligibility } from '../retrieval/temporal-validity.js';
+import { applyTemporalEligibility, overlapsValidTimeWindow, temporalDateFitBoost } from '../retrieval/temporal-validity.js';
 
 /**
  * Merge results by ID, keeping the one with the highest similarity.
@@ -87,6 +89,8 @@ import {
   applyReplacement,
   deriveShadowDelta,
   recordShadowDelta,
+  applyRetrievalServingWeights,
+  NEUTRAL_RECENCY_WEIGHT,
 } from '../scoring/three-field.js';
 import { getLastRerankMeta } from '../retrieval/cross-encoder-reranker.js';
 // Batch 6a: calibrated recall confidence + itemized evidence (additive metadata).
@@ -94,6 +98,15 @@ import { attachRecallConfidence } from './search-evidence.js';
 // Batch B1: topical alignment - parse the query topic ONCE per search call;
 // consumed by recall-confidence only, never by ranking.
 import { parseQueryTopic } from '../scoring/topical-alignment.js';
+
+// WS1a-T1.2: Query router integration - single source of routing truth is the
+// decision-model-aware autoRoute (core/retrieval/query-router). The former
+// pure-regex router (core/search/query-router.getSearchRoute) was removed:
+// its output silently overrode the autoRoute decision memory-search had
+// already computed, so intent routing barely affected retrieval and the
+// v2.2.0 decision-layer escalation never reached the serving path.
+import { autoRoute, intentsForRetrievalDecision, type RouteResult } from '../retrieval/query-router.js';
+import { throwIfDecisionAborted } from '../decision-model/types.js';
 
 // Re-export from sub-modules for backward compatibility
 export { keywordSearch, rrfFusion } from './keyword-search.js';
@@ -121,6 +134,14 @@ export interface HybridSearchOptions {
   enableGraphTraversal?: boolean; // Enable multi-hop graph traversal (Task 4)
   enableHeuristics?: boolean;
   includeAssociations?: boolean;
+  candidateFilter?: StrictMemoryCandidateFilter;
+  /**
+   * WS1a-T1.2: Pre-computed decision-model-aware route (from autoRoute).
+   * The routing stage consumes it directly instead of re-classifying; when
+   * absent the stage computes the route itself via autoRoute, so every entry
+   * point gets the same routing semantics.
+   */
+  route?: RouteResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,10 +171,12 @@ interface SearchContext {
   traceTemporal: {
     kind: string;
     t: string | null;
+    range: { from: string; to: string } | null;
     raw: string | null;
     supersessionRelaxed: boolean;
     excludedInvalidAtT: number;
     boostedValidAtT: number;
+    dateFitBoosted: number;
   };
 
   // Query expansion / entity extraction
@@ -184,6 +207,9 @@ interface SearchContext {
 
   // Rerank agreement fraction (filled by cross-encoder stage)
   rerankAgreement: number | null;
+
+  // WS1a-T1.2: Query router integration (decision-model-aware autoRoute)
+  route: RouteResult | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +251,9 @@ async function initSearchContext(
   input: SearchInput,
   options: HybridSearchOptions
 ): Promise<SearchContext> {
+  const referenceDate = input.referenceDate ? new Date(input.referenceDate) : new Date();
+  if (!Number.isFinite(referenceDate.getTime())) throw new Error('referenceDate must be a valid date');
+  input = { ...input, referenceDate };
   const limit = options.limit ?? input.limit ?? 10;
   const enableMultiSession = options.enableMultiSession !== false;
   const enableHeuristics = options.enableHeuristics !== false;
@@ -252,17 +281,19 @@ async function initSearchContext(
   const isTemporal = isTemporalQuery(effectiveQuery);
 
   // Temporal validity v2: classify the query's time reference ONCE per search
-  const timeRef = parseTimeReference(effectiveQuery);
+  const timeRef = parseTimeReference(effectiveQuery, referenceDate, input.timeZone);
   const temporalStageActive =
     precision.temporalValidity &&
     (timeRef.kind === 'past-anchored' || timeRef.kind === 'past-unanchored');
   const traceTemporal = {
     kind: timeRef.kind,
     t: timeRef.t ? timeRef.t.toISOString() : null,
+    range: timeRef.range ? { from: timeRef.range.from.toISOString(), to: timeRef.range.to.toISOString() } : null,
     raw: timeRef.raw,
     supersessionRelaxed: false,
     excludedInvalidAtT: 0,
     boostedValidAtT: 0,
+    dateFitBoosted: 0,
   };
 
   // Advanced Retrieval: Query Expansion
@@ -284,7 +315,12 @@ async function initSearchContext(
 
   // Pre-compute query embedding once to avoid redundant API calls
   const isEmptyQuery = !effectiveQuery || effectiveQuery.trim() === '';
-  const queryEmbedding = isEmptyQuery ? null : await getEmbedding(effectiveQuery);
+  const embeddingQuery = enrichQuery(effectiveQuery, {
+    project: input.project,
+    type: input.type,
+    tags: input.tags,
+  }).enriched;
+  const queryEmbedding = isEmptyQuery || input.retrievalMode === 'lexical' ? null : await getEmbedding(embeddingQuery);
 
   // Cache DB client once per search operation (Fix #15: extracted from main function)
   const rawDb = await getDb();
@@ -336,12 +372,96 @@ async function initSearchContext(
     embeddingMap: new Map(),
     lexicalRanks: new Map(),
     rerankAgreement: null,
+    route: null,
   };
 }
 
 // ---------------------------------------------------------------------------
 // Pipeline stages
 // ---------------------------------------------------------------------------
+
+/**
+ * Query routing stage (WS1a-T1.2): the single source of routing truth is the
+ * decision-model-aware `autoRoute`. When the caller (memory-search) already
+ * computed a route it is threaded in via options and consumed directly here -
+ * no second classification. When absent the stage computes the route itself so
+ * every entry point gets identical routing semantics and the decision-layer
+ * escalation is always live in the serving path.
+ *
+ * The consumed route's intent drives downstream retrieval: temporal validity,
+ * multi-hop, entity retrieval, graph traversal, and keyword-heavy limits. The
+ * former pure-regex router's per-source `SearchBudget` was never read by any
+ * stage (it only fed a dead `_searchBudget` context field) and has been
+ * removed alongside it.
+ */
+export async function queryRoutingStage(ctx: SearchContext): Promise<SearchContext> {
+  try {
+    // Consume a pre-computed route when the caller supplied one; otherwise the
+    // stage owns the routing so intent adjustments are never computed-and-dropped.
+    const route = ctx.options.route ?? await autoRoute(ctx.effectiveQuery, { signal: ctx.input?.signal });
+    ctx.route = route;
+    if (route.decision) {
+      const anchorCount = Math.max(1, Math.min(10, Math.floor(route.decision.anchorCount)));
+      if (ctx.queryEntities.length === 0 && ctx.effectiveQuery) {
+        ctx.queryEntities = extractQueryEntities(ctx.effectiveQuery);
+      }
+      ctx.queryEntities = ctx.queryEntities.slice(0, anchorCount);
+      ctx.trace.routingDecision = {
+        queryViews: [...route.decision.queryViews],
+        anchorCount,
+        confidence: route.decision.confidence ?? null,
+      };
+    }
+
+    logger.debug(
+      `[HybridSearch] Query routed: intent=${route.classification.intent} ` +
+      `strategy=${route.recommendedStrategy} confidence=${route.classification.confidence.toFixed(2)}`
+    );
+
+    // Intent-aware parameter adjustment: the consumed route's intent steers
+    // retrieval breadth and which enhancement stages activate.
+
+    const routedIntents = route.decision
+      ? new Set(intentsForRetrievalDecision(route.decision))
+      : new Set([route.classification.intent]);
+
+    // Honor all model-selected views. The primary view still determines the
+    // public strategy label; secondary views activate their corresponding
+    // retrieval enhancements rather than being silently discarded.
+    if (routedIntents.has('temporal') && !ctx.temporalStageActive) {
+      ctx.isTemporal = true;
+    }
+
+    if (routedIntents.has('relational') && !ctx.isMultiHop) {
+      ctx.isMultiHop = true;
+    }
+
+    if (routedIntents.has('entity_heavy') && !ctx.entityRetrievalEnabled) {
+      ctx.entityRetrievalEnabled = true;
+      if (ctx.queryEntities.length === 0 && ctx.effectiveQuery) {
+        ctx.queryEntities = extractQueryEntities(ctx.effectiveQuery);
+      }
+    }
+
+    // For exploratory intent, enable graph traversal if not already
+    if (routedIntents.has('exploratory')) {
+      ctx.options = { ...ctx.options, enableGraphTraversal: true };
+    }
+
+    // For strategic intent, boost keyword search (strategy knowledge is text-heavy)
+    if (routedIntents.has('strategic')) {
+      // Strategic queries benefit from more keyword results
+      ctx.options = { ...ctx.options, limit: Math.ceil(ctx.limit * 1.5) };
+    }
+
+  } catch (e) {
+    throwIfDecisionAborted(ctx.input?.signal);
+    logger.debug(`[HybridSearch] Query routing failed: ${e}`);
+    // Non-fatal: continue with default routing
+  }
+
+  return ctx;
+}
 
 /**
  * Vector retrieval stage: run vector search with appropriate strategy
@@ -351,7 +471,10 @@ async function vectorRetrievalStage(ctx: SearchContext): Promise<SearchContext> 
   try {
     if (ctx.isMultiHop) {
       // Multi-hop: expand for multi-session coverage
-      const multiExpansions = buildMultiSessionExpansions(ctx.effectiveQuery);
+      const multiExpansions = enrichQueryBatch(
+        buildMultiSessionExpansions(ctx.effectiveQuery),
+        { project: ctx.input.project, type: ctx.input.type, tags: ctx.input.tags },
+      ).map((query) => query.enriched);
       const allResults: SearchResult[] = [];
 
       for (const expQuery of multiExpansions) {
@@ -372,8 +495,12 @@ async function vectorRetrievalStage(ctx: SearchContext): Promise<SearchContext> 
     } else if (ctx.queryExpansionEnabled && ctx.expandedQueries.length > 1) {
       // Advanced Query Expansion: search with expanded queries and merge results
       const allResults: SearchResult[] = [];
+      const expandedQueries = enrichQueryBatch(
+        ctx.expandedQueries,
+        { project: ctx.input.project, type: ctx.input.type, tags: ctx.input.tags },
+      ).map((query) => query.enriched);
 
-      for (const expQuery of ctx.expandedQueries) {
+      for (const expQuery of expandedQueries) {
         const expEmbedding = await getEmbedding(expQuery);
         const expResults = await vectorSearch(
           { ...ctx.input, query: expQuery },
@@ -394,6 +521,14 @@ async function vectorRetrievalStage(ctx: SearchContext): Promise<SearchContext> 
   } catch (err) {
     logger.warn(`[HybridSearch] Vector search failed, falling back to recency: ${err instanceof Error ? err.message : err}`);
     ctx.vectorResults = [];
+  }
+
+  // Diagnostic-only snapshot for offline confidence audits. This value is
+  // never consumed by ranking or confidence scoring and survives later fusion.
+  for (const result of ctx.vectorResults) {
+    result.preFusionSemanticScore = typeof result.semanticScore === 'number'
+      ? result.semanticScore
+      : typeof result.similarity === 'number' ? result.similarity : null;
   }
 
   // Record total candidates for trace
@@ -425,14 +560,15 @@ async function keywordRetrievalStage(ctx: SearchContext): Promise<SearchContext>
   const keywordResults = await keywordSearch(
     { ...ctx.input, query: lexicalQuery ?? '' },
     ctx.limit * 2,
-    ctx.searchCtx
+    ctx.searchCtx,
+    ctx.options.candidateFilter
   );
 
   // Batch 6b: OPTIONAL third corpus leg - active belief + strategy knowledge
   let beliefResults: SearchResult[] = [];
   if (areBeliefsEnabled() && !ctx.isEmptyQuery && ctx.effectiveQuery.trim().length > 0) {
     try {
-      beliefResults = await beliefSearch(ctx.input, Math.ceil(ctx.limit * 2), ctx.searchCtx);
+      beliefResults = await beliefSearch(ctx.input, Math.ceil(ctx.limit * 2), ctx.searchCtx, ctx.options.candidateFilter);
       if (beliefResults.length > 0) {
         logger.debug(`[HybridSearch] Beliefs leg produced ${beliefResults.length} candidate(s)`);
       }
@@ -558,6 +694,12 @@ async function entityBoostStage(ctx: SearchContext): Promise<SearchContext> {
  * Graph boost stage: normalized or legacy mode graph coactivation boost.
  */
 async function graphBoostStage(ctx: SearchContext): Promise<SearchContext> {
+  // Canonical graph edges do not yet carry caller ACL scope into this stage.
+  // Strict retrieval must not let inaccessible edges influence visible ranks.
+  if (isStrictTrustPolicy() || !ctx.precision.graphExpansion) {
+    ctx.results = ctx.vectorResults.slice(0, ctx.limit);
+    return ctx;
+  }
   const graphMode = getGraphBoostFlags();
   const graphWeight = effectiveGraphBoostWeight(graphMode.legacy);
   const candidateIds = ctx.vectorResults.map(r => r.id);
@@ -601,7 +743,9 @@ async function supersessionStage(ctx: SearchContext): Promise<SearchContext> {
  * Association expansion stage: expand results with associated memories.
  */
 async function associationStage(ctx: SearchContext): Promise<SearchContext> {
-  if (ctx.options.includeAssociations !== false) {
+  // Candidate expansion runs before the caller ACL gate. Hidden neighbors can
+  // consume the result limit and crowd out authorized memories.
+  if (!isStrictTrustPolicy() && ctx.options.includeAssociations !== false) {
     ctx.results = await expandWithAssociations(ctx.results, ctx.limit, {
       includeConsolidatedSources: ctx.input.includeConsolidatedSources === true,
     });
@@ -613,7 +757,7 @@ async function associationStage(ctx: SearchContext): Promise<SearchContext> {
  * Multi-hop graph traversal stage: actual graph traversal for multi-hop queries.
  */
 async function multiHopStage(ctx: SearchContext): Promise<SearchContext> {
-  if (ctx.isMultiHop && ctx.options.enableGraphTraversal !== false && ctx.input.project) {
+  if (!isStrictTrustPolicy() && ctx.precision.graphExpansion && ctx.isMultiHop && ctx.options.enableGraphTraversal !== false && ctx.input.project) {
     try {
       const graphResults = await multiHopSearch({
         query: ctx.effectiveQuery,
@@ -621,6 +765,7 @@ async function multiHopStage(ctx: SearchContext): Promise<SearchContext> {
         limit: ctx.limit,
         includeVectorResults: false,
         includeGraphResults: true,
+        ...(ctx.route?.decision ? { anchorCount: ctx.route.decision.anchorCount } : {}),
       });
 
       // Merge graph results with vector results
@@ -647,36 +792,78 @@ async function multiHopStage(ctx: SearchContext): Promise<SearchContext> {
  * resurrected, and BEFORE any reranker so the exclusion survives.
  */
 async function temporalValidityStage(ctx: SearchContext): Promise<SearchContext> {
-  if (ctx.precision.temporalValidity && ctx.timeRef.kind === 'past-anchored' && ctx.timeRef.t !== null) {
+  const referenceDate = ctx.input.referenceDate ? new Date(ctx.input.referenceDate) : new Date();
+  // Only the caller's explicit latestOnly option is a hard point-in-time
+  // constraint. Natural-language time references are relevance signals: they
+  // may boost facts valid at that instant, but must never hide other memories.
+  const enforcePointInTime = ctx.input.latestOnly === true;
+  const applyNaturalTimeRelevance = ctx.precision.temporalValidity && (
+    (ctx.timeRef.kind === 'past-anchored' && ctx.timeRef.t !== null) ||
+    ctx.timeRef.kind === 'current'
+  );
+  if (enforcePointInTime || applyNaturalTimeRelevance) {
+    // latestOnly means valid at the explicit reference clock. Query wording
+    // remains a ranking signal and cannot override this caller-supplied bound.
+    const t = enforcePointInTime
+      ? referenceDate
+      : ctx.timeRef.kind === 'past-anchored' && ctx.timeRef.t
+        ? ctx.timeRef.t
+        : ctx.timeRef.kind === 'current' && ctx.timeRef.t ? ctx.timeRef.t : referenceDate;
     const invalidationMap = await getSupersessionInvalidationMap(ctx.input.project, ctx.searchCtx);
     const eligibility = applyTemporalEligibility(
       ctx.results.map(r => ({
         createdAt: r.createdAt ?? null,
+        validFrom: r.validFrom ?? null,
+        validTo: r.validTo ?? null,
         supersededAt: invalidationMap.has(r.id) ? invalidationMap.get(r.id) ?? null : null,
       })),
-      ctx.timeRef
+      { kind: 'past-anchored', t, raw: ctx.timeRef.raw }
     );
 
     const kept: SearchResult[] = [];
     for (let i = 0; i < ctx.results.length; i++) {
       const verdict = eligibility[i];
-      if (!verdict.eligible) {
+      if (!verdict.eligible && enforcePointInTime) {
         ctx.traceTemporal.excludedInvalidAtT += 1;
         continue;
       }
       kept.push(
-        verdict.boost !== 0 ? addBoost(ctx.results[i], 'temporalValidAtT', verdict.boost) : ctx.results[i]
+        verdict.eligible && !enforcePointInTime && verdict.boost !== 0
+          ? addBoost(ctx.results[i], 'temporalValidAtT', verdict.boost)
+          : ctx.results[i]
       );
-      if (verdict.boost !== 0) ctx.traceTemporal.boostedValidAtT += 1;
+      if (!enforcePointInTime && verdict.eligible && verdict.boost !== 0) ctx.traceTemporal.boostedValidAtT += 1;
+      const dateFitBoost = !enforcePointInTime
+        ? temporalDateFitBoost(ctx.results[i], ctx.timeRef)
+        : 0;
+      if (dateFitBoost !== 0) {
+        kept[kept.length - 1] = addBoost(kept[kept.length - 1], 'temporalDateFit', dateFitBoost);
+        ctx.traceTemporal.dateFitBoosted += 1;
+      }
     }
 
     logger.debug(
-      `[HybridSearch] Temporal validity (anchored t=${ctx.traceTemporal.t}): ` +
-      `${kept.length} valid-at-T, ${ctx.traceTemporal.excludedInvalidAtT} excluded`
+      `[HybridSearch] Temporal ${enforcePointInTime ? 'constraint' : 'relevance'} (t=${t.toISOString()}): ` +
+      `${ctx.traceTemporal.boostedValidAtT} valid-at-T boosted, ` +
+      `${ctx.traceTemporal.dateFitBoosted} date-fit boosted, ` +
+      `${ctx.traceTemporal.excludedInvalidAtT} excluded by latestOnly, ${kept.length} retained`
     );
 
     ctx.results = kept;
     ctx.results.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
+  }
+  const windowStart = ctx.input.validTimeFrom ? new Date(ctx.input.validTimeFrom) : null;
+  const windowEnd = ctx.input.validTimeTo ? new Date(ctx.input.validTimeTo) : null;
+  if ((windowStart !== null && !Number.isFinite(windowStart.getTime())) || (windowEnd !== null && !Number.isFinite(windowEnd.getTime()))) {
+    throw new Error('validTimeFrom and validTimeTo must be valid dates');
+  }
+  if (windowStart !== null && windowEnd !== null && windowStart.getTime() >= windowEnd.getTime()) {
+    throw new Error('validTimeFrom must be earlier than validTimeTo');
+  }
+  if (windowStart !== null || windowEnd !== null) {
+    ctx.results = ctx.results.filter(r => {
+      return overlapsValidTimeWindow(r, windowStart, windowEnd);
+    });
   }
   return ctx;
 }
@@ -761,7 +948,8 @@ async function mmrStage(ctx: SearchContext): Promise<SearchContext> {
 }
 
 /**
- * Final scoring stage: clamp scores, shadow delta recording.
+ * Final scoring stage: config-weight composition (WS1a-T1.3), clamp scores,
+ * shadow delta recording.
  */
 async function finalScoringStage(ctx: SearchContext): Promise<SearchContext> {
   const scoringFlags = getScoringFlags();
@@ -773,6 +961,14 @@ async function finalScoringStage(ctx: SearchContext): Promise<SearchContext> {
       // Shadow must never affect serving
     }
   }
+
+  // WS1a-T1.3: The configured scoring weights (importance / recency /
+  // relevance) are genuinely consumed here - folded into boostScore as
+  // itemized components before the final clamp+sort. Shipped defaults sit at
+  // the neutrality anchors, so the default pipeline is a strict no-op (the
+  // identity fast path returns the same array); operator-set values reorder
+  // serving. semanticScore stays honest; three-field identity is preserved.
+  ctx.results = applyRetrievalServingWeights(ctx.results, config.scoringWeights);
 
   ctx.results = finalizeScores(ctx.results, scoringFlags.serveV2);
 
@@ -875,6 +1071,9 @@ async function traceFinalizationStage(ctx: SearchContext): Promise<SearchContext
 // ---------------------------------------------------------------------------
 
 const stages: Array<(ctx: SearchContext) => Promise<SearchContext>> = [
+  // v2.3: Query routing (classify intent, allocate budget)
+  queryRoutingStage,
+
   // Retrieval
   vectorRetrievalStage,
   keywordRetrievalStage,
@@ -967,6 +1166,10 @@ export async function hybridSearch(
   options: HybridSearchOptions = {}
 ): Promise<SearchResult[]> {
   const ctx = await initSearchContext(input, options);
+
+  if (input.retrievalMode === 'lexical') {
+    return keywordSearch(input, ctx.limit, ctx.searchCtx, options.candidateFilter);
+  }
 
   for (const stage of stages) {
     await stage(ctx);

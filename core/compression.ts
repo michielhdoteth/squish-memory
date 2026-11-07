@@ -172,6 +172,178 @@ export function truncateToTokenBudget(content: string, maxTokens: number): strin
       high = mid;
     }
   }
-
+  
   return content.substring(0, low) + '...';
+}
+
+// ─── Multi-Tier Compression (v2.4) ─────────────────────────────────────────
+
+export type CompressionTier = 'light' | 'medium' | 'heavy' | 'aggressive';
+
+export interface CompressionResult {
+  content: string;
+  tier: CompressionTier;
+  originalLength: number;
+  compressedLength: number;
+  ratio: number;
+}
+
+const TIER_THRESHOLDS = {
+  light: 100,
+  medium: 500,
+  heavy: 2000,
+  aggressive: Infinity,
+} as const;
+
+const TIER_CONTENT_LIMITS: Record<CompressionTier, number> = {
+  light: 80,
+  medium: 80,
+  heavy: 60,
+  aggressive: 40,
+};
+
+const TIER_TAG_LIMITS: Record<CompressionTier, number> = {
+  light: 3,
+  medium: 3,
+  heavy: 2,
+  aggressive: 1,
+};
+
+/**
+ * Determine the appropriate compression tier based on content length
+ */
+export function getCompressionTier(content: string): CompressionTier {
+  const len = content.length;
+  if (len <= TIER_THRESHOLDS.light) return 'light';
+  if (len <= TIER_THRESHOLDS.medium) return 'medium';
+  if (len <= TIER_THRESHOLDS.heavy) return 'heavy';
+  return 'aggressive';
+}
+
+/**
+ * Compress content with a specific tier
+ */
+export function compressWithTier(content: string, tier: CompressionTier): CompressionResult {
+  const originalLength = content.length;
+
+  // Light tier: no compression
+  if (tier === 'light' || originalLength <= TIER_THRESHOLDS.light) {
+    return {
+      content,
+      tier: 'light',
+      originalLength,
+      compressedLength: originalLength,
+      ratio: 1.0,
+    };
+  }
+
+  // Apply TOON compression with tier-specific limits
+  const contentLimit = TIER_CONTENT_LIMITS[tier];
+  const tagLimit = TIER_TAG_LIMITS[tier];
+
+  let compressed: string;
+  try {
+    if (isJson(content)) {
+      const parsed = JSON.parse(content);
+      const toon: any = {
+        m: parsed.type?.substring(0, 2) || 'ob',
+      };
+
+      if (parsed.content) {
+        const truncated = parsed.content.substring(0, contentLimit);
+        toon.c = truncated.length < parsed.content.length ? truncated + '..' : truncated;
+      }
+
+      if (parsed.tags && Array.isArray(parsed.tags)) {
+        toon.t = parsed.tags.slice(0, tagLimit);
+      }
+
+      if (parsed.createdAt) {
+        const days = Math.floor((Date.now() - new Date(parsed.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+        if (days > 0) {
+          toon.d = days;
+        }
+      }
+
+      compressed = JSON.stringify(toon);
+    } else {
+      // Non-JSON: truncate to content limit
+      compressed = content.substring(0, contentLimit);
+      if (compressed.length < content.length) {
+        compressed += '..';
+      }
+    }
+  } catch {
+    compressed = content.substring(0, contentLimit);
+    if (compressed.length < content.length) {
+      compressed += '..';
+    }
+  }
+
+  // For heavy/aggressive, also apply token budget truncation
+  if (tier === 'heavy' || tier === 'aggressive') {
+    const maxChars = tier === 'heavy' ? 300 : 150;
+    if (compressed.length > maxChars) {
+      compressed = compressed.substring(0, maxChars) + '..';
+    }
+  }
+
+  const compressedLength = compressed.length;
+  return {
+    content: compressed,
+    tier,
+    originalLength,
+    compressedLength,
+    ratio: compressedLength / originalLength,
+  };
+}
+
+/**
+ * Full compression pipeline: auto-select tier and optionally enforce token budget
+ */
+export function compressPipeline(content: string, maxTokens?: number): CompressionResult {
+  // Empty content
+  if (!content) {
+    return {
+      content: '',
+      tier: 'light',
+      originalLength: 0,
+      compressedLength: 0,
+      ratio: 1.0,
+    };
+  }
+
+  // Check if already within token budget
+  if (maxTokens !== undefined) {
+    const tokens = estimateTokens(content);
+    if (tokens <= maxTokens) {
+      return {
+        content,
+        tier: 'light',
+        originalLength: content.length,
+        compressedLength: content.length,
+        ratio: 1.0,
+      };
+    }
+  }
+
+  // Auto-select tier based on content size
+  const tier = getCompressionTier(content);
+  const result = compressWithTier(content, tier);
+
+  // If token budget specified, further truncate if needed
+  if (maxTokens !== undefined) {
+    const maxChars = maxTokens * 4; // estimateTokens is length/4
+    if (result.content.length > maxChars) {
+      const truncated = result.content.substring(0, maxChars) + '..';
+      return {
+        ...result,
+        content: truncated,
+        compressedLength: truncated.length,
+        ratio: truncated.length / result.originalLength,
+      };
+    }
+  }
+
+  return result;
 }

@@ -1,19 +1,14 @@
-// squish_skill, squish_extract, squish_feedback
+// squish_skill, squish_feedback
 //
-// Skill management (SOPs), auto-extraction pipeline, and reinforcement feedback.
+// Explicit skill management and reinforcement feedback.
 // All business logic lives in @squish/core-sdk / core.
 
+import { jsonResult } from './shared.js';
 import { z } from "zod";
-import type { ToolCtx } from "./extras.js";
+import type { ToolCtx } from './shared.js';
+import { isStrictTrustPolicy } from '../../core/acl/trust-policy.js';
 
-function jsonResult(payload: unknown, version?: string) {
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(version ? { ...(payload as Record<string, unknown>), version } : payload, null, 2),
-    }],
-  };
-}
+
 
 export function registerSkillTools(ctx: ToolCtx): number {
   const { register, server, sdkClient, resolveProjectPath, errorResponse, SERVER_VERSION } = ctx;
@@ -132,81 +127,6 @@ export function registerSkillTools(ctx: ToolCtx): number {
     }
   )) count++;
 
-  // squish_extract - AUTO-EXTRACTION PIPELINE
-  if (register(
-    server,
-    "squish_extract",
-    {
-      description: "Auto-extract reusable skills (SOPs) from accumulated memories using LLM analysis. Actions: run (batch extraction), status (last run info).",
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-      inputSchema: z.object({
-        action: z.enum(["run", "status"]).describe("Action to perform"),
-        hoursBack: z.number().optional().describe("How many hours back to look for memories (default: 24)"),
-        projectId: z.string().optional().describe("Project ID to extract from"),
-      })
-    },
-    async (input: any) => {
-      try {
-        const { extractSkillFromMemories } = await import('../../core/extraction/extraction.js');
-        const project = resolveProjectPath(input.projectId);
-
-        if (input.action === "status") {
-          return { content: [{ type: "text", text: JSON.stringify({ ok: true, status: "Extraction pipeline ready", features: ["skill_extraction", "pattern_detection"] }, null, 2) }] };
-        }
-
-        // Get recent memories to analyze
-        const { ensureProject } = await import('../../core/projects.js');
-        if (project) {
-          await ensureProject(project);
-        }
-        const memories = await sdkClient.listRecent({
-          limit: 50,
-          project,
-          ...(typeof input.hoursBack === "number" && input.hoursBack > 0
-            ? { hoursBack: input.hoursBack }
-            : {}),
-        });
-
-        if (memories.length < 5) {
-          return { content: [{ type: "text", text: JSON.stringify({ ok: true, message: "Not enough memories for extraction (need 5+)", count: memories.length }, null, 2) }] };
-        }
-
-        // Group memories by tags for pattern detection
-        const tagGroups = new Map<string, any[]>();
-        for (const mem of memories) {
-          const tags = mem.tags || [];
-          for (const tag of tags) {
-            if (tag === "auto-captured") continue;
-            const group = tagGroups.get(tag) || [];
-            group.push(mem);
-            tagGroups.set(tag, group);
-          }
-        }
-
-        let skillsExtracted = 0;
-        const errors: string[] = [];
-
-        // Process groups with 3+ memories
-        for (const [tag, group] of tagGroups) {
-          if (group.length < 3) continue;
-
-          try {
-            const skill = await extractSkillFromMemories(group, project || "default");
-            if (skill) {
-              skillsExtracted++;
-            }
-          } catch (e: any) {
-            errors.push(`Skill extraction for "${tag}": ${e.message}`);
-          }
-        }
-
-        return { content: [{ type: "text", text: JSON.stringify({ ok: true, skills_extracted: skillsExtracted, errors, message: "Extraction completed. Skills saved to database." }, null, 2) }] };
-      } catch (error: any) {
-        return errorResponse("extraction_error", error.message);
-      }
-    }
-  )) count++;
-
   // squish_feedback - REINFORCEMENT LOOP
   if (register(
     server,
@@ -217,7 +137,9 @@ export function registerSkillTools(ctx: ToolCtx): number {
         "(you acted on it), or contradict (it was wrong). Targets: memory, " +
         "belief (knowledge table), or strategy. Confirmation boosts the " +
         "confidence signals retrieval and recall-confidence read; contradiction " +
-        "marks beliefs disputed / memories outdated so they rank lower.",
+        "marks beliefs disputed / memories outdated so they rank lower. Strict " +
+        "trust accepts only caller-authorized memory feedback; belief and strategy " +
+        "feedback remain unavailable until their source lineage is caller-scoped.",
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
       inputSchema: z.object({
         targetType: z.enum(["memory", "belief", "strategy"]).describe("Which store the id belongs to"),
@@ -227,15 +149,24 @@ export function registerSkillTools(ctx: ToolCtx): number {
       })
     },
     async ({ targetType, id, signal, project }: { targetType: "memory" | "belief" | "strategy"; id: string; signal: "confirm" | "contradict" | "used"; project?: string }) => {
-      const { applyFeedback } = await import('../../core/memory/reinforcement.js');
-      const resolvedProject = resolveProjectPath(project);
-      const result = await applyFeedback({ targetType, id, signal, project: resolvedProject });
-      if (!result.ok) {
-        return errorResponse("feedback_failed", result.detail ?? "feedback could not be applied", id);
+      try {
+        const result = isStrictTrustPolicy()
+          ? await sdkClient.feedback(targetType, id, signal)
+          : await (async () => {
+              const { applyFeedback } = await import('../../core/memory/reinforcement.js');
+              const resolvedProject = resolveProjectPath(project);
+              return applyFeedback({ targetType, id, signal, project: resolvedProject });
+            })();
+        if (!result.ok) {
+          return errorResponse("feedback_failed", result.detail ?? "feedback could not be applied", id);
+        }
+        const { ok, ...feedback } = result;
+        void ok;
+        return { content: [{ type: "text", text: JSON.stringify({ ...feedback, version: SERVER_VERSION }, null, 2) }] };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'feedback was denied';
+        return errorResponse(isStrictTrustPolicy() ? 'feedback_denied' : 'feedback_error', message);
       }
-      const { ok, ...feedback } = result;
-      void ok;
-      return { content: [{ type: "text", text: JSON.stringify({ ...feedback, version: SERVER_VERSION }, null, 2) }] };
     }
   )) count++;
 

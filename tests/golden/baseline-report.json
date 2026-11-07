@@ -1,7 +1,7 @@
 {
   "meta": {
-    "generatedAt": "2026-08-25T19:51:17.087Z",
-    "gitSha": "87df1fc",
+    "generatedAt": "2026-10-14T00:36:08.878Z",
+    "gitSha": "e91b56e1",
     "gitDirty": true,
     "corpusSize": 60,
     "queryCount": 46,
@@ -16,7 +16,7 @@
       "scoringServeV2": true
     },
     "envPinned": true,
-    "durationMs": 2614,
+    "durationMs": 30282,
     "deterministic": true
   },
   "thresholds": {
@@ -27,8 +27,8 @@
   },
   "overall": {
     "count": 46,
-    "recallAt5": 0.9347826086956522,
-    "mrr": 0.9043478260869565,
+    "recallAt5": 0.9456521739130435,
+    "mrr": 0.9039855072463767,
     "hitAt1": 0.8695652173913043
   },
   "byCategory": {
@@ -52,14 +52,14 @@
     },
     "negation": {
       "count": 8,
-      "recallAt5": 0.875,
-      "mrr": 0.75,
+      "recallAt5": 0.9375,
+      "mrr": 0.7604166666666667,
       "hitAt1": 0.625
     },
     "procedural": {
       "count": 8,
       "recallAt5": 0.875,
-      "mrr": 0.8875,
+      "mrr": 0.875,
       "hitAt1": 0.875
     },
     "multi-hop": {
@@ -70,8 +70,8 @@
     }
   },
   "calibration": {
-    "ece": 0.05503057177142916,
-    "brier": 0.12680008193357442,
+    "ece": 0.04290339870120154,
+    "brier": 0.12760141930583038,
     "count": 46,
     "maxEceThreshold": 0.15,
     "reliability": [
@@ -80,24 +80,24 @@
         "low": 0.2,
         "high": 0.3,
         "count": 1,
-        "avgConfidence": 0.21523795069078278,
+        "avgConfidence": 0.21502478691702911,
         "hitRate": 1
       },
       {
         "band": 8,
         "low": 0.8,
         "high": 0.9,
-        "count": 38,
-        "avgConfidence": 0.8390135150473715,
-        "hitRate": 0.868421052631579
+        "count": 35,
+        "avgConfidence": 0.837212944579425,
+        "hitRate": 0.8571428571428571
       },
       {
         "band": 9,
         "low": 0.9,
         "high": 1,
-        "count": 7,
-        "avgConfidence": 0.9470225462823773,
-        "hitRate": 0.8571428571428571
+        "count": 10,
+        "avgConfidence": 0.9491034187452175,
+        "hitRate": 0.9
       }
     ],
     "selective": [
@@ -138,31 +138,31 @@
       },
       {
         "threshold": 0.85,
-        "coverage": 0.15217391304347827,
-        "accuracy": 0.8571428571428571
+        "coverage": 0.21739130434782608,
+        "accuracy": 0.9
       },
       {
         "threshold": 0.9,
-        "coverage": 0.15217391304347827,
-        "accuracy": 0.8571428571428571
+        "coverage": 0.21739130434782608,
+        "accuracy": 0.9
       },
       {
         "threshold": 0.95,
-        "coverage": 0.043478260869565216,
-        "accuracy": 1
+        "coverage": 0.06521739130434782,
+        "accuracy": 0.6666666666666666
       }
     ],
-    "precisionAtConf90": 0.8571428571428571,
+    "precisionAtConf90": 0.9,
     "freshnessAblation": {
       "signal": "SQUISH_EVIDENCE_FRESHNESS",
       "on": {
-        "ece": 0.05503057177142916,
-        "brier": 0.12680008193357442,
+        "ece": 0.04290339870120154,
+        "brier": 0.12760141930583038,
         "count": 46
       },
       "off": {
-        "ece": 0.044282065217391184,
-        "brier": 0.12767276957880427,
+        "ece": 0.032597282608695384,
+        "brier": 0.12847562283967387,
         "count": 46
       },
       "note": "canonical metrics gate on the freshness-on run; off-run reruns identical deterministic retrieval with the signal nulled"
@@ -183,66 +183,66 @@
         {
           "goldenId": "golden_001",
           "score": 1,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_030",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_043",
-          "score": 0.9587,
-          "recallConfidence": 0.8248,
+          "score": 0.9178,
+          "recallConfidence": 0.8152,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_006",
-          "score": 0.9144,
-          "recallConfidence": 0.6518,
+          "score": 0.9032,
+          "recallConfidence": 0.649,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_038",
-          "score": 0.8857,
-          "recallConfidence": 0.611,
+          "score": 0.8742,
+          "recallConfidence": 0.6054,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.8239,
+          "recallConfidence": 0.7844,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_040",
-          "score": 0.8524,
-          "recallConfidence": 0.7521,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.8127,
+          "recallConfidence": 0.5848,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_055",
-          "score": 0.8472,
-          "recallConfidence": 0.7501,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_046",
-          "score": 0.8089,
-          "recallConfidence": 0.6266,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.8098,
+          "recallConfidence": 0.5836,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_057",
-          "score": 0.8084,
-          "recallConfidence": 0.6141,
+          "score": 0.8024,
+          "recallConfidence": 0.6108,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_053",
-          "score": 0.788,
-          "recallConfidence": 0.6139,
+          "goldenId": "golden_048",
+          "score": 0.7963,
+          "recallConfidence": 0.7599,
           "confidenceTier": "QUALIFIED"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8495,
+      "top1RecallConfidence": 0.849,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -259,66 +259,66 @@
         {
           "goldenId": "golden_013",
           "score": 1,
-          "recallConfidence": 0.9205,
+          "recallConfidence": 0.9643,
           "confidenceTier": "HIGH"
         },
         {
-          "goldenId": "golden_035",
-          "score": 0.9472,
-          "recallConfidence": 0.9439,
-          "confidenceTier": "HIGH"
+          "goldenId": "golden_029",
+          "score": 0.5041,
+          "recallConfidence": 0.3999,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_011",
-          "score": 0.9414,
-          "recallConfidence": 0.8943,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_040",
-          "score": 0.9328,
-          "recallConfidence": 0.8942,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4881,
+          "recallConfidence": 0.4591,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_047",
-          "score": 0.915,
-          "recallConfidence": 0.7241,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4804,
+          "recallConfidence": 0.4535,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4731,
+          "recallConfidence": 0.4421,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4659,
+          "recallConfidence": 0.4281,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4589,
+          "recallConfidence": 0.4036,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.4522,
+          "recallConfidence": 0.3791,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.4456,
+          "recallConfidence": 0.3865,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_012",
-          "score": 0.9056,
-          "recallConfidence": 0.886,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_039",
-          "score": 0.9054,
-          "recallConfidence": 0.8942,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_032",
-          "score": 0.8923,
-          "recallConfidence": 0.9364,
-          "confidenceTier": "HIGH"
-        },
-        {
-          "goldenId": "golden_044",
-          "score": 0.8483,
-          "recallConfidence": 0.8671,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_005",
-          "score": 0.8432,
-          "recallConfidence": 0.9246,
-          "confidenceTier": "HIGH"
+          "score": 0.4393,
+          "recallConfidence": 0.3672,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.9205,
+      "top1RecallConfidence": 0.9643,
       "recallAtK": 0,
       "rr": 0,
       "hitAt1": false
@@ -337,66 +337,66 @@
         {
           "goldenId": "golden_003",
           "score": 1,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.9434,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.9198,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.908,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.8779,
+          "recallConfidence": 0.8934,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_011",
-          "score": 0.9541,
-          "recallConfidence": 0.8071,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4919,
+          "recallConfidence": 0.4444,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.4841,
+          "recallConfidence": 0.4418,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4766,
+          "recallConfidence": 0.4163,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_012",
-          "score": 0.9534,
-          "recallConfidence": 0.8285,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4692,
+          "recallConfidence": 0.403,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_044",
-          "score": 0.9186,
-          "recallConfidence": 0.8004,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_042",
+          "score": 0.4692,
+          "recallConfidence": 0.4111,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_019",
-          "score": 0.9081,
-          "recallConfidence": 0.844,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_051",
-          "score": 0.8781,
-          "recallConfidence": 0.6321,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_047",
-          "score": 0.8778,
-          "recallConfidence": 0.8049,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_027",
-          "score": 0.8664,
-          "recallConfidence": 0.8013,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_014",
-          "score": 0.8619,
-          "recallConfidence": 0.6281,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_013",
-          "score": 0.8044,
-          "recallConfidence": 0.7618,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_053",
+          "score": 0.4621,
+          "recallConfidence": 0.398,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8495,
+      "top1RecallConfidence": 0.9434,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -415,66 +415,66 @@
         {
           "goldenId": "golden_004",
           "score": 1,
-          "recallConfidence": 0.8495,
-          "confidenceTier": "QUALIFIED"
+          "recallConfidence": 0.9434,
+          "confidenceTier": "HIGH"
         },
         {
           "goldenId": "golden_046",
-          "score": 0.9839,
-          "recallConfidence": 0.8495,
+          "score": 0.934,
+          "recallConfidence": 0.915,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.9077,
+          "recallConfidence": 0.7268,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.8802,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8778,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_013",
-          "score": 0.9318,
-          "recallConfidence": 0.8031,
+          "score": 0.873,
+          "recallConfidence": 0.6993,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_045",
+          "score": 0.844,
+          "recallConfidence": 0.8807,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_041",
+          "score": 0.8323,
+          "recallConfidence": 0.832,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.8272,
+          "recallConfidence": 0.8732,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_060",
-          "score": 0.8752,
-          "recallConfidence": 0.8495,
+          "score": 0.8206,
+          "recallConfidence": 0.7008,
           "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_003",
-          "score": 0.4842,
-          "recallConfidence": 0.3978,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_006",
-          "score": 0.4766,
-          "recallConfidence": 0.385,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_011",
-          "score": 0.4693,
-          "recallConfidence": 0.3635,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_053",
-          "score": 0.4622,
-          "recallConfidence": 0.3586,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_012",
-          "score": 0.4486,
-          "recallConfidence": 0.3301,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_038",
-          "score": 0.4421,
-          "recallConfidence": 0.3107,
-          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8495,
+      "top1RecallConfidence": 0.9434,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -492,66 +492,66 @@
         {
           "goldenId": "golden_036",
           "score": 1,
-          "recallConfidence": 0.8048,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_015",
-          "score": 1,
-          "recallConfidence": 0.8285,
+          "recallConfidence": 0.8013,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_035",
-          "score": 0.9764,
-          "recallConfidence": 0.8495,
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.9885,
+          "recallConfidence": 0.8265,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_009",
           "score": 0.952,
-          "recallConfidence": 0.8235,
+          "recallConfidence": 0.8231,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_030",
-          "score": 0.9403,
-          "recallConfidence": 0.8441,
+          "score": 0.9326,
+          "recallConfidence": 0.8175,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_014",
           "score": 0.906,
-          "recallConfidence": 0.7923,
+          "recallConfidence": 0.7905,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_043",
-          "score": 0.7997,
-          "recallConfidence": 0.7675,
+          "score": 0.7996,
+          "recallConfidence": 0.7671,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_050",
           "score": 0.4881,
-          "recallConfidence": 0.4045,
+          "recallConfidence": 0.4043,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_046",
           "score": 0.4731,
-          "recallConfidence": 0.3791,
+          "recallConfidence": 0.3789,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_060",
           "score": 0.4659,
-          "recallConfidence": 0.3671,
+          "recallConfidence": 0.3669,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8048,
+      "top1RecallConfidence": 0.8013,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -568,66 +568,66 @@
         {
           "goldenId": "golden_008",
           "score": 1,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_060",
-          "score": 0.9885,
-          "recallConfidence": 0.8299,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_011",
-          "score": 0.9434,
-          "recallConfidence": 0.8053,
+          "score": 0.9961,
+          "recallConfidence": 0.8491,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_050",
           "score": 0.9153,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_030",
           "score": 0.9123,
-          "recallConfidence": 0.814,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_013",
-          "score": 0.8978,
-          "recallConfidence": 0.7955,
+          "recallConfidence": 0.8132,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_029",
           "score": 0.8871,
-          "recallConfidence": 0.8076,
+          "recallConfidence": 0.8068,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_018",
-          "score": 0.8773,
-          "recallConfidence": 0.844,
+          "score": 0.8697,
+          "recallConfidence": 0.8016,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_047",
-          "score": 0.8483,
-          "recallConfidence": 0.636,
+          "goldenId": "golden_012",
+          "score": 0.7597,
+          "recallConfidence": 0.7345,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_051",
-          "score": 0.82,
-          "recallConfidence": 0.6152,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_011",
+          "score": 0.5041,
+          "recallConfidence": 0.336,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.4804,
+          "recallConfidence": 0.3694,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4731,
+          "recallConfidence": 0.3789,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "hybrid_search",
-      "top1RecallConfidence": 0.8495,
+      "top1RecallConfidence": 0.849,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -644,66 +644,66 @@
         {
           "goldenId": "golden_007",
           "score": 1,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_001",
-          "score": 0.9962,
-          "recallConfidence": 0.8495,
+          "score": 0.9807,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_014",
-          "score": 0.9664,
-          "recallConfidence": 0.8285,
+          "score": 0.9442,
+          "recallConfidence": 0.8265,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.9245,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.883,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_056",
-          "score": 0.8616,
-          "recallConfidence": 0.8441,
+          "score": 0.8388,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_004",
-          "score": 0.496,
-          "recallConfidence": 0.4178,
+          "score": 0.4919,
+          "recallConfidence": 0.4108,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_015",
-          "score": 0.4805,
-          "recallConfidence": 0.3819,
+          "score": 0.4766,
+          "recallConfidence": 0.3746,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_011",
-          "score": 0.4731,
-          "recallConfidence": 0.3697,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_053",
-          "score": 0.459,
-          "recallConfidence": 0.3533,
+          "score": 0.4692,
+          "recallConfidence": 0.3627,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_046",
-          "score": 0.4522,
-          "recallConfidence": 0.3445,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_006",
-          "score": 0.4457,
-          "recallConfidence": 0.3338,
+          "score": 0.4485,
+          "recallConfidence": 0.3383,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8495,
+      "top1RecallConfidence": 0.849,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -723,66 +723,66 @@
         {
           "goldenId": "golden_055",
           "score": 1,
-          "recallConfidence": 0.8048,
+          "recallConfidence": 0.8013,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_054",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_030",
-          "score": 0.9735,
-          "recallConfidence": 0.8222,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_016",
-          "score": 0.9603,
-          "recallConfidence": 0.844,
+          "score": 0.9587,
+          "recallConfidence": 0.8187,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_011",
-          "score": 0.9537,
-          "recallConfidence": 0.8035,
+          "score": 0.9462,
+          "recallConfidence": 0.8001,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_031",
-          "score": 0.9017,
-          "recallConfidence": 0.8114,
+          "goldenId": "golden_016",
+          "score": 0.9451,
+          "recallConfidence": 0.816,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_001",
-          "score": 0.8915,
-          "recallConfidence": 0.8139,
+          "score": 0.9198,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_031",
+          "score": 0.887,
+          "recallConfidence": 0.8067,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_038",
-          "score": 0.8905,
-          "recallConfidence": 0.7653,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_044",
-          "score": 0.8787,
-          "recallConfidence": 0.6323,
+          "score": 0.8765,
+          "recallConfidence": 0.7576,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_006",
-          "score": 0.8732,
-          "recallConfidence": 0.8019,
+          "score": 0.8596,
+          "recallConfidence": 0.7964,
           "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4692,
+          "recallConfidence": 0.3725,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8048,
+      "top1RecallConfidence": 0.8013,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -802,66 +802,66 @@
         {
           "goldenId": "golden_024",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_048",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_058",
-          "score": 1,
-          "recallConfidence": 0.8441,
+          "score": 0.9961,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_025",
-          "score": 0.9387,
-          "recallConfidence": 0.8154,
+          "score": 0.9461,
+          "recallConfidence": 0.8162,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_006",
           "score": 0.9248,
-          "recallConfidence": 0.822,
+          "recallConfidence": 0.8216,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_043",
-          "score": 0.4805,
-          "recallConfidence": 0.3916,
+          "goldenId": "golden_008",
+          "score": 0.8574,
+          "recallConfidence": 0.2048,
           "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_027",
+          "goldenId": "golden_043",
           "score": 0.4804,
-          "recallConfidence": 0.3891,
+          "recallConfidence": 0.3914,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_015",
           "score": 0.4731,
-          "recallConfidence": 0.3697,
+          "recallConfidence": 0.3689,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_011",
           "score": 0.4659,
-          "recallConfidence": 0.358,
+          "recallConfidence": 0.3572,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_036",
           "score": 0.4522,
-          "recallConfidence": 0.0832,
+          "recallConfidence": 0.0829,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "multi_hop",
-      "top1RecallConfidence": 0.844,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -878,66 +878,66 @@
         {
           "goldenId": "golden_026",
           "score": 1,
-          "recallConfidence": 0.9378,
-          "confidenceTier": "HIGH"
-        },
-        {
-          "goldenId": "golden_027",
-          "score": 0.8933,
-          "recallConfidence": 0.9378,
+          "recallConfidence": 0.9838,
           "confidenceTier": "HIGH"
         },
         {
           "goldenId": "golden_011",
-          "score": 0.492,
-          "recallConfidence": 0.4454,
+          "score": 0.4919,
+          "recallConfidence": 0.4666,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_014",
-          "score": 0.4842,
-          "recallConfidence": 0.4311,
+          "score": 0.4841,
+          "recallConfidence": 0.4516,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_029",
           "score": 0.4766,
-          "recallConfidence": 0.4251,
+          "recallConfidence": 0.4459,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_050",
-          "score": 0.4693,
-          "recallConfidence": 0.4141,
+          "score": 0.4692,
+          "recallConfidence": 0.4346,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_045",
-          "score": 0.4622,
-          "recallConfidence": 0.3984,
+          "score": 0.4621,
+          "recallConfidence": 0.4179,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_032",
-          "score": 0.4553,
-          "recallConfidence": 0.3858,
+          "score": 0.4552,
+          "recallConfidence": 0.4047,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_004",
-          "score": 0.4486,
-          "recallConfidence": 0.0959,
+          "score": 0.4485,
+          "recallConfidence": 0.1007,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_024",
-          "score": 0.4421,
-          "recallConfidence": 0.3621,
+          "score": 0.442,
+          "recallConfidence": 0.3798,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.4357,
+          "recallConfidence": 0.3681,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.9378,
+      "top1RecallConfidence": 0.9838,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -955,66 +955,66 @@
         {
           "goldenId": "golden_047",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_025",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4881,
+          "recallConfidence": 0.3935,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_046",
-          "score": 0.9135,
-          "recallConfidence": 0.6556,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_026",
-          "score": 0.8853,
-          "recallConfidence": 0.807,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4804,
+          "recallConfidence": 0.3914,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_003",
-          "score": 0.8777,
-          "recallConfidence": 0.648,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4731,
+          "recallConfidence": 0.3789,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_043",
-          "score": 0.8727,
-          "recallConfidence": 0.8085,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_006",
+          "score": 0.4659,
+          "recallConfidence": 0.3669,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_058",
-          "score": 0.8725,
-          "recallConfidence": 0.8441,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_001",
+          "score": 0.4589,
+          "recallConfidence": 0.3554,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_016",
-          "score": 0.8689,
-          "recallConfidence": 0.8021,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_051",
+          "score": 0.4522,
+          "recallConfidence": 0.3352,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_039",
-          "score": 0.8601,
-          "recallConfidence": 0.762,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_005",
+          "score": 0.4456,
+          "recallConfidence": 0.3336,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_052",
-          "score": 0.8493,
-          "recallConfidence": 0.6404,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4393,
+          "recallConfidence": 0.3234,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1032,66 +1032,66 @@
         {
           "goldenId": "golden_058",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_029",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_015",
           "score": 0.4881,
-          "recallConfidence": 0.3945,
+          "recallConfidence": 0.3935,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_039",
-          "score": 0.4805,
-          "recallConfidence": 0.371,
+          "score": 0.4804,
+          "recallConfidence": 0.3694,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_013",
           "score": 0.4731,
-          "recallConfidence": 0.3697,
+          "recallConfidence": 0.3689,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_014",
           "score": 0.4659,
-          "recallConfidence": 0.358,
+          "recallConfidence": 0.3572,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_004",
-          "score": 0.459,
-          "recallConfidence": 0.3556,
+          "score": 0.4589,
+          "recallConfidence": 0.3554,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_021",
           "score": 0.4522,
-          "recallConfidence": 0.3423,
+          "recallConfidence": 0.3419,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_006",
-          "score": 0.4457,
-          "recallConfidence": 0.3338,
+          "score": 0.4456,
+          "recallConfidence": 0.3336,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_048",
           "score": 0.4393,
-          "recallConfidence": 0.3215,
+          "recallConfidence": 0.3211,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "hybrid_search",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1109,66 +1109,66 @@
         {
           "goldenId": "golden_053",
           "score": 1,
-          "recallConfidence": 0.2152,
+          "recallConfidence": 0.215,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_027",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_035",
-          "score": 0.8118,
-          "recallConfidence": 0.7847,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_038",
-          "score": 0.801,
-          "recallConfidence": 0.7383,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_055",
-          "score": 0.7774,
-          "recallConfidence": 0.7259,
+          "goldenId": "golden_014",
+          "score": 0.9093,
+          "recallConfidence": 0.8265,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_015",
-          "score": 0.4842,
-          "recallConfidence": 0.388,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_009",
-          "score": 0.4841,
-          "recallConfidence": 0.4658,
+          "score": 0.4881,
+          "recallConfidence": 0.3935,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_012",
-          "score": 0.4766,
-          "recallConfidence": 0.3755,
+          "score": 0.4804,
+          "recallConfidence": 0.381,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_048",
-          "score": 0.4693,
-          "recallConfidence": 0.3704,
+          "score": 0.4731,
+          "recallConfidence": 0.3763,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_046",
-          "score": 0.4622,
-          "recallConfidence": 0.3609,
+          "score": 0.4659,
+          "recallConfidence": 0.3669,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4589,
+          "recallConfidence": 0.346,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.4522,
+          "recallConfidence": 0.0829,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.4456,
+          "recallConfidence": 0.3148,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "hybrid_search",
-      "top1RecallConfidence": 0.2152,
+      "top1RecallConfidence": 0.215,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1189,66 +1189,66 @@
         {
           "goldenId": "golden_058",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_030",
           "score": 0.993,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_017",
           "score": 0.8357,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_004",
           "score": 0.5123,
-          "recallConfidence": 0.3564,
+          "recallConfidence": 0.3563,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_003",
           "score": 0.504,
-          "recallConfidence": 0.3452,
+          "recallConfidence": 0.345,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_029",
           "score": 0.4883,
-          "recallConfidence": 0.4022,
+          "recallConfidence": 0.4018,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_013",
           "score": 0.4735,
-          "recallConfidence": 0.3704,
+          "recallConfidence": 0.3695,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_001",
           "score": 0.4664,
-          "recallConfidence": 0.368,
+          "recallConfidence": 0.3678,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_032",
-          "score": 0.4596,
-          "recallConfidence": 0.3543,
+          "score": 0.4595,
+          "recallConfidence": 0.3539,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_036",
           "score": 0.4529,
-          "recallConfidence": 0.3274,
+          "recallConfidence": 0.326,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 0.5,
       "hitAt1": false
@@ -1267,66 +1267,66 @@
         {
           "goldenId": "golden_028",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_020",
           "score": 0.9734,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_007",
           "score": 0.9663,
-          "recallConfidence": 0.8262,
+          "recallConfidence": 0.8258,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_026",
           "score": 0.9612,
-          "recallConfidence": 0.8235,
+          "recallConfidence": 0.8227,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_021",
           "score": 0.9518,
-          "recallConfidence": 0.8182,
+          "recallConfidence": 0.8174,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_059",
           "score": 0.4919,
-          "recallConfidence": 0.476,
+          "recallConfidence": 0.4755,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_036",
           "score": 0.4766,
-          "recallConfidence": 0.3648,
+          "recallConfidence": 0.3632,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_029",
-          "score": 0.4622,
-          "recallConfidence": 0.3586,
+          "score": 0.4621,
+          "recallConfidence": 0.3582,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_002",
-          "score": 0.4486,
-          "recallConfidence": 0.3385,
+          "score": 0.4485,
+          "recallConfidence": 0.3383,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_004",
-          "score": 0.4421,
-          "recallConfidence": 0.328,
+          "score": 0.442,
+          "recallConfidence": 0.3278,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "hybrid_search",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1343,25 +1343,25 @@
         {
           "goldenId": "golden_031",
           "score": 1,
-          "recallConfidence": 0.9847,
+          "recallConfidence": 0.9838,
           "confidenceTier": "HIGH"
         },
         {
           "goldenId": "golden_046",
-          "score": 0.614,
-          "recallConfidence": 0.5655,
+          "score": 0.6139,
+          "recallConfidence": 0.5652,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_015",
-          "score": 0.6041,
-          "recallConfidence": 0.5388,
+          "score": 0.604,
+          "recallConfidence": 0.5375,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_011",
-          "score": 0.5945,
-          "recallConfidence": 0.5261,
+          "score": 0.5944,
+          "recallConfidence": 0.5249,
           "confidenceTier": "LOW"
         },
         {
@@ -1373,36 +1373,36 @@
         {
           "goldenId": "golden_053",
           "score": 0.5762,
-          "recallConfidence": 0.1301,
+          "recallConfidence": 0.13,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_052",
-          "score": 0.5675,
-          "recallConfidence": 0.1277,
+          "score": 0.5674,
+          "recallConfidence": 0.1276,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_014",
           "score": 0.559,
-          "recallConfidence": 0.4761,
+          "recallConfidence": 0.475,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_032",
-          "score": 0.5508,
-          "recallConfidence": 0.4727,
+          "score": 0.5507,
+          "recallConfidence": 0.4723,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_006",
           "score": 0.5428,
-          "recallConfidence": 0.4635,
+          "recallConfidence": 0.4633,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.9847,
+      "top1RecallConfidence": 0.9838,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1423,66 +1423,66 @@
         {
           "goldenId": "golden_017",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_016",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_030",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_018",
-          "score": 0.963,
-          "recallConfidence": 0.7141,
+          "score": 0.9825,
+          "recallConfidence": 0.7296,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_058",
           "score": 0.9387,
-          "recallConfidence": 0.8196,
+          "recallConfidence": 0.8187,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_008",
-          "score": 0.9113,
-          "recallConfidence": 0.819,
+          "score": 0.8716,
+          "recallConfidence": 0.6462,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_052",
-          "score": 0.9107,
-          "recallConfidence": 0.8188,
+          "score": 0.8663,
+          "recallConfidence": 0.6448,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_001",
-          "score": 0.9038,
-          "recallConfidence": 0.8171,
+          "score": 0.8619,
+          "recallConfidence": 0.6436,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_004",
-          "score": 0.8657,
-          "recallConfidence": 0.8062,
+          "goldenId": "golden_035",
+          "score": 0.8582,
+          "recallConfidence": 0.8033,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_039",
-          "score": 0.8206,
-          "recallConfidence": 0.5978,
-          "confidenceTier": "LOW"
+          "goldenId": "golden_003",
+          "score": 0.8417,
+          "recallConfidence": 0.6378,
+          "confidenceTier": "QUALIFIED"
         }
       ],
       "recallStrategy": "temporal_validity",
-      "top1RecallConfidence": 0.844,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1500,66 +1500,66 @@
         {
           "goldenId": "golden_018",
           "score": 1,
-          "recallConfidence": 0.9378,
-          "confidenceTier": "HIGH"
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.9807,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_019",
           "score": 0.9805,
-          "recallConfidence": 0.9378,
-          "confidenceTier": "HIGH"
-        },
-        {
-          "goldenId": "golden_003",
-          "score": 0.9451,
-          "recallConfidence": 0.9134,
-          "confidenceTier": "HIGH"
-        },
-        {
-          "goldenId": "golden_014",
-          "score": 0.925,
-          "recallConfidence": 0.8858,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_017",
-          "score": 0.8874,
-          "recallConfidence": 0.8907,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_005",
-          "score": 0.8799,
-          "recallConfidence": 0.8936,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_035",
-          "score": 0.8588,
-          "recallConfidence": 0.9439,
-          "confidenceTier": "HIGH"
-        },
-        {
-          "goldenId": "golden_021",
-          "score": 0.8481,
-          "recallConfidence": 0.8744,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_034",
-          "score": 0.8318,
-          "recallConfidence": 0.8663,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_033",
-          "score": 0.8257,
-          "recallConfidence": 0.6987,
+          "score": 0.8727,
+          "recallConfidence": 0.8025,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.8443,
+          "recallConfidence": 0.6277,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.8209,
+          "recallConfidence": 0.7735,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.8173,
+          "recallConfidence": 0.7717,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.8158,
+          "recallConfidence": 0.7808,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.7977,
+          "recallConfidence": 0.6175,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.7944,
+          "recallConfidence": 0.6161,
           "confidenceTier": "QUALIFIED"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.9378,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1577,66 +1577,66 @@
         {
           "goldenId": "golden_021",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_020",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_059",
-          "score": 1,
-          "recallConfidence": 0.6036,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_016",
-          "score": 0.9766,
-          "recallConfidence": 0.5805,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_034",
-          "score": 0.975,
-          "recallConfidence": 0.5794,
-          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_044",
-          "score": 0.9734,
-          "recallConfidence": 0.8071,
+          "score": 0.9807,
+          "recallConfidence": 0.8063,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_007",
-          "score": 0.9732,
-          "recallConfidence": 0.8274,
+          "score": 0.9807,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_023",
-          "score": 0.955,
-          "recallConfidence": 0.7069,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_032",
+          "score": 0.6513,
+          "recallConfidence": 0.2633,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 0.5927,
+          "recallConfidence": 0.1866,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.5889,
+          "recallConfidence": 0.1822,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_013",
-          "score": 0.9245,
-          "recallConfidence": 0.8016,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4692,
+          "recallConfidence": 0.3627,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_022",
-          "score": 0.9137,
-          "recallConfidence": 0.5317,
+          "goldenId": "golden_004",
+          "score": 0.4621,
+          "recallConfidence": 0.3607,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4552,
+          "recallConfidence": 0.34,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "temporal_validity",
-      "top1RecallConfidence": 0.844,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1656,66 +1656,66 @@
         {
           "goldenId": "golden_022",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_023",
-          "score": 0.9961,
-          "recallConfidence": 0.844,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_027",
-          "score": 0.9761,
-          "recallConfidence": 0.8441,
+          "score": 1,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_034",
-          "score": 0.9179,
-          "recallConfidence": 0.8104,
+          "score": 1,
+          "recallConfidence": 0.8096,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_004",
-          "score": 0.9106,
-          "recallConfidence": 0.8137,
+          "goldenId": "golden_027",
+          "score": 0.9685,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_036",
-          "score": 0.8989,
-          "recallConfidence": 0.7677,
+          "score": 0.8988,
+          "recallConfidence": 0.7644,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_012",
-          "score": 0.8979,
-          "recallConfidence": 0.7955,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_013",
-          "score": 0.8789,
-          "recallConfidence": 0.6322,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_051",
-          "score": 0.8779,
-          "recallConfidence": 0.6321,
+          "goldenId": "golden_024",
+          "score": 0.8607,
+          "recallConfidence": 0.7986,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_050",
-          "score": 0.8274,
-          "recallConfidence": 0.7825,
+          "score": 0.8209,
+          "recallConfidence": 0.7789,
           "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.7986,
+          "recallConfidence": 0.8398,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.757,
+          "recallConfidence": 0.7476,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4766,
+          "recallConfidence": 0.3747,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "temporal_validity",
-      "top1RecallConfidence": 0.844,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1732,66 +1732,66 @@
         {
           "goldenId": "golden_032",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9385,
+          "recallConfidence": 0.9096,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.9186,
+          "recallConfidence": 0.8601,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8855,
+          "recallConfidence": 0.9434,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.8732,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.8387,
+          "recallConfidence": 0.8845,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_019",
-          "score": 0.9734,
-          "recallConfidence": 0.8222,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.5041,
+          "recallConfidence": 0.4387,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_036",
-          "score": 0.934,
-          "recallConfidence": 0.8048,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_004",
+          "score": 0.4919,
+          "recallConfidence": 0.4565,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4766,
+          "recallConfidence": 0.4276,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_035",
-          "score": 0.9173,
-          "recallConfidence": 0.8155,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_056",
-          "score": 0.911,
-          "recallConfidence": 0.8086,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_054",
-          "score": 0.9108,
-          "recallConfidence": 0.8441,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_007",
-          "score": 0.8405,
-          "recallConfidence": 0.7887,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_012",
-          "score": 0.8357,
-          "recallConfidence": 0.6137,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_025",
-          "score": 0.8281,
-          "recallConfidence": 0.7779,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_043",
-          "score": 0.8066,
-          "recallConfidence": 0.7716,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4752,
+          "recallConfidence": 0.3881,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.9369,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1808,66 +1808,66 @@
         {
           "goldenId": "golden_034",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_050",
           "score": 1,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_053",
-          "score": 0.8615,
-          "recallConfidence": 0.7997,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_035",
-          "score": 0.8555,
-          "recallConfidence": 0.8027,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_009",
-          "score": 0.8353,
-          "recallConfidence": 0.8495,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_038",
-          "score": 0.8165,
-          "recallConfidence": 0.7455,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_055",
-          "score": 0.8164,
-          "recallConfidence": 0.7455,
+          "goldenId": "golden_010",
+          "score": 0.8168,
+          "recallConfidence": 0.7866,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_012",
           "score": 0.512,
-          "recallConfidence": 0.3473,
+          "recallConfidence": 0.3465,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_013",
-          "score": 0.5038,
-          "recallConfidence": 0.3363,
+          "score": 0.5037,
+          "recallConfidence": 0.3356,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_021",
           "score": 0.4958,
-          "recallConfidence": 0.4148,
+          "recallConfidence": 0.4144,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_054",
+          "score": 0.4957,
+          "recallConfidence": 0.4819,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4732,
+          "recallConfidence": 0.3692,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.4662,
+          "recallConfidence": 0.3577,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4593,
+          "recallConfidence": 0.3466,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1884,66 +1884,66 @@
         {
           "goldenId": "golden_033",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 1,
+          "recallConfidence": 0.8278,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_047",
           "score": 0.9883,
-          "recallConfidence": 0.8441,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_060",
-          "score": 0.9416,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_019",
-          "score": 0.6514,
-          "recallConfidence": 0.2636,
+          "score": 0.6513,
+          "recallConfidence": 0.2633,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_017",
-          "score": 0.6411,
-          "recallConfidence": 0.2489,
+          "score": 0.641,
+          "recallConfidence": 0.2486,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_004",
-          "score": 0.492,
-          "recallConfidence": 0.411,
+          "score": 0.4919,
+          "recallConfidence": 0.4108,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_013",
           "score": 0.4766,
-          "recallConfidence": 0.3755,
+          "recallConfidence": 0.3746,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_011",
-          "score": 0.4693,
-          "recallConfidence": 0.3635,
+          "score": 0.4692,
+          "recallConfidence": 0.3627,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_001",
-          "score": 0.4622,
-          "recallConfidence": 0.3609,
+          "score": 0.4621,
+          "recallConfidence": 0.3607,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_003",
-          "score": 0.4553,
-          "recallConfidence": 0.3495,
+          "score": 0.4552,
+          "recallConfidence": 0.3493,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "temporal_validity",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -1960,66 +1960,66 @@
         {
           "goldenId": "golden_057",
           "score": 1,
-          "recallConfidence": 0.8441,
-          "confidenceTier": "QUALIFIED"
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 1,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
         },
         {
           "goldenId": "golden_021",
           "score": 1,
-          "recallConfidence": 0.8255,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_034",
-          "score": 0.9867,
-          "recallConfidence": 0.5869,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_016",
-          "score": 0.9867,
-          "recallConfidence": 0.5868,
-          "confidenceTier": "LOW"
+          "recallConfidence": 0.9215,
+          "confidenceTier": "HIGH"
         },
         {
           "goldenId": "golden_011",
-          "score": 0.9812,
-          "recallConfidence": 0.8083,
+          "score": 0.9605,
+          "recallConfidence": 0.8921,
           "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_023",
-          "score": 0.962,
-          "recallConfidence": 0.7132,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_059",
-          "score": 0.9484,
-          "recallConfidence": 0.5606,
-          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_036",
-          "score": 0.934,
-          "recallConfidence": 0.8048,
+          "score": 0.9186,
+          "recallConfidence": 0.8601,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_001",
-          "score": 0.9262,
-          "recallConfidence": 0.8177,
+          "goldenId": "golden_014",
+          "score": 0.9038,
+          "recallConfidence": 0.8834,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_012",
-          "score": 0.9243,
-          "recallConfidence": 0.8016,
+          "goldenId": "golden_024",
+          "score": 0.8158,
+          "recallConfidence": 0.8676,
           "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.7937,
+          "recallConfidence": 0.8612,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4966,
+          "recallConfidence": 0.4163,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4841,
+          "recallConfidence": 0.4301,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "temporal_validity",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.9369,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -2037,66 +2037,66 @@
         {
           "goldenId": "golden_001",
           "score": 1,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_040",
-          "score": 0.9961,
-          "recallConfidence": 0.8048,
+          "score": 1,
+          "recallConfidence": 0.8013,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_042",
-          "score": 0.9734,
-          "recallConfidence": 0.8441,
+          "score": 0.9811,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.899,
+          "recallConfidence": 0.6524,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_004",
-          "score": 0.9174,
-          "recallConfidence": 0.8203,
+          "score": 0.886,
+          "recallConfidence": 0.6496,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_052",
-          "score": 0.9113,
-          "recallConfidence": 0.819,
+          "score": 0.8849,
+          "recallConfidence": 0.8117,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_008",
-          "score": 0.8676,
-          "recallConfidence": 0.8408,
+          "score": 0.8464,
+          "recallConfidence": 0.799,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_017",
-          "score": 0.492,
-          "recallConfidence": 0.4084,
-          "confidenceTier": "LOW"
+          "goldenId": "golden_039",
+          "score": 0.8294,
+          "recallConfidence": 0.7477,
+          "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_002",
-          "score": 0.4766,
-          "recallConfidence": 0.385,
-          "confidenceTier": "LOW"
+          "goldenId": "golden_020",
+          "score": 0.7868,
+          "recallConfidence": 0.766,
+          "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_003",
-          "score": 0.4622,
-          "recallConfidence": 0.3609,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_011",
-          "score": 0.4486,
-          "recallConfidence": 0.3301,
-          "confidenceTier": "LOW"
+          "goldenId": "golden_036",
+          "score": 0.7562,
+          "recallConfidence": 0.7099,
+          "confidenceTier": "QUALIFIED"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8495,
+      "top1RecallConfidence": 0.849,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -2117,66 +2117,66 @@
         {
           "goldenId": "golden_042",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_016",
           "score": 0.9961,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_017",
-          "score": 0.9732,
-          "recallConfidence": 0.8221,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_029",
-          "score": 0.9394,
-          "recallConfidence": 0.8197,
+          "score": 0.9731,
+          "recallConfidence": 0.8213,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_046",
           "score": 0.9098,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_019",
-          "score": 0.8198,
-          "recallConfidence": 0.7834,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_004",
-          "score": 0.8074,
-          "recallConfidence": 0.7825,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_024",
-          "score": 0.7702,
-          "recallConfidence": 0.7569,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_029",
+          "score": 0.4841,
+          "recallConfidence": 0.3949,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_015",
-          "score": 0.4693,
-          "recallConfidence": 0.3635,
+          "score": 0.4692,
+          "recallConfidence": 0.3627,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_002",
-          "score": 0.4622,
-          "recallConfidence": 0.3609,
+          "score": 0.4621,
+          "recallConfidence": 0.3607,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4552,
+          "recallConfidence": 0.34,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4485,
+          "recallConfidence": 0.3294,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.442,
+          "recallConfidence": 0.3094,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -2194,68 +2194,68 @@
         {
           "goldenId": "golden_042",
           "score": 1,
-          "recallConfidence": 0.8441,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_004",
-          "score": 0.9843,
-          "recallConfidence": 0.8495,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_041",
-          "score": 0.9587,
-          "recallConfidence": 0.8048,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_038",
-          "score": 0.926,
-          "recallConfidence": 0.8048,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_055",
-          "score": 0.9136,
-          "recallConfidence": 0.8048,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_053",
-          "score": 0.8762,
-          "recallConfidence": 0.8044,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_009",
-          "score": 0.8138,
-          "recallConfidence": 0.8196,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_035",
-          "score": 0.7933,
-          "recallConfidence": 0.8092,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_040",
-          "score": 0.5123,
-          "recallConfidence": 0.3377,
-          "confidenceTier": "LOW"
+          "score": 1,
+          "recallConfidence": 0.8013,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.9685,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_041",
+          "score": 0.9508,
+          "recallConfidence": 0.8013,
+          "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_014",
-          "score": 0.504,
-          "recallConfidence": 0.3367,
+          "score": 0.4999,
+          "recallConfidence": 0.4131,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4768,
+          "recallConfidence": 0.3852,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.4696,
+          "recallConfidence": 0.3731,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4626,
+          "recallConfidence": 0.3614,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.4558,
+          "recallConfidence": 0.3305,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4492,
+          "recallConfidence": 0.3394,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
-      "rr": 0.5,
+      "rr": 0.3333333333333333,
       "hitAt1": false
     },
     {
@@ -2269,70 +2269,70 @@
       "mayHit": [],
       "retrieved": [
         {
-          "goldenId": "golden_018",
+          "goldenId": "golden_010",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_012",
-          "score": 0.9981,
-          "recallConfidence": 0.8285,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_047",
-          "score": 0.9466,
-          "recallConfidence": 0.821,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_014",
-          "score": 0.9408,
-          "recallConfidence": 0.6438,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_011",
-          "score": 0.94,
-          "recallConfidence": 0.8046,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_044",
-          "score": 0.9304,
-          "recallConfidence": 0.8029,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_042",
-          "score": 0.9063,
-          "recallConfidence": 0.8441,
+          "goldenId": "golden_018",
+          "score": 0.9899,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_055",
-          "score": 0.9011,
-          "recallConfidence": 0.6188,
+          "score": 0.9398,
+          "recallConfidence": 0.8013,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_040",
-          "score": 0.8809,
-          "recallConfidence": 0.6146,
+          "goldenId": "golden_020",
+          "score": 0.8911,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_013",
-          "score": 0.8807,
-          "recallConfidence": 0.7908,
+          "goldenId": "golden_029",
+          "score": 0.8788,
+          "recallConfidence": 0.8044,
           "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.8712,
+          "recallConfidence": 0.829,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.512,
+          "recallConfidence": 0.3535,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.5037,
+          "recallConfidence": 0.3356,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4958,
+          "recallConfidence": 0.4173,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.4805,
+          "recallConfidence": 0.3811,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.844,
-      "recallAtK": 0,
-      "rr": 0,
+      "top1RecallConfidence": 0.849,
+      "recallAtK": 0.5,
+      "rr": 0.25,
       "hitAt1": false
     },
     {
@@ -2346,68 +2346,68 @@
       "mayHit": [],
       "retrieved": [
         {
-          "goldenId": "golden_018",
+          "goldenId": "golden_019",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_019",
+          "goldenId": "golden_018",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_003",
-          "score": 0.4842,
-          "recallConfidence": 0.3978,
-          "confidenceTier": "LOW"
+          "score": 0.9761,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_011",
-          "score": 0.4766,
-          "recallConfidence": 0.3755,
+          "score": 0.4804,
+          "recallConfidence": 0.381,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_043",
-          "score": 0.4693,
-          "recallConfidence": 0.3727,
+          "score": 0.4731,
+          "recallConfidence": 0.3789,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_033",
-          "score": 0.4622,
-          "recallConfidence": 0.3586,
+          "score": 0.4659,
+          "recallConfidence": 0.3644,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_035",
-          "score": 0.4553,
-          "recallConfidence": 0.3495,
+          "score": 0.4589,
+          "recallConfidence": 0.3554,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_024",
-          "score": 0.4486,
-          "recallConfidence": 0.3363,
+          "score": 0.4522,
+          "recallConfidence": 0.3419,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_046",
-          "score": 0.4421,
-          "recallConfidence": 0.328,
+          "score": 0.4456,
+          "recallConfidence": 0.3336,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_049",
-          "score": 0.4358,
-          "recallConfidence": 0.3158,
+          "score": 0.4393,
+          "recallConfidence": 0.3211,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.844,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -2427,66 +2427,66 @@
         {
           "goldenId": "golden_040",
           "score": 1,
-          "recallConfidence": 0.8048,
+          "recallConfidence": 0.8013,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_039",
           "score": 1,
-          "recallConfidence": 0.8048,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_005",
-          "score": 0.9611,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.8013,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_035",
-          "score": 0.952,
-          "recallConfidence": 0.8235,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_058",
-          "score": 0.9327,
-          "recallConfidence": 0.8184,
+          "score": 0.967,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_004",
-          "score": 0.912,
-          "recallConfidence": 0.8141,
+          "score": 0.9261,
+          "recallConfidence": 0.8173,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_036",
-          "score": 0.9071,
-          "recallConfidence": 0.77,
+          "score": 0.9216,
+          "recallConfidence": 0.7703,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_053",
-          "score": 0.8874,
-          "recallConfidence": 0.6461,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4881,
+          "recallConfidence": 0.4015,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_032",
-          "score": 0.8509,
-          "recallConfidence": 0.796,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_058",
+          "score": 0.4804,
+          "recallConfidence": 0.3887,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_055",
-          "score": 0.8371,
-          "recallConfidence": 0.6032,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_005",
+          "score": 0.4731,
+          "recallConfidence": 0.3789,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4659,
+          "recallConfidence": 0.3572,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4522,
+          "recallConfidence": 0.3352,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8048,
+      "top1RecallConfidence": 0.8013,
       "recallAtK": 1,
       "rr": 0.5,
       "hitAt1": false
@@ -2503,66 +2503,66 @@
         {
           "goldenId": "golden_011",
           "score": 1,
-          "recallConfidence": 0.8285,
+          "recallConfidence": 0.8265,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_019",
           "score": 0.963,
-          "recallConfidence": 0.8238,
+          "recallConfidence": 0.8229,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_038",
-          "score": 0.9603,
-          "recallConfidence": 0.7817,
+          "score": 0.9537,
+          "recallConfidence": 0.7771,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_017",
           "score": 0.9535,
-          "recallConfidence": 0.8222,
+          "recallConfidence": 0.8214,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_056",
           "score": 0.929,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_030",
           "score": 0.9261,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8162,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_003",
+          "goldenId": "golden_046",
           "score": 0.9252,
-          "recallConfidence": 0.8175,
+          "recallConfidence": 0.8217,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_037",
-          "score": 0.913,
-          "recallConfidence": 0.8092,
+          "score": 0.9129,
+          "recallConfidence": 0.8084,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_057",
-          "score": 0.8453,
-          "recallConfidence": 0.7858,
+          "goldenId": "golden_003",
+          "score": 0.9129,
+          "recallConfidence": 0.6511,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_027",
-          "score": 0.8318,
-          "recallConfidence": 0.8441,
+          "goldenId": "golden_013",
+          "score": 0.8734,
+          "recallConfidence": 0.6295,
           "confidenceTier": "QUALIFIED"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8285,
+      "top1RecallConfidence": 0.8265,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -2579,66 +2579,66 @@
         {
           "goldenId": "golden_012",
           "score": 1,
-          "recallConfidence": 0.8285,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_055",
-          "score": 0.9685,
-          "recallConfidence": 0.8048,
+          "recallConfidence": 0.8265,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_013",
-          "score": 0.9405,
-          "recallConfidence": 0.8047,
+          "score": 0.9685,
+          "recallConfidence": 0.8075,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_053",
-          "score": 0.9137,
-          "recallConfidence": 0.8441,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_016",
-          "score": 0.8536,
-          "recallConfidence": 0.6375,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_038",
-          "score": 0.8514,
-          "recallConfidence": 0.7591,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_058",
-          "score": 0.8434,
-          "recallConfidence": 0.7932,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_040",
-          "score": 0.8192,
-          "recallConfidence": 0.5973,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_030",
-          "score": 0.8157,
-          "recallConfidence": 0.6252,
+          "goldenId": "golden_001",
+          "score": 0.9683,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_060",
-          "score": 0.8118,
-          "recallConfidence": 0.7847,
+          "score": 0.8271,
+          "recallConfidence": 0.8491,
           "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.4766,
+          "recallConfidence": 0.3632,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4692,
+          "recallConfidence": 0.3627,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4621,
+          "recallConfidence": 0.3607,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4552,
+          "recallConfidence": 0.34,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.4485,
+          "recallConfidence": 0.336,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.442,
+          "recallConfidence": 0.3256,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "hybrid_search",
-      "top1RecallConfidence": 0.8285,
+      "top1RecallConfidence": 0.8265,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -2655,66 +2655,66 @@
         {
           "goldenId": "golden_013",
           "score": 1,
-          "recallConfidence": 0.8285,
-          "confidenceTier": "QUALIFIED"
+          "recallConfidence": 0.9184,
+          "confidenceTier": "HIGH"
         },
         {
           "goldenId": "golden_045",
-          "score": 0.983,
-          "recallConfidence": 0.8441,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.9672,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
         },
         {
           "goldenId": "golden_004",
-          "score": 0.496,
-          "recallConfidence": 0.4178,
+          "score": 0.4919,
+          "recallConfidence": 0.4565,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_024",
-          "score": 0.4881,
-          "recallConfidence": 0.4019,
+          "score": 0.4841,
+          "recallConfidence": 0.4387,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_029",
-          "score": 0.4805,
-          "recallConfidence": 0.3891,
+          "score": 0.4766,
+          "recallConfidence": 0.4247,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_046",
-          "score": 0.4731,
-          "recallConfidence": 0.3791,
+          "score": 0.4692,
+          "recallConfidence": 0.4139,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_006",
-          "score": 0.4659,
-          "recallConfidence": 0.3671,
+          "score": 0.4621,
+          "recallConfidence": 0.4008,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_052",
-          "score": 0.4522,
-          "recallConfidence": 0.3445,
+          "score": 0.4485,
+          "recallConfidence": 0.3759,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_015",
-          "score": 0.4457,
-          "recallConfidence": 0.3255,
+          "score": 0.442,
+          "recallConfidence": 0.3546,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_051",
-          "score": 0.4393,
-          "recallConfidence": 0.3155,
+          "score": 0.4357,
+          "recallConfidence": 0.3437,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8285,
+      "top1RecallConfidence": 0.9184,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -2729,70 +2729,70 @@
       "mayHit": [],
       "retrieved": [
         {
+          "goldenId": "golden_017",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
           "goldenId": "golden_030",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_011",
           "score": 0.9767,
-          "recallConfidence": 0.8106,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_044",
-          "score": 0.9469,
-          "recallConfidence": 0.8059,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_047",
-          "score": 0.9285,
-          "recallConfidence": 0.654,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_012",
-          "score": 0.9254,
-          "recallConfidence": 0.8018,
+          "recallConfidence": 0.8087,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_056",
-          "score": 0.9224,
-          "recallConfidence": 0.8441,
+          "score": 0.9306,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_017",
-          "score": 0.9088,
-          "recallConfidence": 0.844,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_032",
+          "score": 0.7268,
+          "recallConfidence": 0.3826,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_033",
-          "score": 0.8971,
-          "recallConfidence": 0.8441,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_021",
+          "score": 0.6992,
+          "recallConfidence": 0.337,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_051",
-          "score": 0.8611,
-          "recallConfidence": 0.6279,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_016",
+          "score": 0.6423,
+          "recallConfidence": 0.2504,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_014",
-          "score": 0.8453,
-          "recallConfidence": 0.6234,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_048",
+          "score": 0.6146,
+          "recallConfidence": 0.2133,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.4919,
+          "recallConfidence": 0.408,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "temporal_validity",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 0,
-      "rr": 0.1,
+      "rr": 0,
       "hitAt1": false
     },
     {
@@ -2809,66 +2809,66 @@
         {
           "goldenId": "golden_015",
           "score": 1,
-          "recallConfidence": 0.9666,
-          "confidenceTier": "HIGH"
+          "recallConfidence": 0.8265,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.9685,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9463,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9458,
+          "recallConfidence": 0.8038,
+          "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_017",
           "score": 0.6736,
-          "recallConfidence": 0.3464,
+          "recallConfidence": 0.2966,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_032",
           "score": 0.6567,
-          "recallConfidence": 0.3166,
+          "recallConfidence": 0.2711,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_019",
           "score": 0.5889,
-          "recallConfidence": 0.2127,
+          "recallConfidence": 0.1822,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_044",
-          "score": 0.492,
-          "recallConfidence": 0.4677,
+          "score": 0.4919,
+          "recallConfidence": 0.4,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_004",
-          "score": 0.4842,
-          "recallConfidence": 0.4641,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_058",
-          "score": 0.4766,
-          "recallConfidence": 0.4464,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_013",
-          "score": 0.4693,
-          "recallConfidence": 0.4241,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_001",
-          "score": 0.4622,
-          "recallConfidence": 0.421,
+          "score": 0.4841,
+          "recallConfidence": 0.3976,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_006",
-          "score": 0.4553,
-          "recallConfidence": 0.4077,
+          "score": 0.4552,
+          "recallConfidence": 0.3493,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "temporal_validity",
-      "top1RecallConfidence": 0.9666,
+      "top1RecallConfidence": 0.8265,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -2885,66 +2885,66 @@
         {
           "goldenId": "golden_051",
           "score": 1,
-          "recallConfidence": 0.8285,
+          "recallConfidence": 0.8266,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.9921,
+          "recallConfidence": 0.8265,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_060",
           "score": 0.984,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.8491,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_013",
-          "score": 0.9611,
-          "recallConfidence": 0.8285,
+          "score": 0.9535,
+          "recallConfidence": 0.8051,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_011",
-          "score": 0.9594,
-          "recallConfidence": 0.8045,
+          "score": 0.9448,
+          "recallConfidence": 0.7998,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_012",
           "score": 0.8886,
-          "recallConfidence": 0.793,
+          "recallConfidence": 0.7912,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_015",
-          "score": 0.5041,
-          "recallConfidence": 0.3368,
-          "confidenceTier": "LOW"
-        },
-        {
           "goldenId": "golden_005",
-          "score": 0.4805,
-          "recallConfidence": 0.3916,
+          "score": 0.4804,
+          "recallConfidence": 0.3914,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_048",
           "score": 0.4659,
-          "recallConfidence": 0.3648,
+          "recallConfidence": 0.3644,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_003",
           "score": 0.4522,
-          "recallConfidence": 0.3445,
+          "recallConfidence": 0.3443,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_039",
-          "score": 0.4457,
-          "recallConfidence": 0.3162,
+          "score": 0.4456,
+          "recallConfidence": 0.3148,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8285,
+      "top1RecallConfidence": 0.8266,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -2964,66 +2964,66 @@
         {
           "goldenId": "golden_058",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_029",
           "score": 0.9812,
-          "recallConfidence": 0.8235,
+          "recallConfidence": 0.8227,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_024",
-          "score": 0.9144,
-          "recallConfidence": 0.8095,
+          "score": 0.9219,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_006",
-          "score": 0.8973,
-          "recallConfidence": 0.8155,
+          "score": 0.8906,
+          "recallConfidence": 0.8133,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.8832,
+          "recallConfidence": 0.8112,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_048",
-          "score": 0.8943,
-          "recallConfidence": 0.8038,
+          "score": 0.8765,
+          "recallConfidence": 0.7972,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_025",
-          "score": 0.863,
-          "recallConfidence": 0.844,
+          "score": 0.8708,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_035",
-          "score": 0.8547,
-          "recallConfidence": 0.8495,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_008",
+          "score": 0.8127,
+          "recallConfidence": 0.2001,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_014",
-          "score": 0.4842,
-          "recallConfidence": 0.388,
+          "score": 0.4841,
+          "recallConfidence": 0.3871,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_015",
           "score": 0.4766,
-          "recallConfidence": 0.3755,
-          "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_003",
-          "score": 0.4693,
-          "recallConfidence": 0.3727,
+          "recallConfidence": 0.3746,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "multi_hop",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -3044,66 +3044,66 @@
         {
           "goldenId": "golden_053",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_027",
           "score": 1,
-          "recallConfidence": 0.8441,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_023",
-          "score": 0.922,
-          "recallConfidence": 0.844,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_024",
-          "score": 0.8906,
-          "recallConfidence": 0.8085,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_013",
-          "score": 0.8743,
-          "recallConfidence": 0.6312,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_044",
-          "score": 0.8731,
-          "recallConfidence": 0.6309,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_051",
-          "score": 0.8676,
-          "recallConfidence": 0.6296,
+          "score": 0.9088,
+          "recallConfidence": 0.6371,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_023",
+          "score": 0.9071,
+          "recallConfidence": 0.8068,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.8991,
+          "recallConfidence": 0.6352,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.8643,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_001",
-          "score": 0.8624,
-          "recallConfidence": 0.7979,
+          "score": 0.8637,
+          "recallConfidence": 0.6384,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_004",
-          "score": 0.8592,
-          "recallConfidence": 0.6432,
+          "goldenId": "golden_006",
+          "score": 0.8502,
+          "recallConfidence": 0.8004,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_016",
-          "score": 0.8359,
-          "recallConfidence": 0.7816,
+          "goldenId": "golden_060",
+          "score": 0.8446,
+          "recallConfidence": 0.8323,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.832,
+          "recallConfidence": 0.6178,
           "confidenceTier": "QUALIFIED"
         }
       ],
       "recallStrategy": "multi_hop",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -3121,66 +3121,66 @@
         {
           "goldenId": "golden_047",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_025",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_024",
           "score": 0.9611,
-          "recallConfidence": 0.8235,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_019",
-          "score": 0.9403,
-          "recallConfidence": 0.844,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_046",
-          "score": 0.8798,
-          "recallConfidence": 0.8106,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_004",
-          "score": 0.8207,
-          "recallConfidence": 0.7888,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_029",
-          "score": 0.8076,
-          "recallConfidence": 0.7776,
+          "recallConfidence": 0.8226,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_038",
-          "score": 0.4805,
-          "recallConfidence": 0.371,
-          "confidenceTier": "LOW"
+          "score": 0.9609,
+          "recallConfidence": 0.7817,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_037",
+          "score": 0.8375,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_014",
           "score": 0.4731,
-          "recallConfidence": 0.3697,
+          "recallConfidence": 0.3689,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_015",
           "score": 0.4659,
-          "recallConfidence": 0.358,
+          "recallConfidence": 0.3572,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4589,
+          "recallConfidence": 0.3554,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.4522,
+          "recallConfidence": 0.3419,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4456,
+          "recallConfidence": 0.3336,
           "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "multi_hop",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -3201,66 +3201,66 @@
         {
           "goldenId": "golden_058",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_024",
           "score": 1,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_017",
-          "score": 0.9718,
-          "recallConfidence": 0.2086,
-          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_048",
           "score": 0.9663,
-          "recallConfidence": 0.821,
+          "recallConfidence": 0.8201,
           "confidenceTier": "QUALIFIED"
         },
         {
+          "goldenId": "golden_017",
+          "score": 0.9645,
+          "recallConfidence": 0.215,
+          "confidenceTier": "LOW"
+        },
+        {
           "goldenId": "golden_040",
-          "score": 0.9313,
-          "recallConfidence": 0.1978,
+          "score": 0.9188,
+          "recallConfidence": 0.157,
           "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_035",
-          "score": 0.9173,
-          "recallConfidence": 0.8155,
+          "score": 0.8978,
+          "recallConfidence": 0.8096,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_016",
           "score": 0.8961,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.8909,
+          "recallConfidence": 0.7676,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.8906,
+          "recallConfidence": 0.8077,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_001",
-          "score": 0.8732,
-          "recallConfidence": 0.1636,
+          "score": 0.8558,
+          "recallConfidence": 0.1622,
           "confidenceTier": "LOW"
-        },
-        {
-          "goldenId": "golden_025",
-          "score": 0.8451,
-          "recallConfidence": 0.7857,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_006",
-          "score": 0.8218,
-          "recallConfidence": 0.7893,
-          "confidenceTier": "QUALIFIED"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8441,
+      "top1RecallConfidence": 0.8432,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -3280,66 +3280,66 @@
         {
           "goldenId": "golden_038",
           "score": 1,
-          "recallConfidence": 0.8048,
+          "recallConfidence": 0.8013,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_037",
           "score": 1,
-          "recallConfidence": 0.8441,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_006",
-          "score": 0.9883,
-          "recallConfidence": 0.8495,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_030",
-          "score": 0.9374,
-          "recallConfidence": 0.8151,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_057",
-          "score": 0.9107,
-          "recallConfidence": 0.8136,
+          "score": 0.9961,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_001",
-          "score": 0.8929,
-          "recallConfidence": 0.6514,
+          "score": 0.9461,
+          "recallConfidence": 0.8258,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9379,
+          "recallConfidence": 0.8144,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_004",
-          "score": 0.8781,
-          "recallConfidence": 0.6481,
+          "score": 0.8978,
+          "recallConfidence": 0.8152,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8904,
+          "recallConfidence": 0.6333,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.8871,
+          "recallConfidence": 0.6454,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_041",
-          "score": 0.8676,
-          "recallConfidence": 0.7644,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_003",
-          "score": 0.8594,
-          "recallConfidence": 0.8041,
+          "score": 0.8746,
+          "recallConfidence": 0.7632,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_019",
-          "score": 0.8566,
-          "recallConfidence": 0.798,
+          "score": 0.8438,
+          "recallConfidence": 0.7926,
           "confidenceTier": "QUALIFIED"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8048,
+      "top1RecallConfidence": 0.8013,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -3356,66 +3356,66 @@
         {
           "goldenId": "golden_046",
           "score": 1,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_001",
           "score": 0.9961,
-          "recallConfidence": 0.8495,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_008",
-          "score": 0.9394,
-          "recallConfidence": 0.8495,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_052",
-          "score": 0.9387,
-          "recallConfidence": 0.8248,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_013",
-          "score": 0.9245,
-          "recallConfidence": 0.8016,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_024",
-          "score": 0.9179,
-          "recallConfidence": 0.8104,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_004",
-          "score": 0.8781,
-          "recallConfidence": 0.8101,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_003",
-          "score": 0.8627,
-          "recallConfidence": 0.6442,
+          "score": 0.9607,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_030",
-          "score": 0.8363,
-          "recallConfidence": 0.6323,
+          "goldenId": "golden_024",
+          "score": 0.9323,
+          "recallConfidence": 0.8132,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_043",
-          "score": 0.7977,
-          "recallConfidence": 0.6221,
+          "goldenId": "golden_038",
+          "score": 0.8906,
+          "recallConfidence": 0.7675,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.8674,
+          "recallConfidence": 0.6451,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8653,
+          "recallConfidence": 0.6275,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.8634,
+          "recallConfidence": 0.6441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8206,
+          "recallConfidence": 0.6307,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.8015,
+          "recallConfidence": 0.6191,
           "confidenceTier": "QUALIFIED"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8495,
+      "top1RecallConfidence": 0.849,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -3432,66 +3432,66 @@
         {
           "goldenId": "golden_049",
           "score": 1,
-          "recallConfidence": 0.9379,
+          "recallConfidence": 0.9369,
           "confidenceTier": "HIGH"
-        },
-        {
-          "goldenId": "golden_052",
-          "score": 0.883,
-          "recallConfidence": 0.7214,
-          "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_042",
           "score": 0.8794,
-          "recallConfidence": 0.9378,
+          "recallConfidence": 0.9369,
           "confidenceTier": "HIGH"
         },
         {
-          "goldenId": "golden_055",
-          "score": 0.8752,
-          "recallConfidence": 0.8942,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_052",
+          "score": 0.4919,
+          "recallConfidence": 0.4565,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_003",
-          "score": 0.8702,
-          "recallConfidence": 0.7179,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4841,
+          "recallConfidence": 0.4418,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4766,
+          "recallConfidence": 0.4276,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4692,
+          "recallConfidence": 0.403,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4621,
+          "recallConfidence": 0.4008,
+          "confidenceTier": "LOW"
         },
         {
           "goldenId": "golden_040",
-          "score": 0.8619,
-          "recallConfidence": 0.6779,
-          "confidenceTier": "QUALIFIED"
+          "score": 0.4552,
+          "recallConfidence": 0.3663,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_053",
-          "score": 0.8531,
-          "recallConfidence": 0.8853,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_012",
+          "score": 0.4485,
+          "recallConfidence": 0.366,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_005",
-          "score": 0.8109,
-          "recallConfidence": 0.6971,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_009",
-          "score": 0.8082,
-          "recallConfidence": 0.8699,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_058",
-          "score": 0.7991,
-          "recallConfidence": 0.8593,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_013",
+          "score": 0.442,
+          "recallConfidence": 0.3546,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.9379,
+      "top1RecallConfidence": 0.9369,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -3508,66 +3508,66 @@
         {
           "goldenId": "golden_005",
           "score": 1,
-          "recallConfidence": 0.9438,
+          "recallConfidence": 0.9434,
           "confidenceTier": "HIGH"
         },
         {
-          "goldenId": "golden_039",
-          "score": 0.9243,
-          "recallConfidence": 0.8651,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_058",
-          "score": 0.8963,
-          "recallConfidence": 0.9379,
+          "goldenId": "golden_029",
+          "score": 0.843,
+          "recallConfidence": 0.9369,
           "confidenceTier": "HIGH"
-        },
-        {
-          "goldenId": "golden_003",
-          "score": 0.8855,
-          "recallConfidence": 0.722,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_040",
-          "score": 0.8715,
-          "recallConfidence": 0.8506,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_052",
-          "score": 0.8619,
-          "recallConfidence": 0.7155,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_008",
-          "score": 0.8599,
-          "recallConfidence": 0.7149,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_002",
-          "score": 0.8447,
-          "recallConfidence": 0.71,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_046",
-          "score": 0.8309,
-          "recallConfidence": 0.7051,
-          "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_010",
-          "score": 0.8201,
-          "recallConfidence": 0.9409,
+          "score": 0.82,
+          "recallConfidence": 0.9404,
           "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4919,
+          "recallConfidence": 0.4444,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4841,
+          "recallConfidence": 0.4418,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4766,
+          "recallConfidence": 0.4276,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4692,
+          "recallConfidence": 0.4139,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.4621,
+          "recallConfidence": 0.3782,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4552,
+          "recallConfidence": 0.3881,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.4485,
+          "recallConfidence": 0.3759,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.9438,
+      "top1RecallConfidence": 0.9434,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -3584,66 +3584,66 @@
         {
           "goldenId": "golden_044",
           "score": 1,
-          "recallConfidence": 0.8285,
+          "recallConfidence": 0.8266,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_021",
-          "score": 0.9741,
-          "recallConfidence": 0.8223,
+          "score": 0.9812,
+          "recallConfidence": 0.8227,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_020",
-          "score": 0.9658,
-          "recallConfidence": 0.8208,
+          "score": 0.9731,
+          "recallConfidence": 0.8213,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_024",
-          "score": 0.9445,
-          "recallConfidence": 0.8167,
+          "score": 0.9313,
+          "recallConfidence": 0.8129,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_026",
-          "score": 0.922,
-          "recallConfidence": 0.844,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_013",
-          "score": 0.9199,
-          "recallConfidence": 0.8006,
+          "score": 0.9219,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_007",
           "score": 0.9043,
-          "recallConfidence": 0.8119,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_012",
-          "score": 0.9042,
-          "recallConfidence": 0.797,
+          "recallConfidence": 0.8115,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_018",
           "score": 0.9041,
-          "recallConfidence": 0.844,
+          "recallConfidence": 0.8432,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_011",
-          "score": 0.8592,
-          "recallConfidence": 0.6273,
+          "goldenId": "golden_028",
+          "score": 0.8179,
+          "recallConfidence": 0.772,
           "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.8127,
+          "recallConfidence": 0.7406,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4841,
+          "recallConfidence": 0.3871,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "graph_expanded",
-      "top1RecallConfidence": 0.8285,
+      "top1RecallConfidence": 0.8266,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true
@@ -3660,66 +3660,66 @@
         {
           "goldenId": "golden_050",
           "score": 1,
-          "recallConfidence": 0.8495,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_044",
           "score": 0.9809,
-          "recallConfidence": 0.8083,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_053",
-          "score": 0.9611,
-          "recallConfidence": 0.8441,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_055",
-          "score": 0.8902,
-          "recallConfidence": 0.8048,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_018",
-          "score": 0.8612,
-          "recallConfidence": 0.7996,
-          "confidenceTier": "QUALIFIED"
-        },
-        {
-          "goldenId": "golden_016",
-          "score": 0.8483,
-          "recallConfidence": 0.636,
+          "recallConfidence": 0.8064,
           "confidenceTier": "QUALIFIED"
         },
         {
           "goldenId": "golden_003",
-          "score": 0.8482,
-          "recallConfidence": 0.6401,
+          "score": 0.947,
+          "recallConfidence": 0.849,
           "confidenceTier": "QUALIFIED"
         },
         {
-          "goldenId": "golden_009",
-          "score": 0.8481,
-          "recallConfidence": 0.8,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_012",
+          "score": 0.5041,
+          "recallConfidence": 0.336,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_026",
-          "score": 0.8258,
-          "recallConfidence": 0.6288,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_034",
+          "score": 0.4959,
+          "recallConfidence": 0.4822,
+          "confidenceTier": "LOW"
         },
         {
-          "goldenId": "golden_058",
-          "score": 0.8227,
-          "recallConfidence": 0.7847,
-          "confidenceTier": "QUALIFIED"
+          "goldenId": "golden_051",
+          "score": 0.4881,
+          "recallConfidence": 0.3936,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.4731,
+          "recallConfidence": 0.3763,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4659,
+          "recallConfidence": 0.3572,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4522,
+          "recallConfidence": 0.3352,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4456,
+          "recallConfidence": 0.3248,
+          "confidenceTier": "LOW"
         }
       ],
       "recallStrategy": "hybrid_search",
-      "top1RecallConfidence": 0.8495,
+      "top1RecallConfidence": 0.849,
       "recallAtK": 1,
       "rr": 1,
       "hitAt1": true

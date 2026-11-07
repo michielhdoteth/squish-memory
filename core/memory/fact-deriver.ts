@@ -5,12 +5,16 @@
  * Example: works_on(A, X) + uses(X, Y) -> depends_on(A, Y)
  */
 
-import { eq, and, or, sql } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
 import { createAssociation } from '../associations.js';
 import type { RelationType } from '../graph/llm-entity-extractor.js';
+import { getEntityRelations, getProjectEntities } from '../graph/relationship-extractor.js';
+import { createKnowledgeEdge } from '../knowledge/knowledge-edges.js';
+import type { KnowledgeEdgeType } from '../knowledge/types.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
 
 // Extend RelationType to include derived relation types
 type ExtendedRelationType = RelationType | 'oversees' | 'may_affect';
@@ -152,15 +156,18 @@ export async function deriveFacts(
     storeResults?: boolean;
   }
 ): Promise<DerivedFact[]> {
+  const strict = isStrictTrustPolicy();
   const { maxDerivations = 50, minConfidence = 0.6, storeResults = true } = options || {};
   const db = await getDb();
   const schema = await getSchema();
 
   // Get all entities for this project
-  const entities = await (db as any)
-    .select()
-    .from(schema.entities)
-    .where(eq(schema.entities.projectId, projectId));
+  const entities = strict
+    ? await getProjectEntities(projectId)
+    : await (db as any)
+      .select()
+      .from(schema.entities)
+      .where(eq(schema.entities.projectId, projectId));
 
   if (entities.length < 2) return [];
 
@@ -169,31 +176,27 @@ export async function deriveFacts(
 
   // Get all relations for this project's entities
   const entityIds = entities.map((e: any) => e.id);
-  const allRelations: any[] = [];
-
-  // Fetch in batches to avoid query size limits
-  const batchSize = 100;
-  for (let i = 0; i < entityIds.length; i += batchSize) {
-    const batch = entityIds.slice(i, i + batchSize);
-    const relations = await (db as any)
-      .select()
-      .from(schema.entityRelations)
-      .where(
-        or(...batch.map((id: string) => eq(schema.entityRelations.fromEntityId, id)))
-      );
-    allRelations.push(...relations);
-  }
+  const allRelations = await getEntityRelations(entityIds);
 
   // Build adjacency list for fast lookup
-  const outgoing = new Map<string, Map<string, { relationType: string; weight: number }>>();
+  const outgoing = new Map<string, Array<{
+    toEntityId: string;
+    relationType: string;
+    weight: number;
+    edgeId: string;
+    properties: Record<string, unknown> | null;
+  }>>();
 
   for (const rel of allRelations) {
     if (!outgoing.has(rel.fromEntityId)) {
-      outgoing.set(rel.fromEntityId, new Map());
+      outgoing.set(rel.fromEntityId, []);
     }
-    outgoing.get(rel.fromEntityId)!.set(rel.toEntityId, {
-      relationType: rel.type,
+    outgoing.get(rel.fromEntityId)!.push({
+      toEntityId: rel.toEntityId,
+      relationType: rel.relationType,
       weight: rel.weight || 1,
+      edgeId: rel.id,
+      properties: rel.properties,
     });
   }
 
@@ -206,15 +209,18 @@ export async function deriveFacts(
     for (const [fromId, targets] of outgoing) {
       if (derivedFacts.length >= maxDerivations) break;
 
-      for (const [midId, fromRel] of targets) {
+      for (const fromRel of targets) {
         if (fromRel.relationType !== rule.fromType) continue;
+        const midId = fromRel.toEntityId;
 
         // Check if midId has outgoing toType relations
         const midTargets = outgoing.get(midId);
         if (!midTargets) continue;
 
-        for (const [toId, toRel] of midTargets) {
+        for (const toRel of midTargets) {
           if (toRel.relationType !== rule.toType) continue;
+          const toId = toRel.toEntityId;
+          if (strict && (fromRel.properties?.derived === true || toRel.properties?.derived === true)) continue;
 
           // Found a derivation: fromId --fromType--> midId --toType--> toId
           // Derive: fromId --derivedType--> toId
@@ -224,19 +230,10 @@ export async function deriveFacts(
           if (!fromEntity || !toEntity) continue;
 
           // Check if this derived relation already exists
-          const existing = await (db as any)
-            .select()
-            .from(schema.entityRelations)
-            .where(
-              and(
-                eq(schema.entityRelations.fromEntityId, fromId),
-                eq(schema.entityRelations.toEntityId, toId),
-                eq(schema.entityRelations.type, rule.derivedType)
-              )
-            )
-            .limit(1);
-
-          if (existing.length > 0) continue; // Already exists
+          const alreadyExists = allRelations.some(rel =>
+            rel.fromEntityId === fromId && rel.toEntityId === toId && rel.relationType === rule.derivedType
+          );
+          if (alreadyExists) continue;
 
           const derivedFact: DerivedFact = {
             fromEntityId: fromId,
@@ -254,46 +251,63 @@ export async function deriveFacts(
           // Store the derived fact if requested
           if (storeResults) {
             try {
-              await (db as any).insert(schema.entityRelations).values({
-                fromEntityId: fromId,
-                toEntityId: toId,
-                type: rule.derivedType,
+              const metadata = {
+                derived: true,
+                rule: rule.name,
+                confidence: rule.confidence,
+                description: rule.description,
+                ...(strict ? {
+                  sourceMemoryIds: [...new Set([
+                    ...(Array.isArray(fromRel.properties?.sourceMemoryIds) ? fromRel.properties.sourceMemoryIds as string[] : []),
+                    ...(Array.isArray(toRel.properties?.sourceMemoryIds) ? toRel.properties.sourceMemoryIds as string[] : []),
+                  ])].sort(),
+                  derivationProof: {
+                    version: 1,
+                    rule: rule.name,
+                    fromPremiseEdgeId: fromRel.edgeId,
+                    toPremiseEdgeId: toRel.edgeId,
+                    middleEntityId: midId,
+                    fromRelationType: fromRel.relationType,
+                    toRelationType: toRel.relationType,
+                  },
+                } : {}),
+              };
+              if (strict && (!Array.isArray(metadata.sourceMemoryIds) || metadata.sourceMemoryIds.length === 0)) continue;
+              await createKnowledgeEdge({
+                fromId, fromKind: 'entity', toId, toKind: 'entity',
+                edgeType: rule.derivedType as KnowledgeEdgeType,
                 weight: Math.round(rule.confidence * 10),
-                properties: {
-                  derived: true,
-                  rule: rule.name,
-                  confidence: rule.confidence,
-                  description: rule.description,
-                } as any,
+                metadata,
               });
-
               // Also create memory associations between source memories
               // Use 'derives' for transitive rules, 'extends' for enrichment rules
-              try {
-                const fromMemories = await findMemoriesForEntity(fromEntity.name, projectId, 2);
-                const toMemories = await findMemoriesForEntity(toEntity.name, projectId, 2);
+              if (!strict) {
+                try {
+                  const fromMemories = await findMemoriesForEntity(fromEntity.name, projectId, 2);
+                  const toMemories = await findMemoriesForEntity(toEntity.name, projectId, 2);
 
-                // Create associations between source memories of derived entities
-                for (const fromMemId of fromMemories) {
-                  for (const toMemId of toMemories) {
-                    if (fromMemId !== toMemId) {
-                      await createAssociation(
-                        fromMemId,
-                        toMemId,
-                        rule.memoryAssociationType,
-                        rule.confidence,
-                        { tag: 'INFERRED', score: rule.confidence }
-                      );
+                  // Create associations between source memories of derived entities
+                  for (const fromMemId of fromMemories) {
+                    for (const toMemId of toMemories) {
+                      if (fromMemId !== toMemId) {
+                        await createAssociation(
+                          fromMemId,
+                          toMemId,
+                          rule.memoryAssociationType,
+                          rule.confidence,
+                          { tag: 'INFERRED', score: rule.confidence }
+                        );
+                      }
                     }
                   }
+                } catch (assocError) {
+                  logger.debug('Error creating memory association for derived fact', {
+                    rule: rule.name,
+                    from: fromEntity.name,
+                    to: toEntity.name,
+                    error: assocError as Error,
+                  });
                 }
-              } catch (assocError) {
-                logger.debug('Error creating memory association for derived fact', {
-                  rule: rule.name,
-                  from: fromEntity.name,
-                  to: toEntity.name,
-                  error: assocError as Error,
-                });
               }
             } catch (error) {
               logger.debug('Error storing derived fact', {
@@ -326,29 +340,21 @@ export async function getDerivedFacts(projectId: string): Promise<DerivedFact[]>
   const schema = await getSchema();
 
   // Get all entities for this project
-  const entities = await (db as any)
-    .select()
-    .from(schema.entities)
-    .where(eq(schema.entities.projectId, projectId));
+  const entities = isStrictTrustPolicy()
+    ? await getProjectEntities(projectId)
+    : await (db as any)
+      .select()
+      .from(schema.entities)
+      .where(eq(schema.entities.projectId, projectId));
 
   const entityIds = entities.map((e: any) => e.id);
   if (entityIds.length === 0) return [];
 
   // Get all derived relations
   const derivedRelations: any[] = [];
-  const batchSize = 100;
-
-  for (let i = 0; i < entityIds.length; i += batchSize) {
-    const batch = entityIds.slice(i, i + batchSize);
-    const relations = await (db as any)
-      .select()
-      .from(schema.entityRelations)
-      .where(
-        or(...batch.map((id: string) => eq(schema.entityRelations.fromEntityId, id)))
-      );
-
-    for (const rel of relations) {
-      const props = rel.properties as Record<string, unknown> | null;
+  const relations = await getEntityRelations(entityIds);
+  for (const rel of relations) {
+      const props = rel.properties;
       if (props && props.derived === true) {
         const fromEntity = entities.find((e: any) => e.id === rel.fromEntityId);
         const toEntity = entities.find((e: any) => e.id === rel.toEntityId);
@@ -358,13 +364,12 @@ export async function getDerivedFacts(projectId: string): Promise<DerivedFact[]>
           fromEntityName: fromEntity?.name || 'Unknown',
           toEntityId: rel.toEntityId,
           toEntityName: toEntity?.name || 'Unknown',
-          relationType: rel.type as RelationType,
+          relationType: rel.relationType as RelationType,
           rule: (props.rule as string) || 'unknown',
           confidence: (props.confidence as number) || 0.5,
           isDerived: true,
         });
       }
-    }
   }
 
   return derivedRelations;

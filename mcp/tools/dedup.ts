@@ -8,17 +8,11 @@
 // - every executed merge writes a memory_merge_history row (undo log) so
 //   reverse can restore source memories from the stored snapshot
 
+import { jsonResult } from './shared.js';
 import { z } from "zod";
-import type { ToolCtx } from "./extras.js";
+import type { ToolCtx } from './shared.js';
 
-function jsonResult(payload: unknown, version?: string) {
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(version ? { ...(payload as Record<string, unknown>), version } : payload, null, 2),
-    }],
-  };
-}
+
 
 export function registerDedupTools(ctx: ToolCtx): number {
   const { register, server, sdkClient, resolveProjectPath, errorResponse, SERVER_VERSION } = ctx;

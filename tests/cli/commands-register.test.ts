@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 
 describe('CLI command registration', () => {
+  test('reports the version from the installed package manifest', async () => {
+    const { createProgram } = await import('../../cli/program.ts');
+    const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
+
+    expect(createProgram().version()).toBe(packageJson.version);
+  });
+
   test('registers all core commands', async () => {
     const { createProgram } = await import('../../cli/program.ts');
     const program = createProgram();
@@ -36,5 +44,11 @@ describe('CLI command registration', () => {
 
     // Context command (restored first-class public surface)
     expect(commandNames).toContain('context');
+
+    // Temporal graph integrity
+    expect(commandNames).toContain('graph-audit');
+
+    // Local desktop runtime bootstrap protocol
+    expect(commandNames).toContain('bootstrap');
   });
 });

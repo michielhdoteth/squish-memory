@@ -106,6 +106,11 @@ export async function recall(
     user,
     sessionId,
     strategy: strategyOverride,
+    referenceDate,
+    timeZone,
+    latestOnly,
+    validTimeFrom,
+    validTimeTo,
   } = options;
 
   const routeResult = await autoRoute(query, {
@@ -116,12 +121,19 @@ export async function recall(
 
   const strategy = strategyOverride ?? routeResult.recommendedStrategy;
 
-  const baseInput: SearchInput = { query, type, tags, limit, project, user, sessionId };
+  const baseInput: SearchInput = { query, type, tags, limit, project, user, sessionId, referenceDate, timeZone, latestOnly, validTimeFrom, validTimeTo };
 
   let results: SearchResult[] = [];
 
   switch (strategy) {
     case 'multi_hop': {
+      // Graph traversal has no point-in-time or valid-time-window contract.
+      // Honor explicit temporal constraints by using the hybrid pipeline,
+      // which applies those constraints after candidate injection.
+      if (referenceDate !== undefined || timeZone !== undefined || latestOnly === true || validTimeFrom !== undefined || validTimeTo !== undefined) {
+        results = await hybridSearch(baseInput, { limit });
+        break;
+      }
       const multiHop = await multiHopSearch({
         query, project, limit, maxHops: 3,
         includeVectorResults: true, includeGraphResults: true, sessionId,

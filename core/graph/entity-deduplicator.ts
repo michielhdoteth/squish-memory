@@ -5,13 +5,16 @@
  * Critical for knowledge graph - prevents duplicate nodes for aliases like "AWS" / "Amazon Web Services".
  */
 
-import { eq, and, or, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
-import { getEmbedding } from '../embeddings.js';
 import { cosineSimilarity, DimensionMismatchError } from '../utils/vector-operations.js';
 import { parseEmbedding } from '../lib/parse-embedding.js';
 import { logger } from '../logger.js';
+import { createKnowledgeEdge, getEdgesForNode, reviseKnowledgeEdge } from '../knowledge/knowledge-edges.js';
+import type { KnowledgeEdgeType } from '../knowledge/types.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyUnscopedGraphOperation } from './strict-gates.js';
 
 export interface DeduplicationResult {
   merged: number;
@@ -48,6 +51,7 @@ export async function deduplicateProjectEntities(
     dryRun?: boolean;
   }
 ): Promise<DeduplicationResult> {
+  if (isStrictTrustPolicy()) await denyUnscopedGraphOperation('deduplicate_project_entities', projectId);
   const { similarityThreshold = 0.85, dryRun = false } = options || {};
   const db = await getDb();
   const schema = await getSchema();
@@ -196,26 +200,62 @@ async function mergeEntities(
   db: any,
   schema: any
 ): Promise<void> {
-  // Update all relations pointing FROM source to point FROM target
-  await db
-    .update(schema.entityRelations)
-    .set({ fromEntityId: target.id })
-    .where(eq(schema.entityRelations.fromEntityId, source.id));
+  const sqlite = (db as { $client?: { inTransaction?: boolean; exec?: (sql: string) => void } }).$client;
+  const ownsTransaction = Boolean(sqlite?.exec && !sqlite.inTransaction);
+  if (ownsTransaction) sqlite!.exec!('BEGIN IMMEDIATE');
+  try {
+    await mergeEntityRows(source, target, db, schema);
+    if (ownsTransaction) sqlite!.exec!('COMMIT');
+  } catch (error) {
+    if (ownsTransaction && sqlite?.inTransaction) sqlite.exec!('ROLLBACK');
+    throw error;
+  }
+}
 
-  // Update all relations pointing TO source to point TO target
-  await db
-    .update(schema.entityRelations)
-    .set({ toEntityId: target.id })
-    .where(eq(schema.entityRelations.toEntityId, source.id));
+async function mergeEntityRows(
+  source: any,
+  target: any,
+  db: any,
+  schema: any
+): Promise<void> {
+  const edges = await getEdgesForNode(source.id, 'entity');
+  const recordedAt = new Date();
+  for (const edge of edges) {
+    const fromId = edge.fromId === source.id ? target.id : edge.fromId;
+    const toId = edge.toId === source.id ? target.id : edge.toId;
+    await reviseKnowledgeEdge(edge.id, { validTo: recordedAt, recordedAt });
+    if (fromId === toId) continue;
+    await createKnowledgeEdge({
+      fromId,
+      fromKind: 'entity',
+      toId,
+      toKind: 'entity',
+      edgeType: edge.edgeType as KnowledgeEdgeType,
+      weight: edge.weight,
+      metadata: { ...(edge.metadata ?? {}), mergedFromEntityId: source.id },
+      validFrom: edge.validFrom ?? recordedAt,
+      recordedAt,
+    });
+  }
 
   // Add source name as alias to target
-  const existingAliases = Array.isArray(target.aliases) ? target.aliases as string[] : [];
+  let existingAliases: string[] = [];
+  if (Array.isArray(target.aliases)) {
+    existingAliases = target.aliases.filter((alias: unknown): alias is string => typeof alias === 'string');
+  } else if (typeof target.aliases === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(target.aliases);
+      if (Array.isArray(parsed)) existingAliases = parsed.filter((alias): alias is string => typeof alias === 'string');
+    } catch {
+      // Ignore malformed legacy alias data rather than failing entity merge.
+    }
+  }
   const updatedAliases = [...new Set([...existingAliases, source.name])];
 
   await db
     .update(schema.entities)
     .set({
-      aliases: updatedAliases as any,
+      aliases: JSON.stringify(updatedAliases),
       mentionCount: (target.mentionCount || 0) + (source.mentionCount || 0),
       updatedAt: new Date(),
     })

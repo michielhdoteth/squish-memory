@@ -11,10 +11,19 @@
  */
 
 import { getDb } from '../../db/index.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 
 export interface StalenessReportOptions {
   projectId?: string;
   olderThanDays?: number;
+/**
+   * Minimum normalized importance (0-1); database scores use a 0-100 scale.
+   * Values outside [0, 1] and non-finite values are clamped/ignored here rather
+   * than at the MCP schema alone, so `SquishRuntime.stalenessReport` and direct
+   * callers get the same behaviour.
+   */
+  minImportance?: number;
   limit?: number;
 }
 
@@ -64,7 +73,23 @@ function suggestAction(item: { importanceScore?: number | null; tags?: string[] 
   return 'update';
 }
 
+/**
+ * Clamp a caller-supplied normalized importance into [0, 1].
+ *
+ * Returns null when no filter should apply: the value was absent or not a
+ * finite number. A clamped 0 also means "no filter" (nothing is below zero),
+ * which is why the caller checks `> 0` rather than `!== null`.
+ */
+export function normalizeMinImportance(value: number | undefined): number | null {
+  if (value === undefined || !Number.isFinite(value)) return null;
+  return Math.min(1, Math.max(0, value));
+}
+
 export async function buildStalenessReport(opts: StalenessReportOptions = {}): Promise<StalenessReport> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface('staleness_report', 'memory', 'Unscoped staleness reports are disabled under strict trust until report rows are filtered by caller and provenance');
+  }
+
   const db = await getDb();
   if (!db) {
     return { generatedAt: new Date().toISOString(), groups: [] };
@@ -74,8 +99,19 @@ export async function buildStalenessReport(opts: StalenessReportOptions = {}): P
   const limit = opts.limit ?? 200;
   const cutoff = Math.floor((Date.now() - olderThanDays * 24 * 60 * 60 * 1000) / 1000);
 
-  const conditions = ['updated_at < ?'];
+const conditions = ['updated_at < ?'];
   const params: unknown[] = [cutoff];
+  // minImportance is normalized here, not only at the MCP schema. The schema
+  // clamps to [0, 1], but `SquishRuntime.stalenessReport` and direct callers do
+  // not, and the previous `> 0` guard made 0, -1 and undefined all mean "no
+  // filter" and made any value above 1 filter on a score no row can reach -
+  // indistinguishable from an empty report. Clamp into [0, 1], treat
+  // non-finite as absent, and only then decide whether a filter applies.
+  const minImportance = normalizeMinImportance(opts.minImportance);
+  if (minImportance !== null && minImportance > 0) {
+    conditions.push('COALESCE(importance_score, 0) >= ?');
+    params.push(minImportance * 100);
+  }
   if (opts.projectId) {
     conditions.push('project_id = ?');
     params.push(opts.projectId);

@@ -2,43 +2,21 @@
 
 Squish integrates with Claude Code as a plugin that provides persistent memory capabilities through session hooks.
 
+> **Release status (2026-10-20): Squish 2.2.0 is an unpublished source candidate.** npm currently
+> resolves to 1.9.0, which has not been validated with this host guide. Do not install that package
+> or run setup commands from this page until a matching release and Claude Code compatibility are
+> announced. The configuration notes below are target-version reference material only.
+
 ## Prerequisites
 
 - Claude Code v0.62.0 or later
-- Node.js 18.0.0 or later
-- Squish memory server (installed via npm)
+- Node.js 20.0.0 or later for the 2.2.0 source candidate
+- A published Squish release explicitly validated for Claude Code
 
-## Installation Methods
+## Installation
 
-### Method 1: squish install (Recommended)
-```bash
-# Install Squish globally
-npm install -g squish-memory
-
-# Install Squish MCP and plugins for all detected clients
-squish install --all
-```
-
-That's it! The installer will automatically detect your coding agents and configure Squish MCP and plugins for them.
-
-### Method 2: Manual Per-Client Installer
-```bash
-# Install Squish if not already installed
-npm install -g squish-memory
-
-# Install for specific clients
-squish install --clients=claude-code,opencode
-
-# Or interactive mode to pick clients
-squish install
-```
-
-### Method 3: Legacy Marketplace Installation
-```bash
-# Install via Claude Code marketplace
-/plugin marketplace add https://github.com/michielhdoteth/squish-memory.git
-/plugin install squish@4m-labs-squish
-```
+Install commands are intentionally withheld until the current package version and this host path
+are validated. Do not use commands copied from earlier releases.
 
 ## What Gets Installed
 
@@ -82,7 +60,7 @@ Once installed, Squish works automatically:
 ### Environment Variables
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SQUISH_DATA_DIR` | Data directory for Squish | `~/.squish/claude` |
+| `SQUISH_DATA_DIR` | Optional override for the shared Squish data directory | `~/.squish` |
 | `SQUISH_COMMAND` | Command to start Squish MCP | `squish-mcp` |
 
 ### Core Memory Sections
@@ -113,24 +91,17 @@ Squish reserves 16KB total for core memory (configurable):
 
 ## Uninstallation
 
-To remove Squish from Claude Code, manually delete the MCP config and hooks:
-
-```bash
-# Remove MCP server config
-rm ~/.claude/mcp.json
-
-# Remove hooks from settings.json (edit manually to remove squish entries)
-# Or reset settings entirely:
-rm ~/.claude/settings.json
-```
+To remove Squish, remove only its MCP and hook entries from Claude Code's configuration. Do not
+delete the entire `mcp.json` or `settings.json`, because those files can contain settings for other
+tools. A validated uninstaller path will be documented with a matching Squish release.
 
 Your Squish data and memories in `~/.squish/` are preserved.
 
 ## Compatibility
 
 - Claude Code: v0.62.0+
-- Node.js: 18.0.0+
-- Squish: v1.0.0+
+- Node.js: 20.0.0+
+- Squish: 2.2.0 source candidate (unpublished; host compatibility pending)
 - Operating System: Linux, macOS, Windows
 
 ## See Also

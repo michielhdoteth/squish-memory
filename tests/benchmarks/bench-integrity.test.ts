@@ -51,6 +51,9 @@ const UPDATE_INDICATOR_PATTERNS = [
   /\binstead of\b/i,
   /\b(no longer|not anymore)\b/i,
   /\b(as of|starting|beginning|from now|effective)\s+(\d{4}|\w+\s+\d{1,2})/i,
+  // Batch WS2b: generalized state-change verbs (keep in sync with the resolver).
+  /\b(migrated|migrating|migrates|switched|shifted|transitioned|replaced|replaces|swapped|adopted|upgraded)\b/i,
+  /\bmoved\s+from\b/i,
 ];
 
 /** Mirrors NEGATION_PATTERNS - update rows must not carry negation (Scenario 1/3 cross-fire). */
@@ -189,6 +192,23 @@ describe('bench scorer', () => {
     ).toBe(1);
   });
 
+  test('fact-update history: successor text with explicit prior value earns partial evidence credit', () => {
+    const q = {
+      benchId: 'fu_juno_q_past',
+      category: 'fact-update' as const,
+      query: 'How did Juno handle styling before Tailwind?',
+      expectTop1: ['fu_juno_v1'],
+      expectTop3: ['fu_juno_v1', 'fu_juno_v2'],
+      supportingEvidenceTop1: ['fu_juno_v3'],
+    };
+    expect(scoreQuery(q, input({ top1BenchId: 'fu_juno_v3', top1Confidence: 0.4 }), new Map())).toEqual({
+      penalty: 0.5,
+      guardOk: true,
+    });
+    const unrelated = { ...q, supportingEvidenceTop1: undefined };
+    expect(scoreQuery(unrelated, input({ top1BenchId: 'fu_juno_v3', top1Confidence: 0.4 }), new Map()).penalty).toBe(-1);
+  });
+
   test('unanswerable: abstain +1, hedged 0, confident-wrong -1', () => {
     const q = { benchId: 'ua_q', category: 'unanswerable' as const, query: 'q' };
     expect(scoreQuery(q, input({ verdict: 'no_reliable_memory' }), new Map()).penalty).toBe(1);
@@ -296,6 +316,11 @@ describe('adversarial unanswerable corpus integrity (B12-3)', () => {
 
     const { SquishRuntime } = await import('../../core/runtime/squish-runtime.js');
     const dbModule = await import('../../db/index.js');
+    const db = await dbModule.getDb();
+    const sqlite = (db as any)?.$client;
+    if (!sqlite || typeof sqlite.prepare !== 'function') {
+      throw new Error('Expected SQLite client for benchmark integrity harness');
+    }
 
     const corpus = buildBenchCorpus();
     const client = new SquishRuntime();
@@ -307,14 +332,10 @@ describe('adversarial unanswerable corpus integrity (B12-3)', () => {
         metadata: { benchId: mem.benchId },
       });
       uuidToBench.set(stored.id, mem.benchId);
+      expect(sqlite.inTransaction).toBe(false);
     }
 
     // Deterministic timestamps mirroring run-memory-bench.ts seeding.
-    const db = await dbModule.getDb();
-    const sqlite = (db as any)?.$client;
-    if (!sqlite || typeof sqlite.prepare !== 'function') {
-      throw new Error('Expected SQLite client for benchmark integrity harness');
-    }
     const update = sqlite.prepare(
       'UPDATE memories SET created_at = ?, updated_at = ?, last_decay_at = ?, valid_from = ? WHERE id = ?'
     );

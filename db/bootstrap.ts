@@ -3,7 +3,12 @@ import { existsSync, mkdirSync } from 'fs';
 import { logger } from '../core/logger.js';
 import { getDataDir } from '../config.js';
 import { runAllMigrations } from './migrations/index.js';
+import { runKnowledgeMigrations } from './migrations/knowledge.js';
 import { runWikiToMemoryMigration } from './migrations/wiki-to-memory.js';
+
+const POST_WIKI_KNOWLEDGE_MARKER = '2.2.1-wiki-links-knowledge-edges';
+const SQLITE_SCHEMA_REVISION = 'sqlite-schema-2026-10-23-revision-7';
+let schemaSavepointSequence = 0;
 
 const sqliteSchemaSql = `
 PRAGMA foreign_keys = ON;
@@ -53,6 +58,18 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 CREATE INDEX IF NOT EXISTS projects_path_idx ON projects(path);
+
+CREATE TABLE IF NOT EXISTS trust_audit_log (
+  id TEXT PRIMARY KEY,
+  actor_hash TEXT NOT NULL,
+  resource_hash TEXT NOT NULL,
+  asset_type TEXT NOT NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('allow', 'deny')),
+  reason TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS trust_audit_created_idx ON trust_audit_log(created_at);
+CREATE INDEX IF NOT EXISTS trust_audit_resource_idx ON trust_audit_log(resource_hash, created_at);
 
 CREATE TABLE IF NOT EXISTS memory_analysis_jobs (
   id TEXT PRIMARY KEY,
@@ -156,22 +173,7 @@ CREATE INDEX IF NOT EXISTS memories_project_idx ON memories(project_id);
 CREATE INDEX IF NOT EXISTS memories_type_idx ON memories(type);
 CREATE INDEX IF NOT EXISTS memories_created_idx ON memories(created_at);
 CREATE INDEX IF NOT EXISTS memories_tags_idx ON memories(tags);
-
-CREATE TABLE IF NOT EXISTS memory_associations (
-  id TEXT PRIMARY KEY,
-  from_memory_id TEXT NOT NULL,
-  to_memory_id TEXT NOT NULL,
-  association_type TEXT NOT NULL,
-  weight REAL DEFAULT 1,
-  coactivation_count INTEGER DEFAULT 1,
-  metadata TEXT,
-  last_coactivated_at INTEGER,
-  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
-  UNIQUE(from_memory_id, to_memory_id)
-);
-
--- Composite index for graph traversal (v1.1.0)
-CREATE INDEX IF NOT EXISTS associations_graph_traversal_idx ON memory_associations(from_memory_id, to_memory_id, weight, association_type);
+CREATE INDEX IF NOT EXISTS memories_valid_from_idx ON memories(valid_from);
 
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
@@ -263,27 +265,15 @@ CREATE INDEX IF NOT EXISTS entities_project_idx ON entities(project_id);
 CREATE INDEX IF NOT EXISTS entities_type_idx ON entities(type);
 CREATE INDEX IF NOT EXISTS entities_name_idx ON entities(name);
 
-CREATE TABLE IF NOT EXISTS entity_relations (
-  id TEXT PRIMARY KEY,
-  from_entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-  to_entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-  type TEXT NOT NULL,
-  weight INTEGER DEFAULT 1,
-  properties TEXT,
-  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS relations_from_idx ON entity_relations(from_entity_id);
-CREATE INDEX IF NOT EXISTS relations_to_idx ON entity_relations(to_entity_id);
-CREATE INDEX IF NOT EXISTS relations_type_idx ON entity_relations(type);
-
 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
   content,
   tags,
   summary,
   content='memories',
-  content_rowid='rowid'
+  content_rowid='rowid',
+  tokenize='porter unicode61'
 );
+INSERT INTO memories_fts(memories_fts, rank) VALUES('rank', 'bm25(1.0, 2.0, 3.0)');
 
 CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
   INSERT INTO memories_fts(rowid, content, tags, summary)
@@ -442,6 +432,9 @@ CREATE TABLE IF NOT EXISTS memory_snapshots (
   content TEXT NOT NULL,
   metadata TEXT,
   diff TEXT,
+  encrypted_payload TEXT,
+  encrypted_nonce TEXT,
+  encryption_format TEXT,
   created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
 );
 
@@ -463,7 +456,8 @@ CREATE TABLE IF NOT EXISTS agent_session_cache (
 );
 
 CREATE INDEX IF NOT EXISTS agent_session_cache_agent_idx ON agent_session_cache(agent);
-CREATE UNIQUE INDEX IF NOT EXISTS agent_session_cache_agent_session_idx ON agent_session_cache(agent, session_id);
+-- Principal/path-scoped cache keys permit isolated entries for the same host session.
+DROP INDEX IF EXISTS agent_session_cache_agent_session_idx;
 
 -- Namespaces table (v1.0.x) - Hierarchical organization
 CREATE TABLE IF NOT EXISTS namespaces (
@@ -517,6 +511,37 @@ CREATE TABLE IF NOT EXISTS maintenance_job_history (
 CREATE INDEX IF NOT EXISTS maintenance_job_history_job_idx ON maintenance_job_history(job_id);
 CREATE INDEX IF NOT EXISTS maintenance_job_history_started_idx ON maintenance_job_history(started_at);
 CREATE INDEX IF NOT EXISTS maintenance_job_history_status_idx ON maintenance_job_history(status);
+
+-- Echo/Fizzle feedback table (v0.10.0).
+-- Column set mirrors memoryFeedback in db/drizzle/schema-sqlite.ts exactly,
+-- because drizzle-orm 0.45.x emits EVERY declared column in an INSERT column
+-- list and in a field-less select(). The declaration is live: it is imported at
+-- module scope by core/memory/feedback-tracker.ts (reached via
+-- core/memory/reinforcement.ts from squish-runtime.applyFeedback and
+-- mcp/tools/skill.ts) and by core/scheduler/job-runner.ts. Without this
+-- statement every write to it failed with "no such table".
+--
+-- created_at defaults to epoch seconds (strftime('%s','now')), NOT the
+-- CURRENT_TIMESTAMP text the drizzle declaration names: job-runner compares it
+-- against a Date via drizzle lt(), which binds unix seconds. A TEXT datetime
+-- here silently breaks that cleanup predicate.
+CREATE TABLE IF NOT EXISTS memory_feedback (
+  id TEXT PRIMARY KEY,
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL,
+  conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+  was_injected INTEGER DEFAULT 0,
+  was_referenced INTEGER DEFAULT 0,
+  reference_count INTEGER DEFAULT 0,
+  retrieval_priority_delta INTEGER DEFAULT 0,
+  injected_at INTEGER,
+  referenced_at INTEGER,
+  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS memory_feedback_memory_idx ON memory_feedback(memory_id);
+CREATE INDEX IF NOT EXISTS memory_feedback_session_idx ON memory_feedback(session_id);
+CREATE INDEX IF NOT EXISTS memory_feedback_referenced_idx ON memory_feedback(was_referenced);
+CREATE INDEX IF NOT EXISTS memory_feedback_conversation_idx ON memory_feedback(conversation_id);
 
 -- Places table (v1.1.5) - Spatial memory organization
 CREATE TABLE IF NOT EXISTS places (
@@ -754,7 +779,11 @@ CREATE TABLE IF NOT EXISTS knowledge_edges (
   edge_type TEXT NOT NULL,
   weight REAL DEFAULT 1.0,
   metadata TEXT,             -- JSON object
-  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
+  created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
+  valid_from INTEGER,
+  valid_to INTEGER,
+  recorded_at INTEGER,
+  recorded_to INTEGER
 );
 
 -- Knowledge edges indexes
@@ -763,7 +792,8 @@ CREATE INDEX IF NOT EXISTS knowledge_edges_to_idx ON knowledge_edges(to_id, to_k
 CREATE INDEX IF NOT EXISTS knowledge_edges_type_idx ON knowledge_edges(edge_type);
 CREATE INDEX IF NOT EXISTS knowledge_edges_from_kind_idx ON knowledge_edges(from_kind);
 CREATE INDEX IF NOT EXISTS knowledge_edges_to_kind_idx ON knowledge_edges(to_kind);
-CREATE UNIQUE INDEX IF NOT EXISTS knowledge_edges_unique ON knowledge_edges(from_id, from_kind, to_id, to_kind, edge_type);
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_edges_unique ON knowledge_edges(from_id, from_kind, to_id, to_kind, edge_type, valid_from, recorded_at);
+CREATE INDEX IF NOT EXISTS knowledge_edges_valid_time_idx ON knowledge_edges(valid_from, valid_to, recorded_at, recorded_to);
 
 -- session_summaries table
 CREATE TABLE IF NOT EXISTS session_summaries (
@@ -783,9 +813,10 @@ CREATE INDEX IF NOT EXISTS session_summaries_type_idx ON session_summaries(summa
 CREATE INDEX IF NOT EXISTS session_summaries_created_idx ON session_summaries(created_at);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- DEPRECATED TABLES (superseded by knowledge + knowledge_edges above)
--- These are kept temporarily for foreign key compatibility and data migration.
--- Drop once all code paths use the knowledge tables exclusively.
+-- LEGACY TABLES (superseded by knowledge + knowledge_edges above)
+-- Runtime graph reads and writes use the canonical tables. Existing legacy
+-- tables remain migration/reconciliation and conditional source-cleanup inputs;
+-- retire them only after those compatibility paths and retained data are audited.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- Skills System (v2.1.0) - Reusable SOPs with versions, triggers, steps
@@ -907,6 +938,9 @@ CREATE INDEX IF NOT EXISTS visibility_rules_grantee_idx ON visibility_rules(gran
 
 `;
 
+const bootstrapTableNames = [...sqliteSchemaSql.matchAll(/CREATE TABLE IF NOT EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/gi)]
+  .map((match) => match[1]!);
+
 
 
 /**
@@ -926,6 +960,47 @@ export async function ensureDataDirectory(): Promise<void> {
 }
 
 export async function ensureSqliteSchema(sqlite: Database): Promise<void> {
+  const ownsTransaction = !sqlite.inTransaction;
+  if (ownsTransaction) {
+    sqlite.exec('PRAGMA foreign_keys = ON');
+  } else {
+    const foreignKeysEnabled = sqlite.prepare('PRAGMA foreign_keys').get() as { foreign_keys?: number } | undefined;
+    if (foreignKeysEnabled?.foreign_keys !== 1) {
+      throw new Error('Nested SQLite schema bootstrap requires foreign-key enforcement to be enabled before the caller transaction');
+    }
+  }
+  const savepoint = `squish_schema_bootstrap_${++schemaSavepointSequence}`;
+  sqlite.exec(ownsTransaction ? 'BEGIN IMMEDIATE' : `SAVEPOINT ${savepoint}`);
+  try {
+    await ensureSqliteSchemaInternal(sqlite);
+    sqlite.exec(ownsTransaction ? 'COMMIT' : `RELEASE SAVEPOINT ${savepoint}`);
+  } catch (error) {
+    try {
+      if (ownsTransaction) sqlite.exec('ROLLBACK');
+      else {
+        sqlite.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+        sqlite.exec(`RELEASE SAVEPOINT ${savepoint}`);
+      }
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], 'SQLite schema bootstrap failed and could not roll back cleanly');
+    }
+    throw error;
+  }
+}
+
+async function ensureSqliteSchemaInternal(sqlite: Database): Promise<void> {
+  const versionTableExists = sqlite.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_schema_versions'",
+  ).get();
+  if (
+    versionTableExists &&
+    sqlite.prepare('SELECT 1 FROM _schema_versions WHERE version = ?').get(SQLITE_SCHEMA_REVISION) &&
+    hasAllBootstrapTables(sqlite)
+  ) {
+    await reconcilePendingWikiMigration(sqlite);
+    return;
+  }
+
   // Run schema creation FIRST (creates tables with latest schema).
   // Older installs may fail partway through when later indexes/triggers refer
   // to columns that migrations have not added yet, so tolerate that first pass.
@@ -940,14 +1015,44 @@ export async function ensureSqliteSchema(sqlite: Database): Promise<void> {
   // Replay the full schema after migrations so deferred indexes/triggers land.
   execSqliteSchema(sqlite, { tolerant: false });
 
+  const wikiMigrationCompleted = await reconcilePendingWikiMigration(sqlite);
+
+  if (wikiMigrationCompleted) {
+    sqlite.prepare('INSERT OR IGNORE INTO _schema_versions (version, description) VALUES (?, ?)')
+      .run(SQLITE_SCHEMA_REVISION, 'Version-gated atomic SQLite schema and migration bootstrap');
+  }
+}
+
+function hasAllBootstrapTables(sqlite: Database): boolean {
+  const existing = new Set(
+    (sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>)
+      .map((row) => row.name),
+  );
+  return bootstrapTableNames.every((table) => existing.has(table));
+}
+
+async function reconcilePendingWikiMigration(sqlite: Database): Promise<boolean> {
   // Batch 8: one-time wiki_pages -> memories migration (marker-gated,
   // SQUISH_WIKI_MIGRATE_DRY_RUN=true previews). Legacy wiki tables are
-  // dropped on apply - memory rows tagged 'wiki-origin' carry the data.
+  // dropped on apply; memory rows tagged 'wiki-origin' carry the data.
+  let wikiMigrationCompleted = true;
   try {
-    runWikiToMemoryMigration(sqlite);
+    wikiMigrationCompleted = !runWikiToMemoryMigration(sqlite).dryRun;
   } catch (error) {
+    wikiMigrationCompleted = false;
     logger.error('[wiki-migration] Failed:', error instanceof Error ? error.message : String(error));
   }
+
+  // The wiki import can create memories and legacy association rows after
+  // schema bootstrap. Reconcile those rows before runtime access.
+  const postWikiMigration = sqlite.prepare('SELECT 1 FROM _schema_versions WHERE version = ?')
+    .get(POST_WIKI_KNOWLEDGE_MARKER);
+  if (wikiMigrationCompleted && !postWikiMigration) {
+    await runKnowledgeMigrations(sqlite);
+    sqlite.prepare('INSERT OR IGNORE INTO _schema_versions (version, description) VALUES (?, ?)')
+      .run(POST_WIKI_KNOWLEDGE_MARKER, 'Reconcile one-time wiki-imported memories and links into canonical knowledge edges');
+  }
+  return wikiMigrationCompleted;
 }
 
 // Schema versions for tracking
@@ -988,13 +1093,7 @@ export async function getSchemaVersion(sqlite: Database): Promise<string | null>
   return result?.version || null;
 }
 
-export async function runMigrationsForVersion(sqlite: Database, targetVersion: string): Promise<void> {
-  const currentVersion = await getSchemaVersion(sqlite);
-  logger.info(`Current schema version: ${currentVersion}, target: ${targetVersion}`);
-  
-  // Run ensureSqliteSchema which handles all migrations
-  await runSqliteMigrations(sqlite);
-}
+
 
 async function runSqliteMigrations(sqlite: Database): Promise<void> {
   // All migrations are in separate files - just run them all

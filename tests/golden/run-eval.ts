@@ -1,5 +1,5 @@
 /**
- * @deprecated Moved to bench/runners/retrieval.ts. This file re-exports for backward compatibility.
+ * @deprecated Moved to benchmark/runners/retrieval.ts. This file re-exports for backward compatibility.
  */
 export {
   loadGoldenSet,
@@ -20,4 +20,4 @@ export {
   type ReliabilityBin,
   type SelectivePoint,
   type CalibrationMetrics,
-} from '../../bench/runners/retrieval.js';
+} from '../../benchmark/runners/retrieval.js';

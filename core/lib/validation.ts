@@ -4,6 +4,7 @@
  */
 
 import { clampLimit as originalClampLimit } from './utils.js';
+import { normalizeTimestampLadder } from './timestamps.js';
 import { normalizeTags } from '../memory/serialization.js';
 
 /**
@@ -143,19 +144,10 @@ export function validateDate(value: string | Date | number | undefined): Date | 
     if (value instanceof Date) {
       date = value;
     } else if (typeof value === 'number') {
-      // Handle both milliseconds and seconds timestamps
-      if (value > 100000000000000) {
-        // Microseconds, convert to milliseconds
-        date = new Date(value / 1000);
-      } else if (value > 1000000000000) {
-        // Milliseconds
-        date = new Date(value);
-      } else if (value >= 0) {
-        // Seconds
-        date = new Date(value * 1000);
-      } else {
-        return null;
-      }
+      // Magnitude ladder (micro/milli/seconds) lives in ../lib/timestamps.js
+      const ladderDate = normalizeTimestampLadder(value);
+      if (!ladderDate) return null;
+      date = ladderDate;
     } else if (typeof value === 'string') {
       date = new Date(value);
     } else {

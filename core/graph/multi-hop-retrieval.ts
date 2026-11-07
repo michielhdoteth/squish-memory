@@ -11,9 +11,12 @@ import { getSchema } from '../../db/schema.js';
 import { hybridSearch, type SearchResult } from '../memory/hybrid-search.js';
 import { extractEntitiesAndRelations } from './llm-entity-extractor.js';
 import { extractEntityNames } from '../memory/entity-extractor.js';
-import { findEntitiesByName, findPaths, traverse, type GraphNode, type TraversalPath } from './graph-traversal.js';
+import { findEntitiesByName, getNeighborhood, type GraphNode, type GraphEdge, type NeighborhoodResult, type TraversalPath } from './graph-traversal.js';
 import { logger } from '../logger.js';
 import { config } from '../../config.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyUnscopedGraphOperation } from './strict-gates.js';
+import { addBoost } from '../scoring/three-field.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -35,6 +38,8 @@ export interface MultiHopSearchOptions {
   project?: string;
   /** Maximum number of results */
   limit?: number;
+  /** Maximum distinct query entities used as graph anchors; defaults to all extracted entities. */
+  anchorCount?: number;
   /** Maximum graph traversal depth */
   maxHops?: number;
   /** Whether to include vector-only results */
@@ -55,10 +60,15 @@ export interface MultiHopSearchOptions {
 export async function multiHopSearch(
   options: MultiHopSearchOptions
 ): Promise<MultiHopResult[]> {
+  if (isStrictTrustPolicy()) {
+    await denyUnscopedGraphOperation('multi_hop_retrieval', options.project ?? 'unscoped');
+  }
+
   const {
     query,
     project,
     limit = 10,
+    anchorCount,
     maxHops = 3,
     includeVectorResults = true,
     includeGraphResults = true,
@@ -87,6 +97,10 @@ export async function multiHopSearch(
     logger.debug('Multi-hop search: keyword extraction', {
       entities: queryEntityNames,
     });
+  }
+  if (anchorCount !== undefined) {
+    const boundedAnchorCount = Math.max(1, Math.min(10, Math.floor(anchorCount)));
+    queryEntityNames = queryEntityNames.slice(0, boundedAnchorCount);
   }
 
   // Step 2: Vector search (baseline results)
@@ -118,15 +132,22 @@ export async function multiHopSearch(
       limit
     );
 
-    // Find memories connected to graph-expanded entities
-    for (const graphResult of graphResults) {
-      // Search for memories mentioning the expanded entities
-      const expandedMemories = await hybridSearch({
+    // Find memories connected to graph-expanded entities. Queries are
+    // independent, so run a small bounded batch while preserving candidate
+    // order for deterministic deduplication and ranking.
+    const expandedMemoriesByEntity = await mapInBatches(
+      graphResults,
+      GRAPH_MEMORY_SEARCH_BATCH_SIZE,
+      (graphResult) => hybridSearch({
         query: graphResult.entityName,
         project,
         limit: 5,
-      });
+      }),
+    );
 
+    for (let index = 0; index < graphResults.length; index++) {
+      const graphResult = graphResults[index]!;
+      const expandedMemories = expandedMemoriesByEntity[index]!;
       for (const memory of expandedMemories) {
         if (!seenMemoryIds.has(memory.id)) {
           seenMemoryIds.add(memory.id);
@@ -158,6 +179,138 @@ interface GraphExpansionResult {
   relevanceScore: number;
 }
 
+interface ExpansionOptions {
+  maxHops: number;
+  minPathWeight: number;
+  limit: number;
+}
+
+type NeighborhoodReader = (
+  entityId: string,
+  options: { radius: number; minWeight: number; limit: number },
+) => Promise<NeighborhoodResult | null>;
+
+const GRAPH_MEMORY_SEARCH_BATCH_SIZE = 3;
+
+/** Run independent graph entity searches in stable, bounded batches. */
+export async function mapInBatches<T, R>(
+  items: readonly T[],
+  batchSize: number,
+  mapItem: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const size = Math.max(1, Math.floor(batchSize));
+  const results: R[] = [];
+  for (let offset = 0; offset < items.length; offset += size) {
+    const batch = items.slice(offset, offset + size);
+    const mapped = await Promise.all(batch.map((item, index) => mapItem(item, offset + index)));
+    results.push(...mapped);
+  }
+  return results;
+}
+
+/**
+ * Index shortest outgoing paths from one graph neighborhood in a single BFS.
+ *
+ * `getNeighborhood` already performs the bounded graph walk. Re-running
+ * `findPaths` for every returned node repeated that walk once per candidate.
+ */
+function indexOutgoingPaths(
+  neighborhood: NeighborhoodResult,
+  maxHops: number,
+): Map<string, TraversalPath> {
+  const nodes = new Map<string, GraphNode>([
+    [neighborhood.center.id, neighborhood.center],
+    ...neighborhood.nodes.map(node => [node.id, node] as const),
+  ]);
+  const outgoing = new Map<string, GraphEdge[]>();
+  for (const edge of neighborhood.edges) {
+    const edges = outgoing.get(edge.fromId) ?? [];
+    edges.push(edge);
+    outgoing.set(edge.fromId, edges);
+  }
+
+  const paths = new Map<string, TraversalPath>();
+  const visited = new Set<string>([neighborhood.center.id]);
+  const queue: Array<{ node: GraphNode; path: TraversalPath }> = [{
+    node: neighborhood.center,
+    path: { nodes: [neighborhood.center], edges: [], totalWeight: 0, hopCount: 0 },
+  }];
+
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const current = queue[cursor]!;
+    if (current.path.hopCount >= maxHops) continue;
+
+    for (const edge of outgoing.get(current.node.id) ?? []) {
+      if (visited.has(edge.toId)) continue;
+      const node = nodes.get(edge.toId);
+      if (!node) continue;
+
+      const path: TraversalPath = {
+        nodes: [...current.path.nodes, node],
+        edges: [...current.path.edges, edge],
+        totalWeight: current.path.totalWeight + edge.weight,
+        hopCount: current.path.hopCount + 1,
+      };
+      visited.add(node.id);
+      paths.set(node.id, path);
+      queue.push({ node, path });
+    }
+  }
+
+  return paths;
+}
+
+/**
+ * Collect graph candidates while traversing each unseen anchor once. Exported
+ * for focused tests; production passes the guarded graph neighborhood reader.
+ */
+export async function collectGraphExpansionResults(
+  anchors: GraphNode[],
+  options: ExpansionOptions,
+  readNeighborhood: NeighborhoodReader,
+): Promise<GraphExpansionResult[]> {
+  const results: GraphExpansionResult[] = [];
+  const seenEntities = new Set<string>();
+  const neighborhoodLimit = 21; // Same 20 non-anchor candidate bound as traverse().
+
+  for (const anchor of anchors) {
+    if (seenEntities.has(anchor.id)) continue;
+    seenEntities.add(anchor.id);
+
+    const neighborhood = await readNeighborhood(anchor.id, {
+      radius: options.maxHops,
+      minWeight: options.minPathWeight,
+      limit: neighborhoodLimit,
+    });
+    if (!neighborhood) continue;
+
+    const paths = indexOutgoingPaths(neighborhood, options.maxHops);
+    const neighbors = neighborhood.nodes
+      .filter(node => node.id !== neighborhood.center.id)
+      .slice(0, 20);
+    for (const neighbor of neighbors) {
+      if (seenEntities.has(neighbor.id)) continue;
+      seenEntities.add(neighbor.id);
+
+      // The neighborhood walks both directions, like traverse(). Preserve the
+      // prior behavior of emitting only candidates with an outgoing path from
+      // this anchor, as findPaths() did.
+      const path = paths.get(neighbor.id);
+      if (!path || path.hopCount === 0) continue;
+
+      const relevanceScore = 1 / (1 + path.hopCount) * (1 / (1 + path.totalWeight * 0.1));
+      results.push({
+        entityName: neighbor.name,
+        entityId: neighbor.id,
+        path,
+        relevanceScore,
+      });
+    }
+  }
+
+  return results.sort((a, b) => b.relevanceScore - a.relevanceScore).slice(0, options.limit);
+}
+
 /**
  * Expand query entities via the knowledge graph to find related entities.
  */
@@ -170,9 +323,6 @@ async function expandViaGraph(
 ): Promise<GraphExpansionResult[]> {
   const db = await getDb();
   const schema = await getSchema();
-  const results: GraphExpansionResult[] = [];
-  const seenEntities = new Set<string>();
-
   // Get project ID
   const projectRows = await (db as any)
     .select({ id: schema.projects.id })
@@ -184,52 +334,16 @@ async function expandViaGraph(
 
   const projectId = projectRows[0].id;
 
-  // For each query entity, find it in the graph and expand
+  // Resolve query anchors, then traverse each anchor's bounded neighborhood
+  // once. The path index replaces a separate `findPaths` graph walk per node.
+  const anchors: GraphNode[] = [];
   for (const entityName of queryEntityNames) {
     const entities = await findEntitiesByName(entityName, projectId, { limit: 3 });
-
-    for (const entity of entities) {
-      if (seenEntities.has(entity.id)) continue;
-      seenEntities.add(entity.id);
-
-      // Traverse the graph from this entity
-      const neighbors = await traverse(entity.id, {
-        maxDepth: maxHops,
-        minWeight: minPathWeight,
-        limit: 20,
-      });
-
-      for (const neighbor of neighbors) {
-        if (seenEntities.has(neighbor.id)) continue;
-        seenEntities.add(neighbor.id);
-
-        // Find the path from query entity to this neighbor
-        const paths = await findPaths(entity.id, neighbor.id, {
-          maxHops,
-          minWeight: minPathWeight,
-          maxPaths: 1,
-        });
-
-        if (paths.length > 0) {
-          const path = paths[0];
-          // Score based on path length and weight
-          const relevanceScore = 1 / (1 + path.hopCount) * (1 / (1 + path.totalWeight * 0.1));
-
-          results.push({
-            entityName: neighbor.name,
-            entityId: neighbor.id,
-            path,
-            relevanceScore,
-          });
-        }
-      }
-    }
+    anchors.push(...entities);
   }
 
-  // Sort by relevance score
-  results.sort((a, b) => b.relevanceScore - a.relevanceScore);
-
-  return results.slice(0, limit);
+  return collectGraphExpansionResults(anchors, { maxHops, minPathWeight, limit }, (entityId, options) =>
+    getNeighborhood(entityId, options));
 }
 
 // ─── Result Ranking ──────────────────────────────────────────────────────────
@@ -237,13 +351,14 @@ async function expandViaGraph(
 /**
  * Rank multi-hop results combining vector score with graph connectivity.
  */
-function rankMultiHopResults(
+export function rankMultiHopResults(
   results: MultiHopResult[],
   queryEntityNames: string[]
 ): MultiHopResult[] {
   return results
     .map(result => {
-      let score = result.similarity || 0;
+      const baseScore = result.similarity || 0;
+      let score = baseScore;
 
       // Boost for graph-connected results
       if (result.retrievalPath === 'graph' || result.retrievalPath === 'both') {
@@ -264,9 +379,14 @@ function rankMultiHopResults(
         score *= (1 + pathBonus * 0.15); // Up to 15% bonus for short paths
       }
 
+      // Keep the graph adjustment in the canonical additive score fields.
+      // Returning only an inflated `similarity` is lost when hybridSearch
+      // initializes/finalizes three-field scores for the combined result set.
+      const ranked = addBoost(result, 'multiHopWeight', score - baseScore);
+      const roundedScore = Math.round(score * 1000) / 1000;
       return {
-        ...result,
-        similarity: Math.round(score * 1000) / 1000,
+        ...ranked,
+        similarity: roundedScore,
         hybridScore: Math.round(score * 100) / 100, // Backward compat
       };
     })

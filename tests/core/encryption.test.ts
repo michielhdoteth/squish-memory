@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { encrypt, decrypt } from '../../core/security/encrypt.js';
+import { createPrivateIndexContext, encrypt, decrypt, encryptWithPrivateIndex } from '../../core/security/encrypt.js';
 
 describe('Encryption', () => {
   it('should encrypt and decrypt correctly', () => {
@@ -54,5 +54,28 @@ describe('Encryption', () => {
     const decrypted = decrypt(ciphertext, nonce, passphrase);
     
     expect(decrypted).toBe(plaintext);
+  });
+
+  it('derives stable, domain-separated private tokens alongside ciphertext', () => {
+    const passphrase = 'private-index-test-passphrase';
+    const first = encryptWithPrivateIndex('private session payload', [
+      { key: 'session', namespace: 'session-id', value: 'session-alpha' },
+      { key: 'row', namespace: 'session-row', value: 'session-alpha:memory-1:owner-1' },
+    ], passphrase);
+    const second = encryptWithPrivateIndex('private session payload', [
+      { key: 'session', namespace: 'session-id', value: 'session-alpha' },
+      { key: 'row', namespace: 'session-row', value: 'session-alpha:memory-1:owner-1' },
+    ], passphrase);
+
+    expect(first.tokens.session).toBe(second.tokens.session);
+    expect(first.tokens.row).toBe(second.tokens.row);
+    expect(first.tokens.session).not.toBe(first.tokens.row);
+    expect(first.tokens.session).not.toContain('session-alpha');
+    expect(decrypt(first.ciphertext, first.nonce, passphrase)).toBe('private session payload');
+
+    const context = createPrivateIndexContext(passphrase);
+    expect(context.token('session-id', 'session-alpha')).toBe(first.tokens.session);
+    context.clear();
+    expect(() => context.token('session-id', 'session-alpha')).toThrow('cleared');
   });
 });

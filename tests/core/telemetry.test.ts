@@ -2,6 +2,11 @@ import { describe, expect, it, beforeEach } from 'bun:test';
 import {
   recordRetrieval,
   recordEcho,
+  recordFizzle,
+  flushRetrievalEvents,
+  getMemoryTelemetry,
+  getRetrievalStats,
+  cleanupOldTelemetry,
   calculateTelemetryBoost,
   RetrievalEvent,
 } from '../../core/memory/telemetry.js';
@@ -27,6 +32,23 @@ describe('telemetry', () => {
       recordEcho('mem-123', 'session-1');
       expect(true).toBe(true);
     });
+  });
+
+  it('withholds unscoped telemetry reads and writes under strict trust', async () => {
+    const previousPolicy = process.env.SQUISH_TRUST_POLICY;
+    process.env.SQUISH_TRUST_POLICY = 'strict';
+    try {
+      expect(() => recordRetrieval('private-memory', 'private query', 1, 0.9)).not.toThrow();
+      expect(() => recordEcho('private-memory')).not.toThrow();
+      expect(() => recordFizzle('private-memory')).not.toThrow();
+      await expect(getMemoryTelemetry('private-memory')).rejects.toThrow('caller-scoped provenance');
+      await expect(getRetrievalStats()).rejects.toThrow('caller-scoped provenance');
+      await expect(cleanupOldTelemetry()).rejects.toThrow('authorized caller scope');
+      await expect(flushRetrievalEvents()).resolves.toBeUndefined();
+    } finally {
+      if (previousPolicy === undefined) delete process.env.SQUISH_TRUST_POLICY;
+      else process.env.SQUISH_TRUST_POLICY = previousPolicy;
+    }
   });
 
   describe('calculateTelemetryBoost', () => {

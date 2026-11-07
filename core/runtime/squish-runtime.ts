@@ -9,6 +9,15 @@
  * references.
  */
 
+import { logger } from '../logger.js';
+import { EPOCH_MS_LADDER_THRESHOLD } from '../lib/timestamps.js';
+import type { StrictCorrectionHistory } from '../snapshots/retrieval.js';
+import { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } from '../acl/trust-policy.js';
+import { decrypt } from '../security/encrypt.js';
+import { allAgentStores as listAgentStores } from '../sessions/agent-stores/registry.js';
+import type { Chunk } from '../sessions/types.js';
+import { buildRecallResponse, type RecallResponse } from '../retrieval/recall-response.js';
+
 // ─── Types (inlined from core-sdk interfaces) ────────────────────────────────
 
 /** Valid memory type values */
@@ -58,6 +67,7 @@ export interface StoreMemoryInput {
   project?: string;
   user?: string;
   sessionId?: string;
+  captureKey?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -66,14 +76,22 @@ export interface MemoryRecord {
   content: string;
   type: MemoryType;
   tags: string[];
+  metadata?: Record<string, unknown> | null;
+  projectId?: string | null;
+  visibilityScope?: 'private' | 'project' | 'team' | null;
+  validFrom?: string | null;
+  validTo?: string | null;
+  recordedAt?: string | null;
   importance: number;
   project?: string;
   sessionId?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
   lastAccessedAt?: Date;
   accessCount: number;
   decayScore: number;
+  /** Confidence assigned by the current recall pass, when available. */
+  recallConfidence?: number;
 }
 
 export interface MemoryFilter {
@@ -223,7 +241,7 @@ export interface EditProposalRecord {
 /** Result of approve/reject/correct on an edit proposal */
 export interface EditProposalActionResult {
   ok: boolean;
-  error?: 'not_found' | 'not_pending' | 'stale_content' | 'database_unavailable';
+  error?: 'not_found' | 'not_pending' | 'stale_content' | 'database_unavailable' | 'invalid_provenance' | 'provenance_signing_unavailable' | 'generated_context' | 'encrypted_memory_unsupported';
   detail?: string;
   proposal?: EditProposalRecord;
   priorContent?: string;
@@ -365,11 +383,12 @@ export interface SearchResult {
     tags: string[];
     importance: number;
     project?: string;
-    createdAt: string;
-    updatedAt: string;
+    createdAt?: string;
+    updatedAt?: string;
   };
   score: number;
   semanticScore?: number;
+  preFusionSemanticScore?: number | null;
   boostScore?: number;
   finalScore?: number;
   scoreBreakdown?: Record<string, number>;
@@ -449,15 +468,27 @@ export interface RememberOptions {
   project?: string;
   user?: string;
   sessionId?: string;
+  captureKey?: string;
+  occurredAt?: string | Date;
+  /** IANA zone used to interpret calendar language in the source content. */
+  timeZone?: string;
   metadata?: Record<string, unknown>;
 }
 
 export interface SearchOptions {
   limit?: number;
+  /** Select the lexical-only FTS ranking path for diagnostics and controlled comparisons. */
+  retrievalMode?: 'hybrid' | 'lexical';
   project?: string;
   user?: string;
   minScore?: number;
   teamId?: string;
+  referenceDate?: string | Date;
+  /** IANA zone used to resolve relative past query phrases. */
+  timeZone?: string;
+  latestOnly?: boolean;
+  validTimeFrom?: string | Date;
+  validTimeTo?: string | Date;
 }
 
 export interface ListRecentOptions {
@@ -469,26 +500,24 @@ export interface ListRecentOptions {
 export interface GraphOptions {
   maxDepth?: number;
   limit?: number;
+  userId?: string;
+  teamIds?: string[];
 }
 
 export interface ContextOptions {
   project?: string;
   limit?: number;
+  user?: string;
+  teamId?: string;
 }
 
-export interface MemoryStats {
-  totalMemories: number;
-  byType: Record<string, number>;
-  totalNotes: number;
-  notesByCategory: Record<string, number>;
-  totalLearnings: number;
-  learningsByType: Record<string, number>;
-  totalLinks: number;
-  oldestMemory?: string;
-  newestMemory?: string;
-  projectPath: string;
-  mode: string;
-}
+/**
+ * Memory statistics shape. Declared once in core/memory/stats.ts, which is what
+ * `stats()` delegates to; a second, narrower copy used to live here and had
+ * already drifted out of date, which hid real fields from the CLI's type.
+ */
+export type { MemoryStats } from '../memory/stats.js';
+import type { MemoryStats } from '../memory/stats.js';
 
 export interface HealthResult {
   status: string;
@@ -501,6 +530,19 @@ export interface RecallClientOptions {
   type?: MemoryType;
   tags?: string[];
   strategy?: string;
+  user?: string;
+  teamId?: string;
+  referenceDate?: string | Date;
+  /** IANA zone used to resolve relative past query phrases. */
+  timeZone?: string;
+  latestOnly?: boolean;
+  validTimeFrom?: string | Date;
+  validTimeTo?: string | Date;
+}
+
+export interface CompactRecallOptions extends RecallClientOptions {
+  /** Maximum estimated tokens in the serialized compact response (128–20,000). */
+  maxTokens?: number;
 }
 
 export interface RecallOptions {}
@@ -718,6 +760,30 @@ export class SquishError extends Error {
   }
 }
 
+function isTrustBoundaryError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'TrustBoundaryError';
+}
+
+async function resolveSdkReadCaller(caller?: { userId?: string; teamIds?: string[] }): Promise<{ userId?: string; teamIds?: string[] }> {
+  const { resolveTrustedCallerId } = await import('../acl/trust-policy.js');
+  return {
+    userId: resolveTrustedCallerId(caller?.userId) ?? undefined,
+    teamIds: caller?.teamIds,
+  };
+}
+
+async function resolveRuntimeProjectId(project?: string): Promise<string> {
+  if (!project) {
+    const { ensureGlobalProject } = await import('../places/places.js');
+    return (await ensureGlobalProject()).id;
+  }
+
+  const { getProjectById, getProjectByPath } = await import('../projects.js');
+  const record = await getProjectById(project) ?? await getProjectByPath(project);
+  if (!record) throw new SquishError(`Project not found: ${project}`, 'PROJECT_NOT_FOUND');
+  return record.id;
+}
+
 export class ConfigError extends SquishError {
   constructor(message: string, cause?: Error) {
     super(message, 'CONFIG_ERROR', cause);
@@ -751,6 +817,48 @@ export class NotFoundError extends SquishError {
     super(`${resource} with id '${id}' not found`, 'NOT_FOUND');
     this.name = 'NotFoundError';
   }
+}
+
+/**
+ * Render an id for a log context without throwing.
+ *
+ * Used from catch blocks, where calling `id.trim()` on a non-string input
+ * would replace the real failure with a TypeError about the id.
+ */
+function describeId(id: unknown): string {
+  return typeof id === 'string' ? id : String(id);
+}
+
+/**
+ * Log an error and wrap it in a StorageError that names the cause.
+ *
+ * Roughly fifty methods used to do `throw new StorageError('<generic
+ * message>', error)`, parking the real error in `.cause`. Nothing on the MCP
+ * path read `.cause` or logged it, so a genuine
+ * `ProjectNotFoundError: Project not found: <path>` reached the operator as
+ * the useless string `Failed to recall memories`. This helper keeps the cause
+ * reachable and visible:
+ *
+ *  - logs through core/logger.ts, whose `logger.error` prints `error.stack`, so
+ *    the error class and origin reach stderr even when the thrown message is
+ *    only read by a client;
+ *  - appends `cause.message` to the thrown message;
+ *  - preserves the cause on the error, so structured inspection still works.
+ *
+ * A message that already contains the detail is left alone rather than
+ * repeated. A non-Error throw is normalised to an Error so `.stack` and
+ * `.message` always exist downstream.
+ */
+export function wrapStorageError(
+  message: string,
+  error: unknown,
+  context?: Record<string, unknown>,
+): StorageError {
+  const cause = error instanceof Error ? error : new Error(String(error));
+  logger.error(message, cause, context);
+  const detail = cause.message;
+  const combined = detail && !message.includes(detail) ? `${message}: ${detail}` : message;
+  return new StorageError(combined, cause);
 }
 
 // ─── Plugin Registry ────────────────────────────────────────────────────────
@@ -900,7 +1008,14 @@ export {
 
 // ─── Memory ──────────────────────────────────────────────────────────────────
 
-export { getMemory } from '../memory/memories.js';
+export async function getMemory(id: string, incrementAccess: boolean = true) {
+  const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+  if (isStrictTrustPolicy()) {
+    throw new TrustBoundaryError('Unscoped raw memory reads are disabled under strict trust');
+  }
+  const { getMemory: readMemory } = await import('../memory/memories.js');
+  return readMemory(id, incrementAccess);
+}
 export { promoteToSturdy } from '../memory/tiers.js';
 export { detectMemorySignals } from '../memory/trigger-detector.js';
 export { migrateMemories, type MigrateResult } from '../memory/migrate.js';
@@ -929,7 +1044,13 @@ export {
   getSessionChunks,
   searchChunks,
 } from '../sessions/index.js';
-export { allAgentStores } from '../sessions/agent-stores/registry.js';
+export function allAgentStores() {
+  if (isStrictTrustPolicy()) {
+    resolveTrustedCallerId();
+    throw new TrustBoundaryError('Raw agent session stores are unavailable under strict trust; use caller-scoped adapter APIs');
+  }
+  return listAgentStores();
+}
 
 // ─── Embeddings ──────────────────────────────────────────────────────────────
 
@@ -947,7 +1068,8 @@ export { filterByDateRange } from '../lib/utils.js';
 export function coerceTimestamp(value: unknown): Date | null {
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return new Date(value < 1e12 ? value * 1000 : value);
+    // Seconds-or-milliseconds ladder; threshold shared with the other readers.
+    return new Date(value < EPOCH_MS_LADDER_THRESHOLD ? value * 1000 : value);
   }
   if (typeof value === 'string' && value.trim() !== '') {
     const asNumber = Number(value);
@@ -961,32 +1083,39 @@ export function coerceTimestamp(value: unknown): Date | null {
 /**
  * Map a core MemoryRecord to the SDK MemoryRecord type.
  */
-function mapCoreMemoryToSdk(core: any): MemoryRecord {
+function mapCoreMemoryToSdk(core: any, omitUnverifiedTimestamps = false): MemoryRecord {
   const createdAt = coerceTimestamp(core.createdAt);
   const updatedAt = coerceTimestamp(core.updatedAt);
-  const resolvedCreatedAt = createdAt ?? updatedAt ?? new Date();
-  const resolvedUpdatedAt = updatedAt ?? createdAt ?? new Date();
+  const resolvedCreatedAt = omitUnverifiedTimestamps ? undefined : createdAt ?? updatedAt ?? new Date();
+  const resolvedUpdatedAt = omitUnverifiedTimestamps ? undefined : updatedAt ?? createdAt ?? new Date();
   return {
     id: core.id,
     content: core.content,
     type: core.type,
     tags: core.tags ?? [],
+    metadata: core.metadata ?? null,
+    projectId: core.projectId ?? null,
+    visibilityScope: core.visibilityScope ?? null,
+    validFrom: core.validFrom ?? null,
+    validTo: core.validTo ?? null,
+    recordedAt: core.recordedAt ?? null,
     importance: core.importance ?? 0,
     project: core.projectId ?? undefined,
     sessionId: core.sessionId ?? undefined,
-    createdAt: resolvedCreatedAt,
-    updatedAt: resolvedUpdatedAt,
+    ...(resolvedCreatedAt ? { createdAt: resolvedCreatedAt } : {}),
+    ...(resolvedUpdatedAt ? { updatedAt: resolvedUpdatedAt } : {}),
     lastAccessedAt: coerceTimestamp(core.lastAccessedAt) ?? undefined,
     accessCount: core.accessCount ?? 0,
     decayScore: core.decayScore ?? 0,
+    ...(typeof core.recallConfidence === 'number' ? { recallConfidence: core.recallConfidence } : {}),
   };
 }
 
 /**
  * Map a core search result to the SDK SearchResult type.
  */
-function mapCoreSearchResultToSdk(core: any): SearchResult {
-  const memory = mapCoreMemoryToSdk(core);
+function mapCoreSearchResultToSdk(core: any, omitUnverifiedTimestamps = false): SearchResult {
+  const memory = mapCoreMemoryToSdk(core, omitUnverifiedTimestamps);
   return {
     memory: {
       id: memory.id,
@@ -995,11 +1124,12 @@ function mapCoreSearchResultToSdk(core: any): SearchResult {
       tags: memory.tags,
       importance: memory.importance,
       project: memory.project,
-      createdAt: memory.createdAt.toISOString(),
-      updatedAt: memory.updatedAt.toISOString(),
+      ...(memory.createdAt ? { createdAt: memory.createdAt.toISOString() } : {}),
+      ...(memory.updatedAt ? { updatedAt: memory.updatedAt.toISOString() } : {}),
     },
     score: core.finalScore ?? core.similarity ?? 0,
     semanticScore: core.semanticScore,
+    preFusionSemanticScore: core.preFusionSemanticScore ?? null,
     boostScore: core.boostScore,
     finalScore: core.finalScore,
     scoreBreakdown: core.scoreBreakdown,
@@ -1066,21 +1196,31 @@ export class SquishRuntime {
         throw new SquishError('Content cannot be empty', 'VALIDATION_ERROR');
       }
 
+      const { isStrictTrustPolicy, resolveTrustedCallerId } = await import('../acl/trust-policy.js');
+      const strictTrust = isStrictTrustPolicy();
+      const callerId = strictTrust ? resolveTrustedCallerId(options?.user) : options?.user;
+
       const { storeMemory } = await import('../storage/storage-facade.js');
       const coreMemory = await storeMemory({
         content: content.trim(),
         type: options?.type,
         tags: options?.tags,
         project: options?.project ?? this._activeProject,
-        user: options?.user,
+        user: callerId ?? undefined,
         metadata: options?.metadata,
         sessionId: options?.sessionId,
+        captureKey: options?.captureKey,
+        occurredAt: options?.occurredAt,
+        timeZone: options?.timeZone,
       });
 
-      return mapCoreMemoryToSdk(coreMemory);
+      return mapCoreMemoryToSdk(coreMemory, strictTrust);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to store memory', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to store memory', error, {
+        contentLength: typeof content === 'string' ? content.length : 0,
+        project: options?.project ?? this._activeProject,
+      });
     }
   }
 
@@ -1090,25 +1230,46 @@ export class SquishRuntime {
         throw new SquishError('Query cannot be empty', 'VALIDATION_ERROR');
       }
 
+      const { isStrictTrustPolicy, resolveTrustedCallerId } = await import('../acl/trust-policy.js');
+      const strictTrust = isStrictTrustPolicy();
+      const callerId = strictTrust ? resolveTrustedCallerId(options?.user) : options?.user;
       const { recall } = await import('../storage/storage-facade.js');
       const coreResult = await recall(query.trim(), {
         project: options?.project ?? this._activeProject,
         limit: options?.limit,
         type: options?.type,
         tags: options?.tags,
+        user: callerId ?? undefined,
         strategy: options?.strategy as any,
+        referenceDate: options?.referenceDate,
+        timeZone: options?.timeZone,
+        latestOnly: options?.latestOnly,
+        validTimeFrom: options?.validTimeFrom,
+        validTimeTo: options?.validTimeTo,
       });
+      const { applyAclReadGate, buildAutoAclContext } = await import('../acl/read-gate.js');
+      const acl = await buildAutoAclContext(callerId, options?.teamId ? [options.teamId] : undefined);
+      const visibleMemories = await applyAclReadGate(coreResult.memories, acl);
 
       return {
-        memories: coreResult.memories.map(mapCoreMemoryToSdk),
-        graphEntities: coreResult.graphEntities,
+        memories: visibleMemories.map((memory) => mapCoreMemoryToSdk(memory, strictTrust)),
+        graphEntities: strictTrust ? [] : coreResult.graphEntities,
         routing: coreResult.routing,
         metadata: coreResult.metadata,
       };
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to recall memories', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to recall memories', error, {
+        query,
+        project: options?.project ?? this._activeProject,
+      });
     }
+  }
+
+  /** Return bounded, machine-readable recall evidence without changing recall()'s legacy shape. */
+  async recallCompact(query: string, options?: CompactRecallOptions): Promise<RecallResponse> {
+    const result = await this.recall(query, options);
+    return buildRecallResponse(query, result.memories, { maxTokens: options?.maxTokens });
   }
 
   async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
@@ -1117,16 +1278,36 @@ export class SquishRuntime {
         throw new SquishError('Query cannot be empty', 'VALIDATION_ERROR');
       }
 
+      const { isStrictTrustPolicy, resolveTrustedCallerId } = await import('../acl/trust-policy.js');
+      const strictTrust = isStrictTrustPolicy();
+      const callerId = strictTrust ? resolveTrustedCallerId(options?.user) : options?.user;
       const { queryMemories } = await import('../storage/storage-facade.js');
       const coreResults = await queryMemories({
         query: query.trim(),
+        retrievalMode: options?.retrievalMode,
         limit: options?.limit ?? 10,
         project: options?.project ?? this._activeProject,
-        user: options?.user,
+        user: callerId ?? undefined,
         teamId: options?.teamId,
+        referenceDate: options?.referenceDate,
+        timeZone: options?.timeZone,
+        latestOnly: options?.latestOnly,
+        validTimeFrom: options?.validTimeFrom,
+        validTimeTo: options?.validTimeTo,
       });
 
-      let results = coreResults.map(mapCoreSearchResultToSdk);
+      const authorizedResults = strictTrust
+        ? await (async () => {
+            const { applyAclReadGate, buildAutoAclContext } = await import('../acl/read-gate.js');
+            const acl = await buildAutoAclContext(callerId, options?.teamId ? [options.teamId] : undefined);
+            return applyAclReadGate(
+              coreResults,
+              acl,
+              (result) => ((result as { corpus?: string }).corpus === 'belief' ? 'knowledge' : 'memory')
+            );
+          })()
+        : coreResults;
+      let results = authorizedResults.map((result) => mapCoreSearchResultToSdk(result, strictTrust));
 
       if (options?.minScore != null && options.minScore > 0) {
         results = results.filter(r => r.score >= options.minScore!);
@@ -1134,15 +1315,22 @@ export class SquishRuntime {
 
       return results;
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to search memories', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      // Surface the real failure. The generic 'Failed to search memories' with
+      // the cause parked in `.cause` told an operator nothing, and nothing on
+      // the MCP path ever logged it. logger.error prints error.stack.
+      throw wrapStorageError('Failed to search memories', error, {
+        query,
+        project: options?.project ?? this._activeProject,
+      });
     }
   }
 
   async feedback(
     targetType: 'memory' | 'belief' | 'strategy',
     id: string,
-    signal: 'confirm' | 'contradict' | 'used'
+    signal: 'confirm' | 'contradict' | 'used',
+    options?: { userId?: string }
   ): Promise<{
     ok: boolean;
     applied: boolean;
@@ -1153,11 +1341,37 @@ export class SquishRuntime {
     detail?: string;
   }> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError, resolveTrustedCallerId } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        const callerId = resolveTrustedCallerId(options?.userId);
+        if (!callerId) throw new TrustBoundaryError('Strict feedback requires a bound caller');
+        if (targetType === 'strategy') {
+          const { writeTrustAudit } = await import('../acl/trust-audit.js');
+          try {
+            await writeTrustAudit({
+              actorId: callerId,
+              resourceId: id,
+              assetType: 'knowledge',
+              decision: 'deny',
+              reason: 'strict_surface',
+            });
+          } catch {
+            throw new TrustBoundaryError('Strict strategy feedback is denied and its audit record could not be persisted');
+          }
+          throw new TrustBoundaryError('Strict strategy feedback requires signed single-source lineage');
+        }
+        const { applyStrictMemoryFeedback } = await import('../memory/strict-memory-feedback.js');
+        return await applyStrictMemoryFeedback({ id, targetType, signal, callerId: callerId! });
+      }
       const { applyFeedback } = await import('../memory/reinforcement.js');
       return await applyFeedback({ targetType, id, signal });
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to apply feedback', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to apply feedback', error, {
+        targetType,
+        id: describeId(id),
+        signal,
+      });
     }
   }
 
@@ -1170,14 +1384,18 @@ export class SquishRuntime {
     userId?: string;
   }): Promise<EditProposalRecord> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Edit proposals are disabled under strict trust until each action has caller, ACL, and provenance gates');
       if (!input?.memoryId?.trim() || !input?.proposedContent?.trim() || !input?.reason?.trim()) {
         throw new SquishError('memoryId, proposedContent, and reason are required', 'VALIDATION_ERROR');
       }
       const { createEditProposal } = await import('../memory/edit-workflow.js');
       return await createEditProposal(input.memoryId.trim(), input.proposedContent, input.reason, input.userId);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to create edit proposal', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to create edit proposal', error, {
+        memoryId: describeId(input?.memoryId),
+      });
     }
   }
 
@@ -1187,11 +1405,16 @@ export class SquishRuntime {
     limit?: number;
   } = {}): Promise<EditProposalRecord[]> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Edit proposals are disabled under strict trust until each action has caller, ACL, and provenance gates');
       const { getEditProposals } = await import('../memory/edit-workflow.js');
       return await getEditProposals(filters);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to list edit proposals', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to list edit proposals', error, {
+        memoryId: describeId(filters?.memoryId),
+        status: filters?.status,
+      });
     }
   }
 
@@ -1200,6 +1423,8 @@ export class SquishRuntime {
     diff: { removed: string[]; added: string[] };
   } | null> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Edit proposals are disabled under strict trust until each action has caller, ACL, and provenance gates');
       if (!proposalId?.trim()) {
         throw new SquishError('proposalId cannot be empty', 'VALIDATION_ERROR');
       }
@@ -1208,47 +1433,60 @@ export class SquishRuntime {
       if (!proposal) return null;
       return { proposal, diff: diffProposalContent(proposal) };
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to preview edit proposal', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to preview edit proposal', error, {
+        proposalId: describeId(proposalId),
+      });
     }
   }
 
   async approveEditProposal(proposalId: string, reviewNotes?: string): Promise<EditProposalActionResult> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Edit proposals are disabled under strict trust until each action has caller, ACL, and provenance gates');
       if (!proposalId?.trim()) {
         throw new SquishError('proposalId cannot be empty', 'VALIDATION_ERROR');
       }
       const { approveEditProposal } = await import('../memory/edit-workflow.js');
       return await approveEditProposal(proposalId.trim(), reviewNotes);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to approve edit proposal', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to approve edit proposal', error, {
+        proposalId: describeId(proposalId),
+      });
     }
   }
 
   async rejectEditProposal(proposalId: string, reviewNotes?: string): Promise<EditProposalActionResult> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Edit proposals are disabled under strict trust until each action has caller, ACL, and provenance gates');
       if (!proposalId?.trim()) {
         throw new SquishError('proposalId cannot be empty', 'VALIDATION_ERROR');
       }
       const { rejectEditProposal } = await import('../memory/edit-workflow.js');
       return await rejectEditProposal(proposalId.trim(), reviewNotes);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to reject edit proposal', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to reject edit proposal', error, {
+        proposalId: describeId(proposalId),
+      });
     }
   }
 
   async correctMemory(memoryId: string, content: string, reason: string): Promise<EditProposalActionResult> {
     try {
+      // Core correction resolves and audits the authenticated caller itself.
       if (!memoryId?.trim() || !content?.trim() || !reason?.trim()) {
         throw new SquishError('memoryId, content, and reason are required', 'VALIDATION_ERROR');
       }
       const { correctMemory } = await import('../memory/edit-workflow.js');
       return await correctMemory(memoryId.trim(), content, reason);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to apply correction', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to apply correction', error, {
+        memoryId: describeId(memoryId),
+      });
     }
   }
 
@@ -1259,43 +1497,112 @@ export class SquishRuntime {
     limit?: number;
   }): Promise<StalenessReportResult> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Staleness reports are disabled under strict trust until report rows are filtered by caller and provenance');
       const { buildStalenessReport } = await import('../memory/staleness-report.js');
       return await buildStalenessReport(options);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      if (error instanceof Error && error.name === 'TrustBoundaryError') throw error;
       throw new StorageError('Failed to build staleness report', error as Error);
     }
   }
 
-  async getById(id: string): Promise<MemoryRecord | null> {
+  async getById(id: string, caller?: { userId?: string; teamIds?: string[] }): Promise<MemoryRecord | null> {
     try {
       if (!id?.trim()) {
         throw new SquishError('ID cannot be empty', 'VALIDATION_ERROR');
       }
 
-      const { getMemoryById } = await import('../storage/storage-facade.js');
-      const coreMemory = await getMemoryById(id.trim());
+      const strict = isStrictTrustPolicy();
+      const trustedCaller = await resolveSdkReadCaller(caller);
+      let coreMemory: import('../memory/memory-types.js').MemoryRecord | null;
+      let strictAccessCount: number | null = null;
+      if (strict) {
+        const { getDb } = await import('../../db/index.js');
+        const { getSchema } = await import('../../db/schema.js');
+        const { createDatabaseClient } = await import('../storage/database.js');
+        const { eq } = await import('drizzle-orm');
+        const { normalizeMemoryRecord } = await import('../memory/memory-crud.js');
+        const rawDatabase = await getDb();
+        const db = createDatabaseClient(rawDatabase);
+        const schema = await getSchema();
+        const rows = await db.select().from(schema.memories).where(eq(schema.memories.id, id.trim())).limit(1);
+        const row = rows[0];
+        if (!row) {
+          coreMemory = null;
+        } else if (Boolean(row.isEncrypted ?? row.is_encrypted)) {
+          const { preauthorizeStrictMemoryReadBeforeDecrypt } = await import('../acl/read-gate.js');
+          if (!await preauthorizeStrictMemoryReadBeforeDecrypt(id.trim(), trustedCaller.userId!)) {
+            coreMemory = null;
+          } else {
+            const ciphertext = row.encryptedContent ?? row.encrypted_content;
+            const nonce = row.encryptionNonce ?? row.encryption_nonce;
+            if (!ciphertext || !nonce) throw new TrustBoundaryError('Strict encrypted memory is missing ciphertext metadata');
+            coreMemory = normalizeMemoryRecord({ ...row, content: decrypt(ciphertext, nonce) });
+          }
+        } else {
+          coreMemory = normalizeMemoryRecord(row);
+        }
+        strictAccessCount = rows[0]?.accessCount ?? 0;
+      } else {
+        const { getMemoryById } = await import('../storage/storage-facade.js');
+        coreMemory = await getMemoryById(id.trim());
+      }
       if (!coreMemory) return null;
 
-      return mapCoreMemoryToSdk(coreMemory);
+      const { applyAclReadGate, buildAutoAclContext } = await import('../acl/read-gate.js');
+      const acl = await buildAutoAclContext(trustedCaller.userId, trustedCaller.teamIds);
+      const visible = await applyAclReadGate([coreMemory], acl);
+      if (visible.length === 0) return null;
+
+      if (strict) {
+        const { getDb } = await import('../../db/index.js');
+        const { getSchema } = await import('../../db/schema.js');
+        const { createDatabaseClient } = await import('../storage/database.js');
+        const { eq } = await import('drizzle-orm');
+        const db = createDatabaseClient(await getDb());
+        const schema = await getSchema();
+        await db.update(schema.memories)
+          .set({ accessCount: (strictAccessCount ?? 0) + 1, lastAccessedAt: new Date() })
+          .where(eq(schema.memories.id, coreMemory.id));
+      }
+
+      return mapCoreMemoryToSdk(coreMemory, strict);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get memory', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get memory', error, { id: describeId(id) });
     }
   }
 
-  async forget(id: string): Promise<boolean> {
+  async forget(
+    id: string,
+    caller?: { userId?: string; teamIds?: string[]; expectedProjectId?: string | null },
+  ): Promise<boolean> {
     try {
       if (!id?.trim()) {
         throw new SquishError('ID cannot be empty', 'VALIDATION_ERROR');
       }
 
-      const { deleteMemoryPermanently } = await import('../memory/stale-cleaner.js');
-      await deleteMemoryPermanently(id.trim());
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      const { deleteMemoryPermanently, deleteMemoryPermanentlyWithScopeFence } = await import('../memory/stale-cleaner.js');
+      let trustedCaller: { userId?: string; teamIds?: string[]; expectedProjectId?: string | null } | undefined;
+      if (isStrictTrustPolicy()) {
+        trustedCaller = {
+          ...await resolveSdkReadCaller(caller),
+          ...(caller?.expectedProjectId !== undefined ? { expectedProjectId: caller.expectedProjectId } : {}),
+        };
+      } else if (caller?.expectedProjectId !== undefined) {
+        trustedCaller = { expectedProjectId: caller.expectedProjectId };
+      }
+      if (caller?.expectedProjectId !== undefined) {
+        return await deleteMemoryPermanentlyWithScopeFence(id.trim(), caller.expectedProjectId, trustedCaller);
+      }
+      await deleteMemoryPermanently(id.trim(), trustedCaller);
       return true;
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to delete memory', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to delete memory', error, { id: describeId(id) });
     }
   }
 
@@ -1303,7 +1610,8 @@ export class SquishRuntime {
 
   async getEntity(
     name: string,
-    project?: string
+    project?: string,
+    caller?: { userId?: string; teamIds?: string[] },
   ): Promise<{ entity: EntityRecord | null; relations: EntityRelation[]; mentionCount: number } | null> {
     try {
       if (!name?.trim()) {
@@ -1316,9 +1624,15 @@ export class SquishRuntime {
       }
 
       const { getEntity } = await import('../storage/entity-ops.js');
+      const { isStrictTrustPolicy } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        const { buildAutoAclContext } = await import('../acl/read-gate.js');
+        await buildAutoAclContext(caller?.userId, caller?.teamIds);
+        throw new SquishError('Raw graph entity reads are disabled under strict trust until edge provenance is enforced', 'TRUST_BOUNDARY_ERROR');
+      }
       return await getEntity(name.trim(), projectId);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
       throw new StorageError('Failed to get entity', error as Error);
     }
   }
@@ -1338,13 +1652,20 @@ export class SquishRuntime {
         throw new SquishError('Project is required for traverseGraph', 'VALIDATION_ERROR');
       }
 
+      const { isStrictTrustPolicy } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        const { buildAutoAclContext } = await import('../acl/read-gate.js');
+        await buildAutoAclContext(options?.userId, options?.teamIds);
+        throw new SquishError('Raw graph traversal is disabled under strict trust until edge provenance is enforced', 'TRUST_BOUNDARY_ERROR');
+      }
+
       const { traverseGraph } = await import('../storage/graph-ops.js');
       return await traverseGraph(name.trim(), projectId, {
         maxDepth: options?.maxDepth,
         limit: options?.limit,
       }) as any;
     } catch (error) {
-      if (error instanceof SquishError) throw error;
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
       throw new StorageError('Failed to traverse graph', error as Error);
     }
   }
@@ -1356,26 +1677,55 @@ export class SquishRuntime {
       const project = options?.project ?? this._activeProject;
       const limit = options?.limit ?? 10;
 
+      const { isStrictTrustPolicy } = await import('../acl/trust-policy.js');
+      const strict = isStrictTrustPolicy();
+      const trustedCaller = await resolveSdkReadCaller({ userId: options?.user });
       const { recall } = await import('../storage/storage-facade.js');
       const result = await recall('', {
         project,
         limit,
+        user: trustedCaller.userId,
       });
-
-      return result.memories.map(mapCoreMemoryToSdk);
+      const { applyAclReadGate, buildAutoAclContext } = await import('../acl/read-gate.js');
+      const acl = await buildAutoAclContext(trustedCaller.userId, options?.teamId ? [options.teamId] : undefined);
+      const visible = await applyAclReadGate(result.memories, acl);
+      return visible.map((memory) => mapCoreMemoryToSdk(memory, strict));
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get context', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get context', error, {
+        project: options?.project ?? this._activeProject,
+      });
     }
   }
 
   async listProjects(): Promise<ProjectRecord[]> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Project listing is disabled under strict trust until projects have owner-scoped visibility');
       const { getAllProjects } = await import('../projects.js');
       return await getAllProjects();
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to list projects', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to list projects', error, {
+        project: this._activeProject,
+      });
+    }
+  }
+
+  async deleteProject(projectId: string): Promise<boolean> {
+    try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Project deletion is disabled under strict trust until caller role and project ownership are enforced');
+      const { deleteProject, getProjectById } = await import('../projects.js');
+      const project = await getProjectById(projectId);
+      const deleted = await deleteProject(projectId);
+      if (deleted && project && this._activeProject === project.path) {
+        this._activeProject = undefined;
+      }
+      return deleted;
+    } catch (error) {
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to delete project', error, { project: this._activeProject });
     }
   }
 
@@ -1390,11 +1740,17 @@ export class SquishRuntime {
 
   async stats(project?: string): Promise<MemoryStats> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        throw new TrustBoundaryError('Aggregate memory statistics are disabled under strict trust until aggregate provenance is enforced');
+      }
       const { getMemoryStats } = await import('../memory/stats.js');
       return await getMemoryStats(project ?? this._activeProject);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get stats', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get stats', error, {
+        project: project ?? this._activeProject,
+      });
     }
   }
 
@@ -1442,8 +1798,8 @@ export class SquishRuntime {
       const { pinMemory } = await import('../security/governance.js');
       await pinMemory(id);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to pin memory', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to pin memory', error, { id: describeId(id) });
     }
   }
 
@@ -1452,19 +1808,25 @@ export class SquishRuntime {
       const { unpinMemory } = await import('../security/governance.js');
       await unpinMemory(id);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to unpin memory', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to unpin memory', error, { id: describeId(id) });
     }
   }
 
   async getPinnedMemories(project?: string): Promise<MemoryRecord[]> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        throw new TrustBoundaryError('Pinned-memory listing is disabled under strict trust until the listing is identity and provenance gated');
+      }
       const { getPinnedMemories } = await import('../security/governance.js');
       const memories = await getPinnedMemories(project ?? this._activeProject);
-      return memories.map(mapCoreMemoryToSdk);
+      return memories.map((memory) => mapCoreMemoryToSdk(memory));
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get pinned memories', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get pinned memories', error, {
+        project: project ?? this._activeProject,
+      });
     }
   }
 
@@ -1472,21 +1834,29 @@ export class SquishRuntime {
 
   async promoteToSturdy(id: string): Promise<void> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Memory tier promotion is disabled under strict trust until caller, ACL, and provenance checks cover the mutation');
       const { promoteToSturdy } = await import('../memory/tiers.js');
       await promoteToSturdy(id);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to promote memory', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to promote memory', error, { id: describeId(id) });
     }
   }
 
   async getTierStats(project?: string): Promise<Record<string, number>> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        throw new TrustBoundaryError('Aggregate tier statistics are disabled under strict trust until aggregate provenance is enforced');
+      }
       const { getTierStats } = await import('../memory/tiers.js');
       return await getTierStats(project ?? this._activeProject);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get tier stats', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get tier stats', error, {
+        project: project ?? this._activeProject,
+      });
     }
   }
 
@@ -1494,42 +1864,94 @@ export class SquishRuntime {
 
   async getRecent(limit?: number, project?: string): Promise<MemoryRecord[]> {
     try {
+      const { applyAclReadGate, buildAutoAclContext } = await import('../acl/read-gate.js');
+      const strict = isStrictTrustPolicy();
+      let acl: Awaited<ReturnType<typeof buildAutoAclContext>> = null;
+      if (strict) await resolveSdkReadCaller();
+      else {
+        const trustedCaller = await resolveSdkReadCaller();
+        acl = await buildAutoAclContext(trustedCaller.userId);
+      }
       const { getRecent } = await import('../memory/memories.js');
-      const memories = await getRecent(project ?? this._activeProject!, limit ?? 10);
-      return memories.map(mapCoreMemoryToSdk);
+      const requestedLimit = limit ?? 10;
+      const memories = await getRecent(project ?? this._activeProject!, strict
+        ? Math.min(500, Math.max(1, Math.floor(requestedLimit)) * 10)
+        : requestedLimit);
+      const visible = strict
+        ? memories.slice(0, Math.max(0, Math.floor(requestedLimit)))
+        : await applyAclReadGate(memories, acl);
+      return visible.map((memory) => mapCoreMemoryToSdk(memory, strict));
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get recent memories', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get recent memories', error, {
+        limit,
+        project: project ?? this._activeProject,
+      });
     }
   }
 
   async listRecent(options?: ListRecentOptions): Promise<MemoryRecord[]> {
     try {
+      const { applyAclReadGate, buildAutoAclContext, buildStrictMemoryCandidateFilter } = await import('../acl/read-gate.js');
+      const { isStrictTrustPolicy } = await import('../acl/trust-policy.js');
+      const trustedCaller = await resolveSdkReadCaller();
+      const acl = await buildAutoAclContext(trustedCaller.userId);
       const { vectorSearch } = await import('../memory/vector-search.js');
+      const candidateFilter = isStrictTrustPolicy()
+        ? await buildStrictMemoryCandidateFilter({ userId: trustedCaller.userId! })
+        : undefined;
       const results = await vectorSearch(
         { query: '', project: options?.project ?? this._activeProject },
-        { limit: options?.limit ?? 50 }
+        { limit: options?.limit ?? 50, ...(candidateFilter ? { candidateFilter } : {}) }
       );
-      let memories = results.map(mapCoreMemoryToSdk);
+      const strict = isStrictTrustPolicy();
+      const visibleResults = await applyAclReadGate(results, acl);
+      let memories = visibleResults.map((memory) => mapCoreMemoryToSdk(memory, strict));
       const hoursBack = options?.hoursBack;
       if (hoursBack != null && hoursBack > 0) {
         const cutoffMs = Date.now() - hoursBack * 3_600_000;
-        memories = memories.filter((memory) => memory.createdAt.getTime() >= cutoffMs);
+        memories = memories.filter((memory) => memory.createdAt !== undefined && memory.createdAt.getTime() >= cutoffMs);
       }
       return memories;
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to list recent memories', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to list recent memories', error, {
+        project: options?.project ?? this._activeProject,
+      });
     }
   }
 
   async getMemorySnapshot(project?: string): Promise<unknown> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        throw new TrustBoundaryError('Raw memory snapshots are disabled under strict trust until snapshot provenance is enforced');
+      }
       const { getMemorySnapshot } = await import('../snapshots/retrieval.js');
       return await getMemorySnapshot(project ?? this._activeProject!);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get memory snapshot', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get memory snapshot', error, {
+        project: project ?? this._activeProject,
+      });
+    }
+  }
+
+  async getCorrectionHistory(memoryId: string, userId?: string): Promise<StrictCorrectionHistory | unknown[]> {
+    try {
+      const { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        const callerId = resolveTrustedCallerId(userId);
+        if (!callerId) throw new TrustBoundaryError('Correction history requires an authenticated caller');
+        const { getStrictCorrectionHistory } = await import('../snapshots/retrieval.js');
+        return await getStrictCorrectionHistory(memoryId, callerId);
+      }
+      const { getMemoryHistory } = await import('../snapshots/retrieval.js');
+      return (await getMemoryHistory(memoryId)).filter((snapshot: { snapshotType?: string }) => snapshot.snapshotType === 'correction');
+    } catch (error) {
+      const { TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (error instanceof SquishError || error instanceof TrustBoundaryError) throw error;
+      throw wrapStorageError('Failed to get correction history', error, { memoryId });
     }
   }
 
@@ -1537,22 +1959,35 @@ export class SquishRuntime {
 
   async createAssociation(fromId: string, toId: string, type?: string): Promise<void> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Association writes are disabled under strict trust until caller, ACL, and edge provenance checks are available');
       const { createAssociation } = await import('../associations.js');
       await createAssociation(fromId, toId, type as any);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to create association', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to create association', error, {
+        fromId: describeId(fromId),
+        toId: describeId(toId),
+      });
     }
   }
 
-  async getRelatedMemories(id: string): Promise<MemoryRecord[]> {
+  async getRelatedMemories(id: string, caller?: { userId?: string; teamIds?: string[] }): Promise<MemoryRecord[]> {
     try {
+      const seed = await this.getById(id, caller);
+      if (!seed) return [];
       const { getRelatedMemories } = await import('../associations.js');
       const memories = await getRelatedMemories(id);
-      return memories.map(mapCoreMemoryToSdk);
+      const { isStrictTrustPolicy } = await import('../acl/trust-policy.js');
+      const { applyAclReadGate, buildAutoAclContext } = await import('../acl/read-gate.js');
+      const trustedCaller = await resolveSdkReadCaller(caller);
+      const strict = isStrictTrustPolicy();
+      const acl = await buildAutoAclContext(trustedCaller.userId, trustedCaller.teamIds);
+      const visible = await applyAclReadGate(memories, acl);
+      return visible.map((memory) => mapCoreMemoryToSdk(memory, strict));
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get related memories', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get related memories', error, { id: describeId(id) });
     }
   }
 
@@ -1560,6 +1995,8 @@ export class SquishRuntime {
 
   async buildGraph(project?: string): Promise<GraphBuildStats> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Graph building is disabled under strict trust until source ownership and edge provenance are enforced');
       const { buildGraphForProject } = await import('../graph/graph-builder.js');
       const stats = await buildGraphForProject(project ?? this._activeProject!);
       return {
@@ -1571,8 +2008,10 @@ export class SquishRuntime {
         durationMs: stats.durationMs,
       };
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to build graph', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to build graph', error, {
+        project: project ?? this._activeProject,
+      });
     }
   }
 
@@ -1580,8 +2019,10 @@ export class SquishRuntime {
 
   async getPlaces(project?: string): Promise<PlaceRecord[]> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Place listing is disabled under strict trust until place metadata has caller-scoped ACL and provenance');
       const { getProjectPlaces } = await import('../places/places.js');
-      const projectId = project ?? this._activeProject;
+      const projectId = await resolveRuntimeProjectId(project ?? this._activeProject);
       const places = await getProjectPlaces(projectId);
       return places.map((p: any) => ({
         id: p.id,
@@ -1589,8 +2030,10 @@ export class SquishRuntime {
         memories: [],
       }));
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get places', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get places', error, {
+        project: project ?? this._activeProject,
+      });
     }
   }
 
@@ -1598,6 +2041,11 @@ export class SquishRuntime {
 
   async listSessions(options?: SessionOptions): Promise<SessionRecord[]> {
     try {
+      const { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        resolveTrustedCallerId();
+        throw new TrustBoundaryError('Raw external session history is disabled under strict trust until source ACL and provenance are enforced');
+      }
       const { listSessions } = await import('../sessions/index.js');
       const result = await listSessions({
         project: options?.project ?? this._activeProject,
@@ -1617,13 +2065,20 @@ export class SquishRuntime {
         memoryCount: s.chunk_count,
       }));
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to list sessions', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to list sessions', error, {
+        project: options?.project ?? this._activeProject,
+      });
     }
   }
 
   async getSessionChunks(sessionId: string, options?: { source?: SessionSourceOption }): Promise<ChunkRecord[]> {
     try {
+      const { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        resolveTrustedCallerId();
+        throw new TrustBoundaryError('Raw external session history is disabled under strict trust until source ACL and provenance are enforced');
+      }
       const { getSessionChunks } = await import('../sessions/index.js');
       const result = await getSessionChunks(sessionId, { source: options?.source ?? 'all' });
       if (!result?.chunks) return [];
@@ -1637,35 +2092,56 @@ export class SquishRuntime {
         timestamp: c.timestamp,
       }));
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get session chunks', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get session chunks', error, {
+        sessionId: describeId(sessionId),
+      });
     }
   }
 
   /** Get a single session by ID — used by the CLI inspect command. */
   async getSession(sessionId: string): Promise<{ id: string; chunks: ChunkRecord[]; summary?: string } | null> {
     try {
-      const { listSessions } = await import('../sessions/index.js');
-      const result = await listSessions({ sessionId });
-      if (!result.sessions || result.sessions.length === 0) return null;
-      const s = result.sessions[0] as any;
+      const { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        resolveTrustedCallerId();
+        throw new TrustBoundaryError('Raw external session history is disabled under strict trust until source ACL and provenance are enforced');
+      }
+      const { getSessionChunks } = await import('../sessions/index.js');
+      const session = await getSessionChunks(sessionId);
+      if (!session) return null;
       const chunks = await this.getSessionChunks(sessionId);
       return {
-        id: s.session_id ?? sessionId,
+        id: session.session_id,
         chunks,
-        summary: s.title,
+        summary: session.title,
       };
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get session', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get session', error, {
+        sessionId: describeId(sessionId),
+      });
     }
   }
 
-  async searchChunks(query: string, options?: { limit?: number; source?: SessionSourceOption }): Promise<ChunkRecord[]> {
+  async searchChunksDetailed(query: string, options?: { limit?: number; source?: SessionSourceOption; project?: string; scanBudgetSessions?: number; scanTimeoutMs?: number }) {
     try {
-      const { searchChunks } = await import('../sessions/index.js');
-      const results = await searchChunks({ query, limit: options?.limit, source: options?.source ?? 'all' });
-      return results.map((r: any) => ({
+      const { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        resolveTrustedCallerId();
+        throw new TrustBoundaryError('Raw external session history is disabled under strict trust until source ACL and provenance are enforced');
+      }
+      const { searchChunksDetailed } = await import('../sessions/index.js');
+      const detailed = await searchChunksDetailed({
+        query,
+        limit: options?.limit,
+        source: options?.source ?? 'all',
+        project: options?.project,
+        scan_budget_sessions: options?.scanBudgetSessions,
+        scan_timeout_ms: options?.scanTimeoutMs,
+      });
+      return {
+        results: detailed.results.map((r: any) => ({
         id: r.memory_id ?? '',
         sessionId: r.chunk?.session_id ?? '',
         content: r.chunk?.content ?? '',
@@ -1673,10 +2149,141 @@ export class SquishRuntime {
         agent: r.chunk?.agent,
         sessionTitle: r.chunk?.session_title,
         why: r.why,
-      }));
+        })),
+        diagnostics: detailed.diagnostics,
+      };
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to search chunks', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to search chunks', error, {
+        query,
+        limit: options?.limit,
+      });
+    }
+  }
+
+  async searchChunks(query: string, options?: { limit?: number; source?: SessionSourceOption; project?: string }): Promise<ChunkRecord[]> {
+    const detailed = await this.searchChunksDetailed(query, options);
+    return detailed.results;
+  }
+
+  async recoverCapturedSession(input: {
+    sessionId: string;
+    query?: string;
+    project?: string;
+    user?: string;
+    teamId?: string;
+    budgetTokens?: number;
+    limit?: number;
+    progressiveTree?: boolean;
+    includeProjectContext?: boolean;
+    expandNodeId?: string;
+  }) {
+    try {
+      const { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      const strict = isStrictTrustPolicy();
+      if (strict && !input.user?.trim()) {
+        throw new TrustBoundaryError('Strict session recovery requires an explicitly authenticated caller identity');
+      }
+      const callerId = strict ? resolveTrustedCallerId(input.user) : input.user;
+      const { recoverCapturedSession } = await import('../sessions/store.js');
+      return await recoverCapturedSession({
+        ...input,
+        user: callerId ?? undefined,
+        readTaggedMemories: (ids) => this.getMemoriesByIds(ids, {
+          userId: callerId ?? undefined,
+          teamIds: input.teamId ? [input.teamId] : undefined,
+        }),
+      });
+    } catch (error) {
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to recover captured session context', error, {
+        sessionId: describeId(input.sessionId),
+      });
+    }
+  }
+
+  /** Capture validated session chunks as episodic memories through the core runtime. */
+  async captureSessionChunks(
+    chunks: Chunk[],
+    options?: { project?: string; user?: string },
+  ): Promise<string[]> {
+    try {
+      const { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      const callerId = isStrictTrustPolicy()
+        ? resolveTrustedCallerId(options?.user)
+        : options?.user;
+      if (isStrictTrustPolicy() && !callerId) {
+        throw new TrustBoundaryError('Capturing session memories requires an authenticated caller');
+      }
+      const { captureChunks } = await import('../sessions/store.js');
+      return await captureChunks(chunks, {
+        project: options?.project ?? this._activeProject,
+        user: callerId ?? undefined,
+      });
+    } catch (error) {
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to capture session chunks', error, {
+        chunkCount: Array.isArray(chunks) ? chunks.length : 0,
+        project: options?.project ?? this._activeProject,
+      });
+    }
+  }
+
+  /** Capture Codex user/assistant turns from the local host store by session ID. */
+  async captureHostSession(
+    agent: 'codex' | 'claude-code' | 'opencode' | 'gemini',
+    sessionId: string,
+    options?: { user?: string },
+  ): Promise<string[]> {
+    try {
+      const { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      const callerId = isStrictTrustPolicy()
+        ? resolveTrustedCallerId(options?.user)
+        : options?.user;
+      if (isStrictTrustPolicy() && !callerId) {
+        throw new TrustBoundaryError('Capturing a host session requires an authenticated caller');
+      }
+      const { captureHostSession } = await import('../sessions/store.js');
+      return await captureHostSession(agent, sessionId, { user: callerId ?? undefined });
+    } catch (error) {
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to capture host session', error, {
+        sessionId: describeId(sessionId),
+      });
+    }
+  }
+
+  async captureCodexSession(sessionId: string, options?: { user?: string }): Promise<string[]> {
+    return this.captureHostSession('codex', sessionId, options);
+  }
+
+  /** Permanently remove captured episodic chunks for one source session. */
+  async forgetCapturedSession(
+    sessionId: string,
+    options?: { project?: string; user?: string; teamId?: string },
+  ): Promise<{ deleted: number }> {
+    try {
+      const { isStrictTrustPolicy, resolveTrustedCallerId } = await import('../acl/trust-policy.js');
+      const callerId = isStrictTrustPolicy()
+        ? resolveTrustedCallerId(options?.user) ?? undefined
+        : options?.user;
+      const { forgetCapturedSession } = await import('../sessions/store.js');
+      return await forgetCapturedSession({
+        sessionId,
+        project: options?.project ?? this._activeProject,
+        user: callerId,
+        teamIds: options?.teamId ? [options.teamId] : undefined,
+        readTaggedMemories: (ids) => this.getMemoriesByIds(ids, {
+          userId: callerId,
+          teamIds: options?.teamId ? [options.teamId] : undefined,
+        }),
+      });
+    } catch (error) {
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to forget captured session memories', error, {
+        sessionId: describeId(sessionId),
+        project: options?.project ?? this._activeProject,
+      });
     }
   }
 
@@ -1684,6 +2291,8 @@ export class SquishRuntime {
 
   async dedupScan(input: DedupScanInput = {}): Promise<DedupScanResult> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Deduplication is disabled under strict trust until proposals and source mutations are caller and provenance gated');
       const { handleDetectDuplicates } = await import('../algorithms/handlers/detect-duplicates.js');
       const result = await handleDetectDuplicates({
         projectId: input.projectId,
@@ -1700,13 +2309,18 @@ export class SquishRuntime {
 
       return result as DedupScanResult;
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to scan for duplicates', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to scan for duplicates', error, {
+        projectId: input.projectId,
+        threshold: input.threshold,
+      });
     }
   }
 
   async listMergeProposals(input: MergeProposalListInput): Promise<MergeListResult> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Deduplication is disabled under strict trust until proposals and source mutations are caller and provenance gated');
       const { handleListProposals } = await import('../algorithms/handlers/list-proposals.js');
       return await handleListProposals({
         projectId: input.projectId,
@@ -1714,52 +2328,73 @@ export class SquishRuntime {
         limit: input.limit,
       }) as MergeListResult;
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to list merge proposals', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to list merge proposals', error, {
+        projectId: input.projectId,
+        status: input.status,
+      });
     }
   }
 
   async previewMerge(proposalId: string): Promise<MergePreviewResult> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Deduplication is disabled under strict trust until proposals and source mutations are caller and provenance gated');
       const { handlePreviewMerge } = await import('../algorithms/handlers/preview-merge.js');
       return await handlePreviewMerge({ proposalId }) as MergePreviewResult;
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to preview merge', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to preview merge', error, {
+        proposalId: describeId(proposalId),
+      });
     }
   }
 
   async approveMerge(input: { proposalId: string; reviewNotes?: string }): Promise<MergeActionResult> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Deduplication is disabled under strict trust until proposals and source mutations are caller and provenance gated');
       const { handleApproveMerge } = await import('../algorithms/handlers/approve-merge.js');
       return await handleApproveMerge(input) as MergeActionResult;
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to approve merge', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to approve merge', error, {
+        proposalId: describeId(input.proposalId),
+      });
     }
   }
 
   async rejectMerge(input: { proposalId: string; reviewNotes?: string }): Promise<MergeActionResult> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Deduplication is disabled under strict trust until proposals and source mutations are caller and provenance gated');
       const { handleRejectMerge } = await import('../algorithms/handlers/reject-merge.js');
       return await handleRejectMerge(input) as MergeActionResult;
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to reject merge', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to reject merge', error, {
+        proposalId: describeId(input.proposalId),
+      });
     }
   }
 
   async reverseMerge(input: { mergeHistoryId: string; reason?: string }): Promise<MergeReversalResult> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Deduplication is disabled under strict trust until proposals and source mutations are caller and provenance gated');
       const { handleReverseMerge } = await import('../algorithms/handlers/reverse-merge.js');
       return await handleReverseMerge(input) as MergeReversalResult;
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to reverse merge', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to reverse merge', error, {
+        mergeHistoryId: describeId(input.mergeHistoryId),
+      });
     }
   }
 
   async dedupAutoMerge(input: { threshold?: number; cap?: number } = {}): Promise<DedupAutoResult> {
+    const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+    if (isStrictTrustPolicy()) throw new TrustBoundaryError('Deduplication is disabled under strict trust until proposals and source mutations are caller and provenance gated');
     if (process.env.SQUISH_DEDUP_AUTO !== 'true') {
       return {
         ok: false,
@@ -1836,33 +2471,76 @@ export class SquishRuntime {
 
   // ─── Batch Memory Fetch ──────────────────────────────────────────────────
 
-  async getMemoriesByIds(ids: string[]): Promise<MemoryRecord[]> {
+  async getMemoriesByIds(ids: string[], caller?: { userId?: string; teamIds?: string[] }): Promise<MemoryRecord[]> {
     try {
       if (!ids || ids.length === 0) return [];
       const { getDb } = await import('../../db/index.js');
       const { getSchema } = await import('../../db/schema.js');
       const { createDatabaseClient } = await import('../storage/database.js');
       const { inArray } = await import('drizzle-orm');
+      const { normalizeMemoryRecord } = await import('../memory/memory-crud.js');
 
       const db = createDatabaseClient(await getDb());
       const schema = await getSchema();
       const rows = await db.select().from(schema.memories).where(inArray(schema.memories.id, ids));
-      return rows.map(mapCoreMemoryToSdk);
+      const { applyAclReadGate, buildAutoAclContext } = await import('../acl/read-gate.js');
+      const trustedCaller = await resolveSdkReadCaller(caller);
+      const acl = await buildAutoAclContext(trustedCaller.userId, trustedCaller.teamIds);
+      const strict = (await import('../acl/trust-policy.js')).isStrictTrustPolicy();
+      const normalized: import('../memory/memory-types.js').MemoryRecord[] = [];
+      for (const row of rows) {
+        if (Boolean(row.isEncrypted ?? row.is_encrypted)) {
+          if (strict) {
+            const { preauthorizeStrictMemoryReadBeforeDecrypt } = await import('../acl/read-gate.js');
+            if (!trustedCaller.userId || !await preauthorizeStrictMemoryReadBeforeDecrypt(row.id, trustedCaller.userId)) continue;
+          }
+          const ciphertext = row.encryptedContent ?? row.encrypted_content;
+          const nonce = row.encryptionNonce ?? row.encryption_nonce;
+          if (!ciphertext || !nonce) {
+            if (strict) throw new TrustBoundaryError('Strict encrypted memory is missing ciphertext metadata');
+            throw new Error('Encrypted memory is missing ciphertext metadata');
+          }
+          normalized.push(normalizeMemoryRecord({ ...row, content: decrypt(ciphertext, nonce) }));
+        } else {
+          normalized.push(normalizeMemoryRecord(row));
+        }
+      }
+      const visible = await applyAclReadGate(normalized, acl);
+      return visible.map((memory) => mapCoreMemoryToSdk(memory, strict));
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to fetch memories by IDs', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to fetch memories by IDs', error, {
+        count: Array.isArray(ids) ? ids.length : 0,
+      });
     }
   }
 
   // ─── Place Memories ──────────────────────────────────────────────────────
 
-  async getPlaceMemories(placeIdOrType: string, limit: number = 50): Promise<string[]> {
+  async getPlaceMemories(placeIdOrType: string, limit: number = 50, caller?: { userId?: string; teamIds?: string[]; project?: string }): Promise<string[]> {
     try {
       const { getPlaceMemories } = await import('../places/memory-places.js');
-      return await getPlaceMemories(placeIdOrType, limit);
+      const { isStrictTrustPolicy } = await import('../acl/trust-policy.js');
+      const strict = isStrictTrustPolicy();
+      const requestedLimit = Math.max(1, Math.min(100, Math.floor(Number.isFinite(limit) ? limit : 50)));
+      if (!strict) {
+        const projectId = await resolveRuntimeProjectId(caller?.project ?? this._activeProject);
+        const ids = await getPlaceMemories(placeIdOrType, requestedLimit, 0, projectId);
+        const memories = await this.getMemoriesByIds(ids, caller);
+        return memories.map((memory) => memory.id);
+      }
+
+      // Place edges are not yet backed by a signed source or caller-scoped
+      // authorization contract, so filtering their IDs after reading them is
+      // insufficient to make strict retrieval trustworthy.
+      const { denyUnscopedPlaceOperation } = await import('../places/strict-gates.js');
+      return await denyUnscopedPlaceOperation('list_members', placeIdOrType);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to get place memories', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to get place memories', error, {
+        placeIdOrType: describeId(placeIdOrType),
+        limit,
+      });
     }
   }
 
@@ -1874,11 +2552,18 @@ export class SquishRuntime {
     limit?: number;
   }): Promise<unknown[]> {
     try {
+      const { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) {
+        resolveTrustedCallerId();
+        throw new TrustBoundaryError('Raw external session history is disabled under strict trust until source ACL and provenance are enforced');
+      }
       const { findRelatedSessions } = await import('../sessions/store.js');
       return await findRelatedSessions(input);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to find related sessions', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to find related sessions', error, {
+        repoPath: input.repo_path,
+      });
     }
   }
 
@@ -1886,6 +2571,8 @@ export class SquishRuntime {
 
   async runMaintenance(options?: MaintenanceOptions): Promise<unknown> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Maintenance is disabled under strict trust until each mutation is caller and provenance gated');
       const { runFullMaintenance } = await import('../consolidation.js');
       return await runFullMaintenance({
         projectId: options?.project ?? this._activeProject,
@@ -1895,8 +2582,11 @@ export class SquishRuntime {
         llmEnabled: options?.llmEnabled,
       });
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to run maintenance', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to run maintenance', error, {
+        project: options?.project ?? this._activeProject,
+        steps: options?.steps,
+      });
     }
   }
 
@@ -1904,12 +2594,14 @@ export class SquishRuntime {
 
   async migrateMemories(sourceDir?: string, targetDir?: string): Promise<unknown> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Memory migration is disabled under strict trust until imported rows can be owner-attested');
       const { migrateMemories } = await import('../memory/migrate.js');
       const src = sourceDir ?? this._activeProject ?? '.';
       const tgt = targetDir ?? src;
       return await migrateMemories(src, tgt);
     } catch (error) {
-      if (error instanceof SquishError) throw error;
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
       throw new StorageError('Failed to migrate memories', error as Error);
     }
   }
@@ -1922,19 +2614,21 @@ export class SquishRuntime {
       const result = await probeSchemaHealth();
       return {
         healthy: result.status === 'ok',
-        issues: result.missingTables.length > 0 || result.missingColumns.length > 0
+        issues: result.missingTables.length > 0 || result.missingColumns.length > 0 || result.indexIssues.length > 0
           ? [result.detail]
           : [],
         fixes: result.remediation ? [result.remediation] : [],
       };
     } catch (error) {
-      if (error instanceof SquishError) throw error;
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
       throw new StorageError('Failed to probe schema health', error as Error);
     }
   }
 
   async fixSchemaIssues(): Promise<SchemaHealthResult> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Schema repair is disabled under strict trust until operator authorization is enforced');
       const { fixSchemaIssues } = await import('../../db/schema-repair.js');
       const actions = await fixSchemaIssues();
       return {
@@ -1943,8 +2637,8 @@ export class SquishRuntime {
         fixes: actions.map((a: any) => a.detail ?? a.type ?? 'fix'),
       };
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to fix schema issues', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to fix schema issues', error);
     }
   }
 
@@ -1961,13 +2655,17 @@ export class SquishRuntime {
         context: result as unknown as Record<string, unknown>,
       };
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to build context state', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to build context state', error, {
+        project: project ?? this._activeProject,
+      });
     }
   }
 
   async buildStatsState(project?: string): Promise<TrustState> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Aggregate project statistics are disabled under strict trust until owner-scoped aggregation is available');
       const { buildStatsState } = await import('./trust-state.js');
       const result = await buildStatsState(project ?? this._activeProject);
       return {
@@ -1977,19 +2675,25 @@ export class SquishRuntime {
         context: {},
       };
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to build stats state', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to build stats state', error, {
+        project: project ?? this._activeProject,
+      });
     }
   }
 
   async resolveProjectScope(project?: string): Promise<string> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Project scope diagnostics are disabled under strict trust until project ownership visibility is available');
       const { resolveProjectScope } = await import('./trust-state.js');
       const result = await resolveProjectScope(project ?? this._activeProject);
       return result.currentProject?.path ?? project ?? this._activeProject ?? '';
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to resolve project scope', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to resolve project scope', error, {
+        project: project ?? this._activeProject,
+      });
     }
   }
 
@@ -1997,11 +2701,13 @@ export class SquishRuntime {
 
   async initializeScheduler(): Promise<void> {
     try {
+      const { isStrictTrustPolicy } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) return;
       const { initializeScheduler } = await import('../scheduler/cron-scheduler.js');
       await initializeScheduler();
     } catch (error) {
-      if (error instanceof SquishError) throw error;
-      throw new StorageError('Failed to initialize scheduler', error as Error);
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
+      throw wrapStorageError('Failed to initialize scheduler', error);
     }
   }
 
@@ -2018,7 +2724,7 @@ export class SquishRuntime {
         hasSignal,
       };
     } catch (error) {
-      if (error instanceof SquishError) throw error;
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
       throw new StorageError('Failed to detect memory signals', error as Error);
     }
   }
@@ -2027,6 +2733,8 @@ export class SquishRuntime {
 
   async createLearning(input: LearningInput): Promise<LearningRecord> {
     try {
+      const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Unscoped learning writes are disabled under strict trust; capture through signed owner-bound memory instead');
       const { createLearning } = await import('../ingestion/learnings.js');
       const validTypes = ['success', 'failure', 'fix', 'insight'];
       const learningType = validTypes.includes(input.type) ? input.type : 'insight';
@@ -2040,12 +2748,13 @@ export class SquishRuntime {
         memoryId: input.memoryId,
       });
     } catch (error) {
-      if (error instanceof SquishError) throw error;
+      if (error instanceof SquishError || isTrustBoundaryError(error)) throw error;
       throw new StorageError('Failed to create learning', error as Error);
     }
   }
 
   async close(): Promise<void> {
-    // No persistent resources to clean up
+    const { closeEmbeddingProvider } = await import('../embeddings/embeddings.js');
+    await closeEmbeddingProvider();
   }
 }

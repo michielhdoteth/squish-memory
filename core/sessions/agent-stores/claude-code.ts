@@ -25,12 +25,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 
 import { logger } from '../../logger.js';
 import type { Chunk, ChunkResult, SessionGroup } from '../types.js';
-import type { AgentSessionStore, AgentName } from './types.js';
+import { allowSessionFileSize, consumeSessionSearchBudget, markSessionSearchTruncated, tokenizeSessionSearchQuery, type AgentSessionStore, type AgentName, type SessionSearchBudget } from './types.js';
 import { readSessionCache, statSessionFile, writeSessionCache } from './cache.js';
+import { isWithinDirectoryScope } from './path-scope.js';
 import { recordParsedSessionSignals } from '../../session/working-set.js';
+
+function errorType(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
 
 // ---------------------------------------------------------------------------
 // Path discovery
@@ -41,15 +47,86 @@ import { recordParsedSessionSignals } from '../../session/working-set.js';
  * `~/.claude/` on all platforms including Windows.
  */
 export function defaultClaudeDir(): string {
+  const override = process.env.SQUISH_CLAUDE_DIR?.trim();
+  if (override) return path.resolve(override);
   if (process.env.SQUISH_CLAUDE_DISABLED === '1') {
     return path.join(os.homedir(), '.squish', 'claude-disabled-for-tests');
   }
   return path.join(os.homedir(), '.claude');
 }
 
+export interface ClaudeTranscriptMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  messageIndex: number;
+  sourceFingerprint: string;
+}
+
+export interface ClaudeTranscriptSnapshot {
+  sessionId: string;
+  projectPath: string;
+  messages: ClaudeTranscriptMessage[];
+}
+
+/** Read a bounded, uncached snapshot whose role and project come from local structured records. */
+export function readClaudeTranscript(sessionId: string): ClaudeTranscriptSnapshot | null {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return null;
+  const claudeDir = path.resolve(defaultClaudeDir());
+  const entry = readHistoryIndex(claudeDir).find((candidate) => candidate.sessionId === sessionId);
+  if (!entry?.project) return null;
+  const projectsDir = path.resolve(claudeDir, 'projects');
+  const projectDir = path.resolve(projectsDir, projectHash(entry.project));
+  const transcriptPath = path.resolve(projectDir, `${sessionId}.jsonl`);
+  if (!isWithinDirectoryScope(projectDir, projectsDir) || !isWithinDirectoryScope(transcriptPath, projectDir)) return null;
+
+  try {
+    const realClaudeDir = fs.realpathSync(claudeDir);
+    const realProjectsDir = fs.realpathSync(projectsDir);
+    if (!isWithinDirectoryScope(realProjectsDir, realClaudeDir)) return null;
+    const realProjectDir = fs.realpathSync(projectDir);
+    const realTranscriptPath = fs.realpathSync(transcriptPath);
+    if (!isWithinDirectoryScope(realProjectDir, realProjectsDir)
+      || !isWithinDirectoryScope(realTranscriptPath, realProjectDir)) return null;
+    const stat = fs.statSync(realTranscriptPath);
+    if (!stat.isFile() || stat.size > 5 * 1024 * 1024) return null;
+    const raw = fs.readFileSync(realTranscriptPath, 'utf8');
+    const messages: ClaudeTranscriptMessage[] = [];
+    for (const [messageIndex, line] of raw.split('\n').entries()) {
+      if (!line.trim()) continue;
+      let parsed: RawMessage;
+      try { parsed = JSON.parse(line) as RawMessage; } catch { continue; }
+      if (parsed.sessionId && parsed.sessionId !== sessionId) return null;
+      if (parsed.type !== 'user' && parsed.type !== 'assistant' && parsed.type !== 'system') continue;
+      if (!transcriptCwdMatchesProject(parsed.cwd, entry.project)) continue;
+      const role = parsed.message?.role;
+      if (role !== parsed.type) continue;
+      const content = extractText(parsed.message?.content).trim();
+      if (!content || content.length > 20_000) continue;
+      const sourceFingerprint = createHash('sha256')
+        .update(JSON.stringify(['claude-message-v1', sessionId, messageIndex, role, content]))
+        .digest('hex');
+      messages.push({ role, content, messageIndex, sourceFingerprint });
+      if (messages.length >= 200) break;
+    }
+    return messages.length ? { sessionId, projectPath: entry.project, messages } : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface ClaudeCodeStoreOptions {
   /** Override the base directory (default: defaultClaudeDir()) */
   claudeDir?: string;
+  /** Bound history index reads; defaults to 8 MiB and cannot exceed 32 MiB. */
+  maxHistoryIndexBytes?: number;
+}
+
+const DEFAULT_HISTORY_INDEX_MAX_BYTES = 8 * 1024 * 1024;
+const MAX_HISTORY_INDEX_BYTES = 32 * 1024 * 1024;
+
+function historyIndexByteLimit(value?: number): number {
+  if (!Number.isInteger(value)) return DEFAULT_HISTORY_INDEX_MAX_BYTES;
+  return Math.max(1024, Math.min(value!, MAX_HISTORY_INDEX_BYTES));
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +143,12 @@ function epochToIso(ms: number): string {
  */
 function projectHash(projectPath: string): string {
   return projectPath.replace(/:/g, '-').replace(/\\/g, '-');
+}
+
+/** A transcript cwd must overlap the history index project before attribution. */
+function transcriptCwdMatchesProject(cwd: unknown, projectPath: string): boolean {
+  if (typeof cwd !== 'string' || !cwd.trim()) return true;
+  return isWithinDirectoryScope(cwd, projectPath) || isWithinDirectoryScope(projectPath, cwd);
 }
 
 /**
@@ -102,12 +185,37 @@ interface HistoryEntry {
  * Read and parse `~/.claude/history.jsonl`. Returns all history entries
  * sorted by timestamp descending (newest first).
  */
-function readHistoryIndex(claudeDir: string): HistoryEntry[] {
+function readHistoryIndex(
+  claudeDir: string,
+  maxBytes = DEFAULT_HISTORY_INDEX_MAX_BYTES,
+  budget?: SessionSearchBudget,
+): HistoryEntry[] {
   const historyPath = path.join(claudeDir, 'history.jsonl');
   if (!fs.existsSync(historyPath)) return [];
 
   try {
-    const content = fs.readFileSync(historyPath, 'utf-8');
+    const limit = historyIndexByteLimit(maxBytes);
+    const stat = fs.statSync(historyPath);
+    const truncated = stat.size > limit;
+    const bytesToRead = Math.min(stat.size, limit);
+    const buffer = Buffer.allocUnsafe(bytesToRead);
+    const fd = fs.openSync(historyPath, 'r');
+    let bytesRead = 0;
+    try {
+      while (bytesRead < bytesToRead) {
+        const count = fs.readSync(fd, buffer, bytesRead, bytesToRead - bytesRead, stat.size - bytesToRead + bytesRead);
+        if (count === 0) break;
+        bytesRead += count;
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+    let content = buffer.toString('utf-8', 0, bytesRead);
+    if (truncated) {
+      const firstLineEnd = content.indexOf('\n');
+      content = firstLineEnd < 0 ? '' : content.slice(firstLineEnd + 1);
+      if (budget) markSessionSearchTruncated(budget, 'history_index_limit');
+    }
     const lines = content.split('\n').filter((l) => l.trim().length > 0);
     const entries: HistoryEntry[] = [];
     for (const line of lines) {
@@ -125,7 +233,7 @@ function readHistoryIndex(claudeDir: string): HistoryEntry[] {
     entries.sort((a, b) => b.timestamp - a.timestamp);
     return entries;
   } catch (err) {
-    logger.debug(`[claude-code-store] failed to read history.jsonl: ${err}`);
+    logger.debug('[claude-code-store] failed to read history index', { errorType: errorType(err) });
     return [];
   }
 }
@@ -157,25 +265,47 @@ interface RawMessage {
  * Looks in `~/.claude/projects/<hash>/<sessionId>.jsonl`.
  */
 function findSessionFile(claudeDir: string, sessionId: string, projectPath?: string): string | null {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return null;
   const projectsDir = path.join(claudeDir, 'projects');
   if (!fs.existsSync(projectsDir)) return null;
 
+  const resolveTranscript = (candidate: string, expectedProjectDir: string): string | null => {
+    try {
+      const realClaudeDir = fs.realpathSync(claudeDir);
+      const realProjectsDir = fs.realpathSync(projectsDir);
+      const realProjectDir = fs.realpathSync(expectedProjectDir);
+      const canonicalProjectDir = path.resolve(realProjectsDir, path.basename(expectedProjectDir));
+      const realTranscriptPath = fs.realpathSync(candidate);
+      if (!isWithinDirectoryScope(realProjectsDir, realClaudeDir)
+        || realProjectDir.toLowerCase().replace(/\\/g, '/') !== canonicalProjectDir.toLowerCase().replace(/\\/g, '/')
+        || !isWithinDirectoryScope(realTranscriptPath, realProjectDir)
+        || !fs.statSync(realTranscriptPath).isFile()) return null;
+      return realTranscriptPath;
+    } catch {
+      return null;
+    }
+  };
+
   // If we know the project path, check that specific directory first
   if (projectPath) {
-    const hash = projectHash(projectPath);
-    const candidate = path.join(projectsDir, hash, `${sessionId}.jsonl`);
-    if (fs.existsSync(candidate)) return candidate;
+    const expectedProjectDir = path.join(projectsDir, projectHash(projectPath));
+    const candidate = path.join(expectedProjectDir, `${sessionId}.jsonl`);
+    return resolveTranscript(candidate, expectedProjectDir);
   }
 
-  // Fall back to searching all project directories
+  // Search all project directories only when the history index did not
+  // provide a project. A scoped entry must never resolve to another
+  // project's transcript when its expected file is missing.
   try {
     const dirs = fs.readdirSync(projectsDir);
     for (const dir of dirs) {
-      const candidate = path.join(projectsDir, dir, `${sessionId}.jsonl`);
-      if (fs.existsSync(candidate)) return candidate;
+      const expectedProjectDir = path.join(projectsDir, dir);
+      const candidate = path.join(expectedProjectDir, `${sessionId}.jsonl`);
+      const resolved = resolveTranscript(candidate, expectedProjectDir);
+      if (resolved) return resolved;
     }
   } catch (err) {
-    logger.debug(`[claude-code-store] error searching projects dir: ${err}`);
+    logger.debug('[claude-code-store] failed to search session directories', { errorType: errorType(err) });
   }
 
   return null;
@@ -199,7 +329,7 @@ function readSessionMessages(filePath: string): RawMessage[] {
     }
     return messages;
   } catch (err) {
-    logger.debug(`[claude-code-store] failed to read session file ${filePath}: ${err}`);
+    logger.debug('[claude-code-store] failed to read session file', { errorType: errorType(err) });
     return [];
   }
 }
@@ -266,6 +396,17 @@ function historyPath(opts: ClaudeCodeStoreOptions = {}): string {
   return path.join(claudeBase(opts), 'history.jsonl');
 }
 
+/** Check only that the host index exists; parsing it belongs to bounded search/status paths. */
+function claudeCodeAvailability(opts: ClaudeCodeStoreOptions = {}) {
+  const indexPath = historyPath(opts);
+  try {
+    if (fs.statSync(indexPath).isFile()) return { ok: true as const, path: indexPath };
+  } catch {
+    // Missing or unreadable indexes are reported as unavailable.
+  }
+  return { ok: false as const, path: indexPath, error: 'history.jsonl not available' };
+}
+
 // ---------------------------------------------------------------------------
 // Status / availability
 // ---------------------------------------------------------------------------
@@ -295,7 +436,7 @@ export function claudeCodeDbStatus(opts: ClaudeCodeStoreOptions = {}): ClaudeCod
   }
 
   const stat = fs.statSync(hp);
-  const entries = readHistoryIndex(claudeBase(opts));
+  const entries = readHistoryIndex(claudeBase(opts), historyIndexByteLimit(opts.maxHistoryIndexBytes));
 
   return {
     ok: true,
@@ -322,7 +463,7 @@ export function listClaudeCodeSessions(
   input: ListClaudeCodeSessionsInput = {},
   opts: ClaudeCodeStoreOptions = {}
 ): SessionGroup[] {
-  const entries = readHistoryIndex(claudeBase(opts));
+  const entries = readHistoryIndex(claudeBase(opts), historyIndexByteLimit(opts.maxHistoryIndexBytes));
   if (entries.length === 0) return [];
 
   const limit = Math.max(1, Math.min(input.limit ?? 20, 200));
@@ -341,8 +482,7 @@ export function listClaudeCodeSessions(
   // Filter by directory if requested
   let filtered = unique;
   if (input.directory_glob) {
-    const glob = input.directory_glob.toLowerCase();
-    filtered = unique.filter((e) => e.project && e.project.toLowerCase().includes(glob));
+    filtered = unique.filter((e) => e.project && isWithinDirectoryScope(e.project, input.directory_glob!));
   }
 
   // Apply offset + limit
@@ -360,6 +500,7 @@ export interface SearchClaudeCodeInput {
   depth?: 'text' | 'deep';
   directory_glob?: string;
   per_session_chunks?: number;
+  scanBudget?: SessionSearchBudget;
 }
 
 export async function searchClaudeCodeSessions(
@@ -368,17 +509,14 @@ export async function searchClaudeCodeSessions(
 ): Promise<ChunkResult[]> {
   if (!input.query || input.query.trim().length === 0) return [];
 
-  const entries = readHistoryIndex(claudeBase(opts));
+  const entries = readHistoryIndex(claudeBase(opts), historyIndexByteLimit(opts.maxHistoryIndexBytes), input.scanBudget);
   if (entries.length === 0) return [];
 
   const limit = Math.max(1, Math.min(input.limit ?? 8, 10));
   const perSession = Math.max(1, Math.min(input.per_session_chunks ?? 2, 5));
 
   // Split query into terms; require ALL terms (AND)
-  const terms = input.query
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length >= 2);
+  const terms = tokenizeSessionSearchQuery(input.query);
   if (terms.length === 0) return [];
 
   // Deduplicate entries by sessionId
@@ -394,17 +532,26 @@ export async function searchClaudeCodeSessions(
   // Filter by directory if requested
   let candidates = unique;
   if (input.directory_glob) {
-    const glob = input.directory_glob.toLowerCase();
-    candidates = unique.filter((e) => e.project && e.project.toLowerCase().includes(glob));
+    candidates = unique.filter((e) => e.project && isWithinDirectoryScope(e.project, input.directory_glob!));
   }
 
   const out: ChunkResult[] = [];
 
   for (const entry of candidates) {
     if (out.length >= limit) break;
+    if (!consumeSessionSearchBudget(input.scanBudget)) break;
 
-    // Bulk scan path: read through the parse cache but never write back.
-    const parsed = await loadParsedSession(claudeBase(opts), entry.sessionId, entry, { cacheWrite: false });
+    const transcriptPath = findSessionFile(claudeBase(opts), entry.sessionId, entry.project);
+    if (transcriptPath) {
+      try {
+        if (!allowSessionFileSize(input.scanBudget, fs.statSync(transcriptPath).size)) continue;
+      } catch {
+        // The parser handles files removed between discovery and read.
+      }
+    }
+
+    // Bulk search must not initialize the durable DB just to read a parse cache.
+    const parsed = await loadParsedSession(claudeBase(opts), entry.sessionId, entry, { cacheRead: false, cacheWrite: false });
     if (!parsed) continue;
 
     const group = parsed.group;
@@ -420,6 +567,26 @@ export async function searchClaudeCodeSessions(
       if (!allMatch) continue;
 
       sessionHits.push({ text, matchIdx: 0 });
+    }
+
+    if (sessionHits.length === 0) {
+      const evidenceByTerm = new Map<string, string>();
+      for (const text of parsed.texts) {
+        const lowerText = text.text.toLowerCase();
+        for (const term of terms) {
+          if (evidenceByTerm.has(term)) continue;
+          const index = lowerText.indexOf(term);
+          if (index < 0) continue;
+          evidenceByTerm.set(term, text.text.slice(Math.max(0, index - 160), index + term.length + 160).trim());
+        }
+        if (evidenceByTerm.size === terms.length) break;
+      }
+      if (evidenceByTerm.size === terms.length && parsed.texts[0]) {
+        sessionHits.push({
+          text: { ...parsed.texts[0], text: [...new Set(evidenceByTerm.values())].join(' … ') },
+          matchIdx: 0,
+        });
+      }
     }
 
     // Build chunks from hits
@@ -443,6 +610,7 @@ export async function searchClaudeCodeSessions(
           branch: hit.text.branch ?? '',
           agent: 'claude-code',
           agent_session_id: entry.sessionId,
+          sourceRole: role,
           timestamp: epochToIso(msgTs),
         },
         score: 1 / (i + 1),
@@ -471,7 +639,7 @@ export async function getClaudeCodeSession(
   sessionId: string,
   opts: ClaudeCodeStoreOptions = {}
 ): Promise<ClaudeCodeSessionDetail | null> {
-  const entries = readHistoryIndex(claudeBase(opts));
+  const entries = readHistoryIndex(claudeBase(opts), historyIndexByteLimit(opts.maxHistoryIndexBytes));
   const entry = entries.find((e) => e.sessionId === sessionId) ?? null;
 
   // Show/get path: reads through the parse cache and writes on miss.
@@ -496,7 +664,7 @@ export async function findClaudeCodeRelatedSessions(
   if (!input.repo_path && (!input.files || input.files.length === 0)) return [];
 
   const limit = Math.max(1, Math.min(input.limit ?? 5, 20));
-  const entries = readHistoryIndex(claudeBase(opts));
+  const entries = readHistoryIndex(claudeBase(opts), historyIndexByteLimit(opts.maxHistoryIndexBytes));
   if (entries.length === 0) return [];
 
   // Deduplicate
@@ -529,7 +697,7 @@ export async function findClaudeCodeRelatedSessions(
 
     // Score by file overlap in session messages
     if (input.files && input.files.length > 0) {
-      const parsed = await loadParsedSession(claudeBase(opts), entry.sessionId, entry, { cacheWrite: false });
+      const parsed = await loadParsedSession(claudeBase(opts), entry.sessionId, entry, { cacheRead: false, cacheWrite: false });
       if (parsed) {
         const allText = parsed.texts.map((t) => t.text).join(' ').toLowerCase();
         let fileHits = 0;
@@ -658,11 +826,16 @@ function parseSessionFile(
 
   for (const msg of messages) {
     if (msg.type !== 'user' && msg.type !== 'assistant') continue;
+    if (!transcriptCwdMatchesProject(msg.cwd, group.repo_path)) continue;
+    // The outer JSONL record type is the trusted role discriminator. Reject
+    // contradictory nested role metadata so search cannot label assistant
+    // content as a user turn (capture applies the same check).
+    if (msg.message?.role && msg.message.role !== msg.type) continue;
     const raw = extractText(msg.message?.content);
     const text = cleanText(raw);
     if (!text) continue;
     texts.push({
-      role: msg.message?.role ?? msg.type,
+      role: msg.type,
       text,
       ts: normalizeMessageEpoch(msg.timestamp),
       uuid: msg.uuid,
@@ -685,6 +858,7 @@ function parseSessionFile(
       branch: firstUser.branch ?? '',
       agent: 'claude-code',
       agent_session_id: group.session_id,
+      sourceRole: firstUser.role,
       timestamp: epochToIso(firstUser.ts || Date.parse(group.started_at)),
     });
   }
@@ -704,6 +878,7 @@ function parseSessionFile(
       branch: t.branch ?? '',
       agent: 'claude-code',
       agent_session_id: group.session_id,
+      sourceRole: t.role,
       timestamp: epochToIso(t.ts || Date.parse(group.started_at)),
     });
     assistantChunks++;
@@ -725,7 +900,7 @@ async function loadParsedSession(
   claudeDir: string,
   sessionId: string,
   entry: HistoryEntry | null,
-  opts: { cacheWrite?: boolean } = {}
+  opts: { cacheRead?: boolean; cacheWrite?: boolean } = {}
 ): Promise<ParsedSession | null> {
   // No history entry and no way to locate the file: unknown session.
   if (!entry) {
@@ -744,7 +919,9 @@ async function loadParsedSession(
   }
 
   const stat = statSessionFile(filePath);
-  const cached = await readSessionCache('claude-code', sessionId, stat);
+  const cached = opts.cacheRead === false
+    ? null
+    : await readSessionCache('claude-code', sessionId, filePath, stat);
   if (cached && Array.isArray((cached as any).texts)) {
     return cached as unknown as ParsedSession;
   }
@@ -825,21 +1002,18 @@ export class ClaudeCodeSessionStore implements AgentSessionStore {
     if (process.env.SQUISH_CLAUDE_DISABLED === '1') {
       return { ok: false, reason: 'claude-code disabled via SQUISH_CLAUDE_DISABLED=1' };
     }
-    const status = claudeCodeDbStatus();
-    if (!status.ok) {
-      return { ok: false, reason: status.error ?? 'history.jsonl not available' };
+    const availability = claudeCodeAvailability(this.storeOpts);
+    if (!availability.ok) {
+      return { ok: false, reason: availability.error };
     }
     return {
       ok: true,
-      meta: {
-        path: status.path,
-        session_count: status.session_count,
-      },
+      meta: { path: availability.path },
     };
   }
 
   async status(): Promise<{ path: string; size: number; sessions: number; messages: number; parts: number } | null> {
-    const s = claudeCodeDbStatus();
+    const s = claudeCodeDbStatus(this.storeOpts);
     if (!s.ok || !s.path || s.size_bytes == null) return null;
     return {
       path: s.path,
@@ -857,7 +1031,7 @@ export class ClaudeCodeSessionStore implements AgentSessionStore {
     );
   }
 
-  async searchSessions(input: { query: string; limit?: number; depth?: 'text' | 'deep'; directory_glob?: string; per_session_chunks?: number }): Promise<Chunk[]> {
+  async searchSessions(input: { query: string; limit?: number; depth?: 'text' | 'deep'; directory_glob?: string; per_session_chunks?: number; scanBudget?: SessionSearchBudget }): Promise<Chunk[]> {
     const results = await searchClaudeCodeSessions(
       {
         query: input.query,
@@ -865,6 +1039,7 @@ export class ClaudeCodeSessionStore implements AgentSessionStore {
         depth: input.depth,
         directory_glob: input.directory_glob,
         per_session_chunks: input.per_session_chunks,
+        scanBudget: input.scanBudget,
       },
       this.optsFor(input)
     );

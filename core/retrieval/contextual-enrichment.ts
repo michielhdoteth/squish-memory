@@ -16,6 +16,7 @@
  */
 
 import { logger } from '../logger.js';
+import { getRetrievalProfile, resolveProfileFlag } from './profiles.js';
 
 export interface ContextualEnrichmentConfig {
   enabled: boolean;
@@ -34,8 +35,9 @@ export interface EnrichedContent {
  * Reads directly from process.env for testability
  */
 export function getContextualConfig(): ContextualEnrichmentConfig {
+  const profile = getRetrievalProfile();
   return {
-    enabled: process.env.SQUISH_CONTEXTUAL_RETRIEVAL === 'true',
+    enabled: resolveProfileFlag(process.env.SQUISH_CONTEXTUAL_RETRIEVAL, profile.contextualEnrichment).value,
     template: process.env.SQUISH_CONTEXTUAL_PREFIX_TEMPLATE || '[TYPE] from [PROJECT] about [TOPICS]: ',
     maxPrefixLength: 100,
   };
@@ -127,6 +129,38 @@ export function enrichContent(
 }
 
 /**
+ * Add caller-known context to a query embedding without changing the lexical
+ * query used by FTS, explanations, or temporal parsing. Context is deliberately
+ * limited to explicit scope metadata; the query itself is never summarized or
+ * rewritten here.
+ */
+export function enrichQuery(
+  query: string,
+  options: { type?: string; project?: string; tags?: string[] } = {},
+): EnrichedContent {
+  const cfg = getContextualConfig();
+  if (!cfg.enabled || !query.trim()) return { original: query, enriched: query, prefix: '' };
+
+  const labels: string[] = [];
+  if (options.project?.trim()) labels.push(`project ${options.project.trim()}`);
+  if (options.type?.trim()) labels.push(`memory type ${options.type.trim()}`);
+  if (options.tags?.length) labels.push(`tags ${options.tags.slice(0, 5).join(', ')}`);
+  if (labels.length === 0) return { original: query, enriched: query, prefix: '' };
+
+  const prefix = `Context: ${labels.join('; ')}. Query: `
+    .slice(0, cfg.maxPrefixLength);
+  return { original: query, enriched: `${prefix}${query}`, prefix };
+}
+
+/** Apply identical caller-known scope to every query variant before embedding. */
+export function enrichQueryBatch(
+  queries: string[],
+  options: { type?: string; project?: string; tags?: string[] } = {},
+): EnrichedContent[] {
+  return queries.map((query) => enrichQuery(query, options));
+}
+
+/**
  * Batch enrich multiple memories
  */
 export function enrichBatch(
@@ -169,6 +203,8 @@ export default {
   extractTopics,
   generateContextPrefix,
   enrichContent,
+  enrichQuery,
+  enrichQueryBatch,
   enrichBatch,
   checkHealth,
 };

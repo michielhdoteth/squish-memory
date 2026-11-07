@@ -4,11 +4,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const SERVER_VERSION = "2.1.0";
+const SERVER_VERSION = "2.2.0";
 const SERVER_NAME = "squish-memory";
 // Runtime default (SQUISH_ENABLE_MAINTENANCE_TOOLS unset): 18 core tools
 // + stale_report. squish_maintenance is env-gated (returns 0 when unset).
-const EXPECTED_TOOL_COUNT = 19;
+const EXPECTED_TOOL_COUNT = 18; // Automatic skill extraction is retired; see ADR-014.
 
 const EXPECTED_TOOLS = [
   "squish_remember",
@@ -348,6 +348,68 @@ describe("MCP STDIO e2e", () => {
         ? recParsed._raw.length > 0
         : true; // JSON response is valid
       expect(hasContent).toBeTruthy();
+
+      expect(remParsed.id).toBeTruthy();
+      server.send({
+        jsonrpc: "2.0",
+        id: 22,
+        method: "tools/call",
+        params: {
+          name: "squish_forget",
+          arguments: { memoryId: remParsed.id },
+        },
+      });
+
+      const forgetResp = await server.readLine((r: any) => r.id === 22, 15_000);
+      expect(forgetResp.result).toBeDefined();
+      const forgetParsed = tryParseJson(forgetResp.result.content[0].text);
+      expect(forgetParsed.ok).toBe(true);
+      expect(forgetParsed.deleted).toBe(1);
+    } finally {
+      await server.close();
+    }
+  }, 45_000);
+
+  it("MCP instructions and recall expose global memories inside a project", async () => {
+    const previousDataDir = process.env.SQUISH_DATA_DIR;
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    process.env.SQUISH_DATA_DIR = tmpDir;
+    process.env.DATABASE_URL = '';
+    const { ensureProject } = await import('../../core/projects.js');
+    const projectPath = 'cross-agent-mcp-project';
+    const globalContent = `cross-agent global context ${Date.now()}`;
+    try {
+      await ensureProject(projectPath);
+    } finally {
+      if (previousDataDir === undefined) delete process.env.SQUISH_DATA_DIR;
+      else process.env.SQUISH_DATA_DIR = previousDataDir;
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+    const server = await spawnServer(tmpDir);
+    try {
+      server.send({
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } },
+      });
+      const initialized = await server.readLine((r: any) => r.id === 1, 20_000);
+      expect(initialized.result.serverInfo.version).toBe(SERVER_VERSION);
+      expect(initialized.result.instructions).toContain('shared persistent memory database');
+      expect(initialized.result.instructions).toContain('squish_remember({global:true})');
+      server.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+      server.send({
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'squish_remember', arguments: { content: globalContent, type: 'fact', global: true } },
+      });
+      const remembered = await server.readLine((r: any) => r.id === 3, 20_000);
+      expect(tryParseJson(remembered.result.content[0].text).ok).toBe(true);
+      server.send({
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'squish_recall', arguments: { query: globalContent, project: projectPath } },
+      });
+      const response = await server.readLine((r: any) => r.id === 2, 20_000);
+      const payload = tryParseJson(response.result.content[0].text);
+      expect(payload.memories?.some((result: any) => result.content === globalContent)).toBe(true);
     } finally {
       await server.close();
     }

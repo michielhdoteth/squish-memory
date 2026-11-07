@@ -1,81 +1,60 @@
 # Golden-Set Retrieval Eval
 
-Measurement instrument for the retrieval overhaul. Everything else in the plan
-is judged by these numbers, so treat changes here as carefully as product code.
+Deterministic retrieval fixture for regression and tuning. It is a small synthetic corpus, not a real-world memory benchmark or answer-quality evaluation.
 
 ## Results Summary
 
-**Baseline (pinned env, TF-IDF fallback embeddings):**
+**Recorded baseline (pinned env, TF-IDF fallback embeddings; verified 2026-10-13, matching the committed `baseline-report.json`):**
 
 | Metric | Score | Threshold |
 |--------|-------|-----------|
-| **Recall@5** | **93.5%** | 65% |
-| **MRR** | **90.4%** | 50% |
-| **HitRate@1** | **87.0%** | 40% |
-| **ECE (calibration)** | **0.055** | 0.15 |
+| **Recall@5** | **0.9457** | 0.85 |
+| **MRR** | **0.9040** | 0.82 |
+| **HitRate@1** | **0.8696** | 0.78 |
+| **ECE (calibration)** | **0.0429** | 0.15 |
 
-These are local-only results. No cloud API, no external model, no GPU.
-Just TF-IDF embeddings on a 60-memory corpus with 46 graded queries.
+These are local-only retrieval results from a fixed synthetic fixture: 60 memories and 46 graded queries. No cloud API, external model, or GPU was used. They do not measure generated answer quality or generalize to arbitrary user corpora.
 
 ### Per-Category Breakdown
 
-| Category | Recall@5 | MRR | Hit@1 | What it tests |
-|----------|----------|-----|-------|---------------|
-| **Temporal** | 100% | 100% | 100% | "What did we use before X?" -- tracks when facts were true |
-| **Multi-hop** | 100% | 100% | 100% | "Who leads Project Aurora?" -- connects related memories |
-| **Entity** | 100% | 94.4% | 88.9% | "What is PaperTrail?" -- finds named things |
-| **Procedural** | 87.5% | 88.8% | 87.5% | "How do events move?" -- step-by-step processes |
-| **Paraphrase** | 88.9% | 88.9% | 88.9% | "Which package manager won?" -- different words, same meaning |
-| **Negation** | 87.5% | 75.0% | 62.5% | "Do we still use X?" -- conflict resolution |
+| Category | n | Recall@5 | MRR | Hit@1 | What it tests |
+|----------|---|----------|-----|-------|---------------|
+| **Temporal** | 8 | 1.000 | 1.000 | 1.000 | "What did we use before X?" -- tracks when facts were true |
+| **Multi-hop** | 4 | 1.000 | 1.000 | 1.000 | "Who leads Project Aurora?" -- connects related memories |
+| **Entity** | 9 | 1.000 | 0.944 | 0.889 | "What is PaperTrail?" -- finds named things |
+| **Negation** | 8 | 0.938 | 0.760 | 0.625 | "Do we still use X?" -- conflict resolution |
+| **Paraphrase** | 9 | 0.889 | 0.889 | 0.889 | "Which package manager won?" -- different words, same meaning |
+| **Procedural** | 8 | 0.875 | 0.875 | 0.875 | "How do events move?" -- step-by-step processes |
 
-### Competitive Context
+### Product-Level Positioning
 
-| Tool | Approach | Recall | Cost | Latency |
-|------|----------|--------|------|---------|
-| **Squish (local)** | TF-IDF + SQLite | 93.5% recall@5 | $0/mo | 6ms |
-| **Squish (cloud)** | Cloud embeddings + Postgres | 93.5%+ | $9/mo | 12ms |
-| **Mem0** | Cloud vector DB (Qdrant) | ~85-90%* | $249/mo | 50-200ms |
-| **Letta** | Postgres + LLM extraction | ~80-85%* | Self-hosted | 100-500ms |
-| **Zep** | Postgres + embeddings | ~85-90%* | Self-hosted | 50-200ms |
+Competitive score comparisons are deliberately NOT kept here: vendor-published recall
+numbers are measured on different corpora, judges, and protocols and are not comparable
+to these fixture scores. Capability descriptions live in `docs/BENCHMARK.md` and the repo README; this directory documents the harness. LoCoMo figures are documented separately with their limitations; they are model-dependent and not CI-gated.
 
-*Approximate -- competitors do not publish standardized golden-set benchmarks.
-Squish is the only tool with a reproducible, open evaluation harness.
+### How to Interpret the Fixture
 
-### LoCoMo Benchmark
-
-Tested against the [LoCoMo](https://github.com/snap-research/locomo) dataset (10 personas, 1542 questions, 1033 documents):
-
-| Metric | Score |
-|--------|-------|
-| **Correct** | 29/100 |
-| **Partial** | 71/100 |
-| **Incorrect** | **0/100** |
-| **Score** | **65%** |
-
-Zero incorrect answers. The system prefers partial matches over hallucinating wrong ones. This is a key marketing stat: **Squish never gives you a wrong answer it is not confident about.**
-
-### What the Numbers Mean for Clients
-
-- **93.5% recall** means your agent finds the right memory 9 out of 10 times
-- **87% hit@1** means the very first result is correct 87% of the time -- no scrolling
-- **0.055 calibration** means when Squish says it is confident, it is actually right
-- **0% incorrect on LoCoMo** means it will not hallucinate wrong answers
-- **6ms latency** means memory retrieval adds no perceptible delay to your agent
+- **Recall@5 0.9457** is the fraction of relevant fixture items retrieved in the top five for this query set; it is not a general workload estimate.
+- **HitRate@1 0.8696** is the top-result hit rate on the same set, not an answer-accuracy score.
+- **ECE 0.0429** summarizes confidence-bin error on 46 fixture questions. It does not mean 90% confidence is correct on 90% of future queries.
 
 ## Layout
 
 | File | Purpose |
 |------|---------|
 | `golden-set.json` | Fixture corpus (60 memories, fictional "Helios Research Lab" content) + 46 graded queries. Fixed IDs (`golden_001`...), fully deterministic. |
-| `run-eval.ts` | Harness: seeds an isolated temp SQLite DB via the real write path, runs every query through `SquishClient.search` exactly as production does, computes metrics, writes the report, exits nonzero on threshold breach. |
+| `run-eval.ts` | Deprecated re-export shim. The harness moved to `benchmark/runners/retrieval.ts`; import pure helpers from there. Running this file executes nothing. |
+| `../../benchmark/runners/retrieval.ts` | Harness: seeds an isolated temp SQLite DB via the real write path, runs every query through `SquishClient.search` exactly as production does, computes metrics, writes the report, exits nonzero on threshold breach. |
 | `baseline-report.json` | Committed canonical baseline captured under the **pinned eval env** (see below). This is the reference point for retrieval changes. |
 | `reports/` | Committed ablation/breach artifacts that document flag decisions (e.g. `temporal-validity-on-breach.json`). |
 
 ## Run
 
 ```bash
-bun run eval                    # writes tests/golden/baseline-report.json by default
-bun tests/golden/run-eval.ts --out /tmp/report.json --top-k 10 --quiet
+bun run eval                     # harness = benchmark/runners/retrieval.ts
+                                 # writes benchmark/runners/baseline-report.json
+bun benchmark/runners/retrieval.ts --out tests/golden/baseline-report.json --quiet
+                                 # regenerate the committed baseline in place
 ```
 
 Runtime is a few seconds. No network access is required or performed: the
@@ -99,8 +78,8 @@ environment (mirroring the `--real-model` pattern):
 Two opt-outs exist:
 
 ```bash
-bun tests/golden/run-eval.ts --precision-stack   # ablation: PRODUCTION defaults (reranker ON etc.)
-bun tests/golden/run-eval.ts --real-model        # additionally enables the bundled embedding model
+bun benchmark/runners/retrieval.ts --precision-stack   # ablation: PRODUCTION defaults (reranker ON etc.)
+bun benchmark/runners/retrieval.ts --real-model        # additionally enables the bundled embedding model
 ```
 
 Never use `--precision-stack` output as a baseline; it exists to quantify what
@@ -161,18 +140,25 @@ instead of silently returning full retention on unparseable dates.
 Each run reports an ablation note in the report's `calibration.freshnessAblation`
 and prints freshness-on vs freshness-off ECE/Brier. The off-state reruns the
 identical deterministic retrieval with `SQUISH_EVIDENCE_FRESHNESS=off`, which
-nulls the freshness evidence signal. First honest numbers after the fix:
-freshness-on ECE 0.0413 / Brier 0.1139 vs freshness-off ECE 0.0304 / Brier
-0.1148 - i.e. the previously reported 0.0304 was measured while the signal was
-inert. The ECE gate applies to the freshness-on (canonical) numbers.
+nulls the freshness evidence signal. Current committed baseline
+(`baseline-report.json`, regenerated 2026-10-13): freshness-on ECE 0.0429 /
+Brier 0.1276 vs freshness-off ECE 0.0326 / Brier 0.1285 - i.e. the live
+freshness signal currently *costs* a little calibration accuracy on this
+golden set while removing a silent failure mode (the 2026-08 Batch 6b audit
+found the signal had been inert at 1.0 due to mixed timestamp formats; the
+"first honest numbers" after that fix, freshness-on ECE 0.0413 / off 0.0304,
+were a snapshot of the pre-WS1a scoring path). The ECE gate applies to the
+freshness-on (canonical) numbers.
 
 ## Threshold gating
 
 The harness exits **0** only when overall metrics meet the thresholds; exit
-**1** otherwise. Defaults live in `DEFAULT_THRESHOLDS` in `run-eval.ts` and can
-be overridden per invocation:
+**1** otherwise. Defaults live in `DEFAULT_THRESHOLDS` in
+`benchmark/runners/retrieval.ts` (Recall@5 >= 0.85, MRR >= 0.82, Hit@1 >= 0.78,
+ECE <= 0.15) and can be overridden per invocation:
 
 ```bash
+# Example only: relaxed floor for a targeted experiment (NOT the gate)
 GOLDEN_MIN_RECALL5=0.65 GOLDEN_MIN_MRR=0.5 GOLDEN_MIN_HIT1=0.4 bun run eval
 ```
 
@@ -196,7 +182,7 @@ How to use this when flipping retrieval flags:
 - Query routing (regex-based) and graph extraction are deterministic given the
   corpus.
 - The precision stack is pinned (reranker off, expansion on, normalized graph
-  boost, temporal validity off, v2 serving) so warm HF caches or ambient env
+  boost, v2 temporal validity on, v2 serving) so warm HF caches or ambient env
   cannot change results between hosts; see "Pinned environment" above.
 
 ## Changing the dataset

@@ -18,6 +18,7 @@ export interface RememberInput {
   project?: string;
   user?: string;            // Optional user identifier (name or email)
   teamId?: string;          // Optional team ID for team-scoped memory
+  expiresAt?: Date | number | null; // Optional expiry; numeric values accept epoch seconds or milliseconds
   metadata?: Record<string, unknown>;
   source?: string;
   // Rich context fields (Agent 4 feedback)
@@ -30,6 +31,7 @@ export interface RememberInput {
   namespaceId?: string;   // Assign to namespace
   // Session metadata for temporal queries (Task 1)
   sessionId?: string;        // Session identifier for linking memories
+  captureKey?: string;       // Idempotency key for replayed host/session capture events (SQLite/PostgreSQL)
   sessionStartTime?: string; // When this session started
   toolName?: string;     // Tool that generated this memory
   // Place routing (Method of Loci / MemPalace wings)
@@ -39,10 +41,18 @@ export interface RememberInput {
   sector?: string;
   // Batch 6b: bi-temporal validity start (defaults to write time).
   validFrom?: string | Date;
+  /** Source event time for delayed imports; persisted as the valid-time start. */
+  occurredAt?: string | Date;
+  /** IANA zone used to interpret calendar expressions at the source event time. */
+  timeZone?: string;
 }
 
 export interface SearchInput {
   query: string;
+  /** Use only the lexical index and its native rank; bypass vector and ranking-enhancement legs. */
+  retrievalMode?: 'hybrid' | 'lexical';
+  /** Cancels optional decision-model routing; retrieval keeps the rules route. */
+  signal?: AbortSignal;
   type?: MemoryType;
   tags?: string[];
   limit?: number;
@@ -54,6 +64,15 @@ export interface SearchInput {
   placeType?: string;     // Filter by place type (inbox, wip, archive, etc.)
   sessionId?: string;     // Filter by session
   sessionStartTime?: string; // Session start for temporal queries
+  /** Fixed clock for deterministic relative-time query parsing. */
+  referenceDate?: string | Date;
+  /** IANA zone used to resolve relative past phrases such as "last night". */
+  timeZone?: string;
+  /** Restrict results to the current valid-time state at referenceDate (or now). */
+  latestOnly?: boolean;
+  /** Half-open valid-time window [from, to); rows must overlap the window. */
+  validTimeFrom?: string | Date;
+  validTimeTo?: string | Date;
   /** Enable retrieval trace for debugging (Phase 8) */
   trace?: boolean;
   /**
@@ -82,12 +101,21 @@ export interface SearchResult extends MemoryRecord {
    * RRF contribution when fused. Never overwritten by boosts.
    */
   semanticScore?: number;
+  /** Diagnostic-only vector-leg score captured before any rank fusion. */
+  preFusionSemanticScore?: number | null;
   /** Sum of additive adjustments; itemized per component in scoreBreakdown. */
   boostScore?: number;
   /** clamp01(semanticScore + boostScore) - the ordering score under v2 serving. */
   finalScore?: number;
   /** Per-component additive adjustments applied on top of semanticScore. */
   scoreBreakdown?: import('../scoring/three-field.js').ScoreBreakdown;
+  /**
+   * WS1a-T1.3: stored importance carried from the retrieval legs so the
+   * configured scoringWeights.importance is genuinely consumed in the final
+   * ranking. Legacy memories use the 0-100 scale, knowledge/belief rows 0..1;
+   * three-field's normalizeImportance handles both. Absent = no boost.
+   */
+  importanceScore?: number;
   /**
    * Batch 6a: itemized evidence vector behind the calibrated recall
    * confidence. Absent signals are null - never fabricated zeros.

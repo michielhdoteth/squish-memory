@@ -20,6 +20,30 @@ describe('cron scheduler', () => {
     expect(true).toBe(true);
   });
 
+  test('strict trust withholds scheduler startup and direct job execution', async () => {
+    const previousPolicy = process.env.SQUISH_TRUST_POLICY;
+    process.env.SQUISH_TRUST_POLICY = 'strict';
+    try {
+      const { initializeScheduler, executeJob, registerJobHandler } = await import('../../../core/scheduler/cron-scheduler.ts');
+      let executions = 0;
+      const jobName = `strict_withheld_${Date.now()}`;
+      registerJobHandler(jobName, async () => {
+        executions++;
+        return { recordsProcessed: 1, summary: {} };
+      });
+      await initializeScheduler();
+      await executeJob({
+        id: 'strict-test-job', jobName, jobType: 'daily', cronExpression: '0 0 * * *', enabled: true,
+        lastRunAt: null, lastRunStatus: null, lastRunError: null, lastRunDuration: null, nextRunAt: null,
+        totalRuns: 0, successCount: 0, failureCount: 0, jobConfig: {}, createdAt: new Date(), updatedAt: new Date(),
+      });
+      expect(executions).toBe(0);
+    } finally {
+      if (previousPolicy === undefined) delete process.env.SQUISH_TRUST_POLICY;
+      else process.env.SQUISH_TRUST_POLICY = previousPolicy;
+    }
+  });
+
   test('stopAllJobs runs without error', async () => {
     const { stopAllJobs } = await import('../../../core/scheduler/cron-scheduler.ts');
     expect(() => stopAllJobs()).not.toThrow();

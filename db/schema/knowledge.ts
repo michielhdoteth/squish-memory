@@ -173,5 +173,9 @@ export const knowledgeEdgesSchema: TableSchema = {
     weight: { type: 'REAL DEFAULT 1.0' },
     metadata: { type: 'TEXT' },            // JSON object
     created_at: { type: 'INTEGER DEFAULT (strftime(\'%s\',\'now\')) NOT NULL' },
+    valid_from: { type: 'INTEGER' },
+    valid_to: { type: 'INTEGER' },
+    recorded_at: { type: 'INTEGER' },
+    recorded_to: { type: 'INTEGER' },
   },
 };

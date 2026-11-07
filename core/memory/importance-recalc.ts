@@ -10,8 +10,10 @@
 
 import { getDbClient } from '../lib/db-client.js';
 import { logger } from '../logger.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 import {
-  calculateImportance,
+  scoreWithV2Pipeline,
   detectSurprise,
   detectEmotion,
   calculateImportanceV2,
@@ -39,6 +41,10 @@ interface RecalcResult {
 export async function recalculateImportanceScores(
   projectId?: string
 ): Promise<RecalcResult> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface('importance_recalculation', 'memory', 'Unscoped importance recalculation is disabled under strict trust');
+  }
+
   const result: RecalcResult = { updated: 0, total: 0, errors: [] };
 
   try {
@@ -66,31 +72,22 @@ export async function recalculateImportanceScores(
 
     for (const mem of memories) {
       try {
-        // Step 1: Calculate base importance (same as write path)
-        const base = calculateImportance({
-          type: mem.type,
-          createdAt: mem.created_at ? new Date(mem.created_at * 1000).toISOString() : new Date().toISOString(),
-          accessCount: mem.access_count ?? 0,
-          usageCount: mem.usage_count ?? 0,
-          isPinned: !!mem.is_pinned,
-          isProtected: !!mem.is_protected,
-          isImmutable: !!mem.is_immutable,
+        // Step 1-4 in one shared composition (write path uses the same function);
+        // batch fixes surprise at 0.5 because pair comparison is out of scope.
+        const scored = scoreWithV2Pipeline({
+          baseInput: {
+            type: mem.type,
+            createdAt: mem.created_at ? new Date(mem.created_at * 1000).toISOString() : new Date().toISOString(),
+            accessCount: mem.access_count ?? 0,
+            usageCount: mem.usage_count ?? 0,
+            isPinned: !!mem.is_pinned,
+            isProtected: !!mem.is_protected,
+            isImmutable: !!mem.is_immutable,
+          },
+          content: mem.content ?? '',
+          surprise: 0.5,
         });
-
-        // Step 2: Surprise (neutral 0.5 for batch — can't compare all pairs)
-        const surprise = 0.5;
-
-        // Step 3: Emotion (keyword detection from content)
-        const emotion = detectEmotion(mem.content ?? '');
-
-        // Step 4: V2 formula (same as computeInitialImportance)
-        const v2Score = denormalizeImportanceScore(
-          calculateImportanceV2({
-            baseImportance: normalizeImportanceScore(base.score),
-            surprise,
-            emotion,
-          })
-        );
+        const v2Score = scored.score;
 
         // Only update if score changed by more than 1 point
         if (Math.abs(v2Score - (mem.importance_score ?? 50)) > 1) {

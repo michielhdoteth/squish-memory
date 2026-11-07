@@ -45,3 +45,28 @@ export {
   getAllBeliefs,
   getRelevantBeliefs,
 } from './knowledge-beliefs.js';
+
+// ─── Graph Views ─────────────────────────────────────────────────────────────
+export {
+  createGraphView,
+  getSemanticView,
+  getTemporalView,
+  getCausalView,
+  getEntityView,
+} from './graph-views.js';
+export { queryGraphView } from './graph-view-engine.js';
+
+// ─── Audit Trail & Provenance ────────────────────────────────────────────────
+export {
+  ensureAuditTable,
+  logAuditEntry,
+  getAuditTrail,
+  getProvenanceChain,
+} from './audit.js';
+export type {
+  AuditAction,
+  AuditEntry,
+  LogAuditInput,
+  AuditTrailOptions,
+  ProvenanceNode,
+} from './audit.js';

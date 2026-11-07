@@ -13,19 +13,8 @@ import { serializeMetadata, deserializeMetadata } from '../memory/serialization.
 import { logger } from '../logger.js';
 import { meetsSemanticThreshold } from '../scoring/three-field.js';
 import { generateExtractiveSummary, extractMessageContent } from '../utils/content-extraction.js';
-import {
-  extractConversationStrats,
-} from '../knowledge/extractor.js';
-import {
-  listKnowledgeByKind,
-  updateKnowledge,
-  createKnowledge,
-  searchKnowledge,
-  getKnowledgeById,
-} from '../knowledge/store.js';
-import { boostConfidence, runDecayCycle } from '../knowledge/decay.js';
+import { runDecayCycle } from '../knowledge/decay.js';
 import { runDeduplicationCycle } from '../knowledge/deduplicator.js';
-import type { CreateKnowledgeInput } from '../knowledge/types.js';
 import type { MemoryType } from '../lib/types.js';
 
 export interface SelfIterationConfig {
@@ -67,6 +56,7 @@ interface ExtractedFact {
   content: string;
   type: ExtractableMemoryType;
   confidence: number;
+  evidence: Array<{ messageId: string; observedAt: string }>;
 }
 
 type ExtractableMemoryType = Extract<MemoryType, 'fact' | 'decision' | 'preference'>;
@@ -185,8 +175,14 @@ export function extractDurableSelfIterationFacts(messages: MessageRow[]): Extrac
         const content = `${prefix}: ${normalizedStatement}`;
         const key = `${type}:${normalizeCaptureKey(content)}`;
         const existing = captures.get(key);
-        if (!existing || confidence > existing.confidence) {
-          captures.set(key, { content, type, confidence });
+        const evidence = { messageId: msg.id, observedAt: msg.createdAt.toISOString() };
+        if (existing) {
+          if (!existing.evidence.some((item) => item.messageId === evidence.messageId)) {
+            existing.evidence.push(evidence);
+          }
+          if (confidence > existing.confidence) existing.confidence = confidence;
+        } else {
+          captures.set(key, { content, type, confidence, evidence: [evidence] });
         }
       }
     }
@@ -335,6 +331,8 @@ async function processConversation(
             confidence: fact.confidence,
             conversationId: conversation.id,
             sessionId: conversation.sessionId,
+            sourceMessageIds: fact.evidence.map((item) => item.messageId),
+            sourceObservedAt: fact.evidence.map((item) => item.observedAt),
           },
           source: 'self-iteration',
         });
@@ -344,52 +342,6 @@ async function processConversation(
         logger.error(`[SelfIteration] Failed to store memory:`, error);
       }
     }
-  }
-
-  // Auto-extract strategies from conversation into unified knowledge table
-  try {
-    const conversationContent = messagesToProcess.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
-    const project = conversation.projectId ? await getProjectById(conversation.projectId) : null;
-    const extractedStrategies = await extractConversationStrats(conversationContent, {
-      projectId: project?.id,
-      sourceType: 'conversation',
-    });
-    for (const extracted of extractedStrategies) {
-      try {
-        // Check for similar existing knowledge before creating
-        const similarResults = await searchKnowledge({
-          contentQuery: extracted.title + ' ' + extracted.description,
-          projectId: project?.id,
-          kinds: ['strategy'],
-          limit: 5,
-        });
-        if (similarResults.length > 0) {
-          // Boost confidence of existing strategy instead of creating duplicate
-          await boostConfidence(similarResults[0].id, 0.1);
-          logger.debug(`[SelfIteration] Boosted existing strategy ${similarResults[0].id}`);
-          continue;
-        }
-
-        const knowledgeInput: CreateKnowledgeInput = {
-          projectId: project?.id,
-          knowledgeKind: 'strategy',
-          knowledgeType: extracted.strategyType,
-          content: extracted.description,
-          title: extracted.title,
-          description: extracted.description,
-          steps: extracted.steps,
-          successCriteria: extracted.successCriteria,
-          failureIndicators: extracted.failureIndicators,
-          confidence: extracted.confidence / 100,
-          tags: ['auto-extracted'],
-        };
-        await createKnowledge(knowledgeInput);
-      } catch (strategyCreateError: any) {
-        logger.debug('[SelfIteration] Failed to create strategy:', strategyCreateError);
-      }
-    }
-  } catch (strategyError: any) {
-    logger.warn('[SelfIteration] Strategy extraction failed:', strategyError);
   }
 
   // Generate summary

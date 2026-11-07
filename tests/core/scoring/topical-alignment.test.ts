@@ -126,7 +126,7 @@ describe('family bucket for kinship relations (B12-4 M1)', () => {
 describe('mentorship bucket distinct from employer (B12-4 M1)', () => {
   it('parses guide/overseer vocabulary into mentorship', () => {
     expect(TOPIC_ATTRIBUTE_BUCKETS).toContain('mentorship');
-    expect(parseQueryTopic('Who mentors Fatima?')).toEqual({ entity: 'fatima', attribute: 'mentorship' });
+    expect(parseQueryTopic('Who mentors Fatima?')).toEqual({ entity: 'fatima', attribute: 'mentorship', entityRole: 'object' });
     expect(parseQueryTopic('Who manages Kenji?').attribute).toBe('mentorship');
     expect(parseQueryTopic('Who coaches Amara?').attribute).toBe('mentorship');
     // Memory-side vocabulary resolves through the same lexicon.
@@ -218,6 +218,7 @@ describe('family G: last-resort no-auxiliary what/which questions (B12-4)', () =
     expect(parseQueryTopic('Which airline flies Qing to ensemble tours?')).toEqual({
       entity: 'qing',
       attribute: 'airline flies',
+      entityRole: 'object',
     });
     expect(parseQueryTopic('Which marina takes Kwames fishing boat?').entity).toBe('kwames');
   });
@@ -243,8 +244,8 @@ describe('family G: last-resort no-auxiliary what/which questions (B12-4)', () =
 
 describe('whoVerb derives its attribute from the leading verb (B12-4)', () => {
   it('lexicon verbs become buckets; unknown verbs stay person queries', () => {
-    expect(parseQueryTopic('Who mentors Fatima?')).toEqual({ entity: 'fatima', attribute: 'mentorship' });
-    expect(parseQueryTopic('Who leads Project Aurora?')).toEqual({ entity: 'project aurora', attribute: 'person' });
+    expect(parseQueryTopic('Who mentors Fatima?')).toEqual({ entity: 'fatima', attribute: 'mentorship', entityRole: 'object' });
+    expect(parseQueryTopic('Who leads Project Aurora?')).toEqual({ entity: 'project aurora', attribute: 'person', entityRole: 'object' });
     expect(parseQueryTopic('Who maintains the machines our training runs depend on?')).toEqual({
       entity: null,
       attribute: 'person',
@@ -252,7 +253,7 @@ describe('whoVerb derives its attribute from the leading verb (B12-4)', () => {
   });
 
   it('lives reads as location in who-questions', () => {
-    expect(parseQueryTopic('Who lives next door to Greta?')).toEqual({ entity: 'greta', attribute: 'location' });
+    expect(parseQueryTopic('Who lives next door to Greta?')).toEqual({ entity: 'greta', attribute: 'location', entityRole: 'object' });
   });
 });
 
@@ -386,7 +387,7 @@ describe('parseQueryTopic', () => {
   });
 
   it('parses who-questions with person as the queried attribute', () => {
-    expect(parseQueryTopic('Who leads Project Aurora?')).toEqual({ entity: 'project aurora', attribute: 'person' });
+    expect(parseQueryTopic('Who leads Project Aurora?')).toEqual({ entity: 'project aurora', attribute: 'person', entityRole: 'object' });
     expect(parseQueryTopic('Who is Elena Vasquez?')).toEqual({ entity: 'elena vasquez', attribute: 'person' });
   });
 
@@ -840,7 +841,6 @@ describe('topical alignment end-to-end (unanswerable abstention)', () => {
     const db = await getDb();
     const sqlite = (db as any).$client;
     if (sqlite && typeof sqlite.exec === 'function') {
-      sqlite.exec('DELETE FROM memory_associations;');
       sqlite.exec('DELETE FROM memories;');
     }
   });
@@ -959,5 +959,276 @@ describe('topical alignment end-to-end (unanswerable abstention)', () => {
     }
     const bestConfidence = Math.max(0, ...results.map(r => r.recallConfidence ?? 0));
     expect(verdict).toBe('no_reliable_memory');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WS2b: generalizable retrieval-quality fixes (TDD - written before the fix)
+// ---------------------------------------------------------------------------
+
+describe('WS2b family-A starvation fix: "What does <Entity> do ..." parses via fall-through', () => {
+  // The lazy np of family A can consume the FIRST auxiliary in "What does X
+  // do ...?" and then hard-return a null when the leftover tail has no
+  // capitalized run - starving family A2, which exists exactly for the bare
+  // form. The fix makes family A fall through when no entity parses, so ANY
+  // "What does <Name> ..." shape (a huge question family) reaches attribution
+  // guards. Tested on multiple inputs, none of them an eval query verbatim.
+  it('parses multiple unseen "What does X do/verb ..." shapes', () => {
+    expect(parseQueryTopic('What does Mireia do on weekends?').entity).toBe('mireia');
+    expect(parseQueryTopic('What does Farid do for a living?').entity).toBe('farid');
+    expect(parseQueryTopic('What does Hana do after work?').entity).toBe('hana');
+    expect(parseQueryTopic('What does Tomas do at the institute?').entity).toBe('tomas');
+  });
+
+  it('keeps honest nulls when fall-through finds no capitalized entity either', () => {
+    // Lowercase subjects and pronoun subjects must NOT acquire fabricated
+    // entities from the fall-through.
+    expect(parseQueryTopic('What does the atlas project do?')).toEqual({ entity: null, attribute: null });
+    expect(parseQueryTopic('What does it do on weekends?')).toEqual({ entity: null, attribute: null });
+  });
+
+  it('derives the bucket from the verb tail after fall-through', () => {
+    const q = parseQueryTopic('What does Dario do for work?');
+    expect(q.entity).toBe('dario');
+    expect(q.attribute).toBe('employer');
+  });
+
+  it('a first-person memory is JUDGED cannot-answer for a fall-through-parsed query', () => {
+    // The whole point of the repair: without the entity there, the B12-2b
+    // first-person rule stays neutral and the falsehood sails through.
+    const q = parseQueryTopic('What does Mireia do on weekends?');
+    expect(topicalAlignment(q, parseMemoryTopic('My weekend golf club membership is my main hobby.'))).toBe(0);
+  });
+});
+
+describe('WS2b entity-mismatch precedence: a different parsed subject cannot answer', () => {
+  // Documented contract (module header truth table): "alignment 0.0 -> entity
+  // mismatch OR same entity with a different attribute bucket". The old code
+  // gated the entity comparison behind BOTH attributes parsing, so a lexicon
+  // miss on either side re-opened the door to wrong-subject hijacks. When
+  // both sides parse an entity and they differ, that is positive evidence -
+  // attributes add nothing. Generalized across entity/attribute combinations.
+  it('returns 0 for parsed-different entities even when memory attribute is null', () => {
+    expect(topicalAlignment(
+      { entity: 'pablo', attribute: 'pace' },
+      { entity: 'dario', attribute: null }
+    )).toBe(0);
+    expect(topicalAlignment(
+      { entity: 'renata', attribute: 'yoga style' },
+      { entity: 'olga', attribute: null }
+    )).toBe(0);
+    expect(topicalAlignment(
+      { entity: 'thandiwe', attribute: 'location' },
+      { entity: 'cleo', attribute: null }
+    )).toBe(0);
+  });
+
+  it('identity-shaped queries (no asked attribute) stay neutral', () => {
+    // "What is X?" has no attribute to mismatch against; a memory about
+    // another subject may still define X through a relation. The verdict
+    // needs an ASK, not just an entity.
+    expect(topicalAlignment(
+      { entity: 'thandiwe', attribute: null },
+      { entity: 'cleo', attribute: 'location' }
+    )).toBeNull();
+  });
+
+  it('a content mention of the query entity softens the verdict to partial (0.7)', () => {
+    // Related coverage, not a stated answer: "Project Borealis is built
+    // with Nordwind Energy" MENTIONS the queried entity but is ABOUT Borealis.
+    const q = { entity: 'nordwind energy', attribute: 'do for us' };
+    const m = { entity: 'project borealis', attribute: null };
+    expect(topicalAlignment(q, m)).toBe(0); // topic-only: wrong subject
+    expect(topicalAlignment(q, m, 'Project Borealis is the forecasting benchmark built with Nordwind Energy.')).toBe(0.7);
+    // No mention -> hard mismatch stands even with content passed.
+    expect(topicalAlignment(q, m, 'Project Borealis was built with wind-farm telemetry.')).toBe(0);
+    // Word-boundary semantics: 'qdrant' must not "mention" inside 'qdrants'...
+    expect(topicalAlignment(
+      { entity: 'aura', attribute: 'stack' },
+      { entity: 'other', attribute: null },
+      'Aura Systems ships weekly.'
+    )).toBe(0.7);
+    expect(topicalAlignment(
+      { entity: 'aurora', attribute: 'stack' },
+      { entity: 'other', attribute: null },
+      'The aurelian dynasty'
+    )).toBe(0);
+  });
+
+  it('keeps SAME-entity missing-attribute pairs null (neutral-by-contract untouched)', () => {
+    expect(topicalAlignment(
+      { entity: 'kenji', attribute: 'phone' },
+      { entity: 'kenji', attribute: null }
+    )).toBeNull();
+    expect(topicalAlignment(
+      { entity: 'kenji', attribute: null },
+      { entity: 'kenji', attribute: 'phone' }
+    )).toBeNull();
+  });
+
+  it('keeps missing-entity pairs null (cannot parse = never penalize)', () => {
+    expect(topicalAlignment(
+      { entity: null, attribute: 'phone' },
+      { entity: 'cleo', attribute: null }
+    )).toBeNull();
+    expect(topicalAlignment(
+      { entity: 'thandiwe', attribute: 'location' },
+      { entity: null, attribute: null }
+    )).toBeNull();
+  });
+
+  it('keeps entity comparison case-insensitive across the precedence path', () => {
+    expect(topicalAlignment(
+      { entity: 'thandiwe', attribute: 'location' },
+      { entity: 'Thandiwe Kanku', attribute: null }
+    )).toBeNull(); // same person (containment), attribute missing -> neutral
+    expect(topicalAlignment(
+      { entity: 'Thandiwe', attribute: 'location' },
+      { entity: 'cleo', attribute: null }
+    )).toBe(0);
+  });
+
+  it('keeps object-role queries (Who <verb> Entity? / Which thing relates Entity?) on the old attribute-gated semantics', () => {
+    // "Who leads Project Aurora?" - the ANSWER is a different entity than the
+    // parsed object, so subject-mismatch is NOT evidence of cannot-answer.
+    const q = parseQueryTopic('Who leads Project Aurora?');
+    expect(q.entityRole).toBe('object');
+    expect(topicalAlignment(q, { entity: 'priya', attribute: null })).toBeNull();
+    // With both attributes parsed, the pre-existing behavior stands (0).
+    expect(topicalAlignment(q, { entity: 'priya', attribute: 'mentorship' })).toBe(0);
+    // Family G ("Which project depends on PaperTrail...") has the same
+    // object-slot structure: the parsed entity is the relation's object.
+    const g = parseQueryTopic('Which project depends on PaperTrail and why?');
+    expect(g.entity).toBe('papertrail');
+    expect(g.entityRole).toBe('object');
+    expect(topicalAlignment(g, { entity: 'project aurora', attribute: null })).toBeNull();
+  });
+
+  it('keeps the first-person rule above entity parsing', () => {
+    const snack = parseMemoryTopic('My favorite snack is a peanut butter sandwich.');
+    expect(topicalAlignment({ entity: 'nobody matters', attribute: null }, snack)).toBe(0);
+  });
+});
+
+describe('WS2b attribute lexicon broadening (unseen synonyms, general classes)', () => {
+  // Autopsy Mechanism B: attribute vocabulary gaps let same-entity wrong
+  // facts sail through on neutral nulls. The delivered fix adds UNAMBIGUOUS
+  // synonym entries (app/device-software, profession/occupation, brand as a
+  // product attribute) and documents one DELIBERATE non-addition (run) where
+  // polysemy would fabricate mismatches against correct answers. None of the
+  // inputs below are eval-set sentences.
+  it('does NOT map the polysemous "run" verb to sport (deliberate lexicon boundary)', () => {
+    // Autopsy Mechanism B named 'run' as a gap, but in engineering corpora
+    // run is overwhelmingly "execute" ("Vessel runs Podman containers",
+    // "the vector store runs FAISS", "Harbor runs its CI"). Mapping it to
+    // sport would fabricate wrong mismatches against legitimate answers -
+    // the neutral null is the honest outcome. Regression guard: these
+    // memory-side parses must stay attribute-null (neutral), not sport.
+    expect(parseMemoryTopic('Vessel now runs Podman containers.').attribute).toBeNull();
+    expect(parseMemoryTopic('Harbor runs its CI on Jenkins.').attribute).toBeNull();
+    // Already-mapped exercise synonyms keep working (jog/swim/marathon):
+    expect(parseMemoryTopic('Kaya jogs at sunrise.').attribute).toBe('sport');
+    expect(parseMemoryTopic('Pablo is training for a marathon.').attribute).toBe('sport');
+  });
+
+  it('adds the software/app relation to the phone/device bucket (query AND memory side)', () => {
+    expect(parseQueryTopic('Which app does Greta track meals in?').attribute).toBe('phone');
+    expect(parseMemoryTopic('Greta uses a meal journal app.').attribute).toBe('phone');
+    // Same-entity on-topic stays full credit - adding the synonym must not
+    // fabricate a mismatch against a genuine answer.
+    const q = parseQueryTopic('Which app does Greta use?');
+    expect(topicalAlignment(q, parseMemoryTopic('Greta uses a meal journal app.'))).toBe(1);
+  });
+
+  it('resolves occupation synonyms to employer', () => {
+    expect(parseQueryTopic('What is Fatimas profession?').attribute).toBe('employer');
+    expect(parseQueryTopic('What is Svens occupation?').attribute).toBe('employer');
+  });
+
+  it('promotes brand to a first-class product attribute bucket', () => {
+    expect(TOPIC_ATTRIBUTE_BUCKETS).toContain('brand');
+    expect(CONTENT_DETECTABLE_BUCKETS.has('brand')).toBe(true);
+    expect(parseQueryTopic('What brand of soap does Greta buy?').attribute).toBe('brand');
+    expect(contentCarriesAttributeBucket('Greta prefers an Italian olive oil brand.', 'brand')).toBe(true);
+    expect(contentCarriesAttributeBucket('Greta buys olive oil at the market.', 'brand')).toBe(false);
+  });
+
+  it('fires findRelationUnstated for an entity-scoped brand query the corpus never answers', () => {
+    // The generalization of the near-miss mechanism: asked-for relation,
+    // same entity, and NO same-entity memory states the relation anywhere.
+    const q = parseQueryTopic('Which notebook brand does Leon write in?');
+    expect(q.attribute).toBe('brand');
+    const flags = findRelationUnstated(['Leon writes notes on paper during interviews.'], q);
+    expect(flags[0]).toBe(true);
+    // If a same-entity memory DOES state the relation, the flag must not fire.
+    const answered = findRelationUnstated(['Leon swears by the Moleskine brand of notebooks.'], q);
+    expect(answered[0]).toBe(false);
+  });
+
+  it('fires findRelationUnstated for the app relation when the entity never mentions one', () => {
+    const q = parseQueryTopic('Which meditation app does Olive subscribe to?');
+    expect(q.attribute).toBe('phone');
+    const flags = findRelationUnstated(['Olive meditates for ten minutes before standup meetings.'], q);
+    expect(flags[0]).toBe(true);
+  });
+});
+
+describe('WS2b computeRecallConfidence through the precedence path', () => {
+  function strongEvidenceW(topicAlign: number): RecallEvidence {
+    return makeEvidence({
+      semantic: 0.95,
+      lexical: { rank: 1, score: 0.95 },
+      freshness: 1,
+      memoryConfidence: 'certain',
+      topicalAlignment: topicAlign,
+    });
+  }
+
+  it('collapses subject-only mismatch trust below the abstain floor', () => {
+    const q = parseQueryTopic('Where does Thandiwe keep her passport?');
+    const m = parseMemoryTopic('Cleo keeps the spare keys in the hallway cabinet.');
+    expect(q.entity).toBe('thandiwe');
+    expect(m.entity).toBe('cleo');
+    expect(topicalAlignment(q, m)).toBe(0);
+    const { confidence } = computeRecallConfidence(strongEvidenceW(0), HEALTHY_CTX);
+    expect(confidence).toBeLessThan(DEFAULT_ABSTAIN_BELOW);
+  });
+});
+
+describe('WS2b relation parsing without a proper-noun subject', () => {
+  it('retains the asked relation for common-noun subjects and time-framed questions', () => {
+    expect(parseQueryTopic('What brand of coffee pods does the office stock?')).toEqual({ entity: null, attribute: 'brand' });
+    expect(parseQueryTopic('When does the fire extinguisher inspection expire?')).toEqual({ entity: null, attribute: 'expiration' });
+  });
+
+  it('parses an unlisted what-attribute-is template and possessive subject', () => {
+    expect(parseQueryTopic('What breed is Hanas sisters dog?')).toEqual({ entity: 'hana', attribute: 'breed' });
+  });
+
+  it('keeps the existing bare What-does family reachable after a false family-A match', () => {
+    expect(parseQueryTopic('What does Mireia do on weekends?').entity).toBe('mireia');
+  });
+});
+
+describe('WS2b unscoped relation absence', () => {
+  it('reduces trust when an unscoped query relation is absent from all returned evidence', () => {
+    const query = parseQueryTopic('What brand of coffee pods does the office stock?');
+    expect(findRelationUnstated([
+      'The office kitchen was restocked with new coffee pods on Tuesday.',
+      'Ines bikes to the office outside of winter.',
+    ], query)).toEqual([true, true]);
+  });
+
+  it('does not mark a relation absent when any returned evidence states it', () => {
+    const query = parseQueryTopic('What brand of coffee pods does the office stock?');
+    expect(findRelationUnstated([
+      'The office kitchen was restocked with new coffee pods on Tuesday.',
+      'The office stocks Northstar brand coffee pods.',
+    ], query)).toEqual([false, false]);
+  });
+
+  it('scopes parsed kinship subject queries to that entity', () => {
+    const query = parseQueryTopic('What breed is Hanas sisters dog?');
+    expect(findRelationUnstated(['Hana is allergic to peanuts.'], query)).toEqual([true]);
   });
 });

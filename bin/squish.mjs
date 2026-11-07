@@ -13,7 +13,7 @@
 
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { resolveRuntimeLaunch } from './runtime-launcher.mjs';
+import { buildRuntimeEnv, resolveRuntimeLaunch } from './runtime-launcher.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -30,7 +30,10 @@ const runtime = resolveRuntimeLaunch({
 
 const child = spawn(runtime.command, runtime.args, {
   stdio: 'inherit',
-  cwd: rootDir
+  // Same contract as bin/squish-mcp.mjs: keep the cwd the host launched us with
+  // and forward it as SQUISH_WORKING_DIRECTORY so `detectProjectRoot()` resolves
+  // the user's workspace, not the package install directory. See ADR-002.
+  env: buildRuntimeEnv(rootDir)
 });
 
 child.on('exit', (code) => {

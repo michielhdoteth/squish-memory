@@ -6,6 +6,7 @@
  */
 
 import { getDbClient } from '../lib/db-client.js';
+import { sqlEpochSeconds } from '../lib/timestamps.js';
 import { toKnowledge } from './helpers.js';
 import {
   ensureKnowledgeTables,
@@ -22,10 +23,12 @@ import type {
   StoredBelief,
   BeliefKnowledgeType,
 } from './types.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function knowledgeToStoredBelief(k: Knowledge): StoredBelief {
+function knowledgeToStoredBelief(k: Knowledge, sourceMemoryIds: string[] = []): StoredBelief {
   return {
     id: k.id,
     projectId: k.projectId ?? '',
@@ -37,7 +40,7 @@ function knowledgeToStoredBelief(k: Knowledge): StoredBelief {
     reason: k.reason ?? undefined,
     context: undefined,
     evidenceSummary: k.evidenceSummary ?? undefined,
-    sourceMemoryIds: [],
+    sourceMemoryIds,
     lastConfirmedAt: k.lastConfirmedAt ? new Date(k.lastConfirmedAt) : null,
     sourceCount: k.sourceCount,
     beliefDecayRate: k.importanceDecayRate,
@@ -58,6 +61,9 @@ export async function upsertBeliefsForMemory(input: {
   memoryId: string;
   beliefs: ExtractedBelief[];
 }): Promise<StoredBelief[]> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(`legacy_belief_upsert:${input.memoryId}`, 'belief', 'Legacy belief upsert is disabled under strict trust; use the signed memory-analysis pipeline');
+  }
   const stored: StoredBelief[] = [];
   for (const belief of input.beliefs) {
     const normalizedKey = belief.statement
@@ -79,6 +85,13 @@ export async function upsertBeliefsForMemory(input: {
 
     let knowledge: Knowledge;
     if (existing.length > 0 && existing[0].normalizedKey === normalizedKey) {
+      if (Object.hasOwn(existing[0].metadata ?? {}, '__squishProvenance')) {
+        // Signed derived beliefs are owned by their extraction lineage. This
+        // legacy adapter cannot verify the new source set and re-sign a revised
+        // derivation, so do not mutate the belief or claim a new source edge.
+        stored.push(knowledgeToStoredBelief(existing[0]));
+        continue;
+      }
       // Update existing
       const nextStatus = belief.type === 'failure_cause' ? 'disputed'
         : existing[0].knowledgeType !== belief.type && existing[0].content !== belief.statement ? 'superseded'
@@ -108,17 +121,15 @@ export async function upsertBeliefsForMemory(input: {
     }
 
     // Link belief to source memory via knowledge_edges
-    try {
-      await createKnowledgeEdge({
-        fromId: knowledge.id,
-        fromKind: 'knowledge',
-        toId: input.memoryId,
-        toKind: 'knowledge',
-        edgeType: 'sourced_from',
-      });
-    } catch { /* edge may already exist */ }
+    await createKnowledgeEdge({
+      fromId: knowledge.id,
+      fromKind: 'knowledge',
+      toId: input.memoryId,
+      toKind: 'knowledge',
+      edgeType: 'sourced_from',
+    });
 
-    stored.push(knowledgeToStoredBelief(knowledge));
+    stored.push(knowledgeToStoredBelief(knowledge, [input.memoryId]));
   }
 
   return stored;
@@ -128,28 +139,34 @@ export async function upsertBeliefsForMemory(input: {
  * Get all beliefs linked to a specific memory via knowledge_edges.
  */
 export async function getBeliefsForMemory(memoryId: string): Promise<StoredBelief[]> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(`beliefs_for_memory:${memoryId}`, 'belief', 'Unscoped belief reads are disabled under strict trust');
+  }
   await ensureKnowledgeTables();
   const { raw } = await getDbClient();
   const sqlite = (raw as any).$client;
   if (!sqlite) return [];
 
-  // Find knowledge edges where this memory is the target
-  const edges = sqlite.prepare(`
-    SELECT from_id FROM knowledge_edges
-    WHERE to_id = ? AND to_kind = 'knowledge' AND from_kind = 'knowledge' AND edge_type = 'sourced_from'
-  `).all(memoryId) as { from_id: string }[];
-
-  if (edges.length === 0) return [];
-
-  const beliefIds = edges.map(e => e.from_id);
-  const placeholders = beliefIds.map(() => '?').join(',');
+  const now = Date.now();
+  const nowSeconds = Math.floor(now / 1000);
+  const sourceEpochSeconds = (column: 'valid_from' | 'valid_to' | 'expires_at') =>
+    sqlEpochSeconds(`source.${column}`);
   const rows = sqlite.prepare(`
-    SELECT * FROM knowledge
-    WHERE id IN (${placeholders}) AND knowledge_kind = 'belief'
-    ORDER BY updated_at DESC
-  `).all(...beliefIds) as any[];
+    SELECT belief.* FROM knowledge_edges edge
+    JOIN knowledge belief ON belief.id = edge.from_id AND belief.knowledge_kind = 'belief'
+    JOIN memories source ON source.id = edge.to_id
+    WHERE edge.to_id = ? AND edge.to_kind = 'knowledge' AND edge.from_kind = 'knowledge'
+      AND edge.edge_type = 'sourced_from'
+      AND edge.valid_from <= ? AND (edge.valid_to IS NULL OR edge.valid_to > ?)
+      AND edge.recorded_at <= ? AND (edge.recorded_to IS NULL OR edge.recorded_to > ?)
+      AND source.status = 'active' AND source.is_active = 1
+      AND (source.valid_from IS NULL OR ${sourceEpochSeconds('valid_from')} <= ?)
+      AND (source.valid_to IS NULL OR ${sourceEpochSeconds('valid_to')} > ?)
+      AND (source.expires_at IS NULL OR ${sourceEpochSeconds('expires_at')} > ?)
+    ORDER BY belief.updated_at DESC
+  `).all(memoryId, now, now, now, now, nowSeconds, nowSeconds, nowSeconds) as any[];
 
-  return rows.map(row => knowledgeToStoredBelief(toKnowledge(row)));
+  return rows.map(row => knowledgeToStoredBelief(toKnowledge(row), [memoryId]));
 }
 
 // ─── Belief Queries (Session Boot) ───────────────────────────────────────────
@@ -164,7 +181,7 @@ export async function getActiveConstraints(projectId: string): Promise<StoredBel
     types: ['constraint'],
     limit: 20,
   });
-  return rows.map(knowledgeToStoredBelief);
+  return rows.map(row => knowledgeToStoredBelief(row));
 }
 
 /**
@@ -177,7 +194,7 @@ export async function getActiveDecisions(projectId: string): Promise<StoredBelie
     types: ['decision'],
     limit: 20,
   });
-  return rows.map(knowledgeToStoredBelief);
+  return rows.map(row => knowledgeToStoredBelief(row));
 }
 
 /**
@@ -190,7 +207,7 @@ export async function getRecentFailures(projectId: string, count: number = 10): 
     types: ['failure_cause'],
     limit: count,
   });
-  return rows.map(knowledgeToStoredBelief);
+  return rows.map(row => knowledgeToStoredBelief(row));
 }
 
 /**
@@ -214,7 +231,7 @@ export async function searchBeliefs(
   if (options?.minConfidence !== undefined) {
     filtered = filtered.filter(r => r.confidence >= options.minConfidence!);
   }
-  return filtered.map(knowledgeToStoredBelief);
+  return filtered.map(row => knowledgeToStoredBelief(row));
 }
 
 /**
@@ -237,7 +254,7 @@ export async function getAllBeliefs(
   if (options?.minConfidence !== undefined) {
     filtered = filtered.filter(r => r.confidence >= options.minConfidence!);
   }
-  return filtered.map(knowledgeToStoredBelief);
+  return filtered.map(row => knowledgeToStoredBelief(row));
 }
 
 /**
@@ -255,5 +272,5 @@ export async function getRelevantBeliefs(
     status: 'active',
     limit,
   });
-  return rows.map(knowledgeToStoredBelief);
+  return rows.map(row => knowledgeToStoredBelief(row));
 }

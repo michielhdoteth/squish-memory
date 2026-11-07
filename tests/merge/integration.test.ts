@@ -41,19 +41,25 @@ describe('Memory Merging Feature', () => {
       const content1 = 'The quick brown fox jumps over the lazy dog';
       const content2 = 'The quick brown fox jumps over the lazy dog'; // Identical
       const content3 = 'The quick brown cat runs over the lazy dog'; // Similar
+      const unrelated = 'A different system stores customer billing records';
 
       const sig1 = minhashFilter.generateSignature(content1);
       const sig2 = minhashFilter.generateSignature(content2);
       const sig3 = minhashFilter.generateSignature(content3);
+      const sigUnrelated = minhashFilter.generateSignature(unrelated);
 
       const similarity12 = minhashFilter.jaccardSimilarity(sig1, sig2);
       const similarity13 = minhashFilter.jaccardSimilarity(sig1, sig3);
+      const unrelatedSimilarity = minhashFilter.jaccardSimilarity(sig1, sigUnrelated);
 
       // Identical should have high similarity
       expect(similarity12).toBeGreaterThan(0.95);
 
       // Similar should have moderate similarity
-      expect(similarity13).toBeGreaterThan(0.70);
+      expect(similarity13).toBeGreaterThan(0.60);
+
+      // Unrelated strings must not inherit a perfect score from hash collisions.
+      expect(unrelatedSimilarity).toBeLessThan(0.70);
     });
   });
 

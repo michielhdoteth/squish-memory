@@ -1,0 +1,1169 @@
+{
+  "meta": {
+    "generatedAt": "2026-10-18T15:00:19.269Z",
+    "gitSha": "4b7da323",
+    "gitDirty": false,
+    "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dataset": "squish-action-context-challenge-v1",
+    "datasetSha256": "8b4e05ae1b0494b4a1114578c673eb9f0d331d99b2b63e1bff0d6d1bfdc1ad6f",
+    "taskCount": 17,
+    "deterministic": true,
+    "model": null,
+    "modelTokens": 0,
+    "profile": "fast-local",
+    "embeddingsProvider": "local",
+    "modelDownloadsAllowed": false,
+    "sideEffects": "in-memory state only; isolated SQLite database; unique project per task",
+    "protocol": "same seeded memories and task state in paired context-on retrieval/action and context-off abstain arms"
+  },
+  "metrics": {
+    "contextOnAccuracy": 1,
+    "contextOffAccuracy": 0.29411764705882354,
+    "pairedAccuracyDelta": 0.7058823529411764,
+    "contextOnCorrect": 17,
+    "contextOffCorrect": 5,
+    "total": 17,
+    "evidenceSupportedActions": 12,
+    "expectedActionCount": 12,
+    "evidenceSupportedActionRate": 1,
+    "abstentionAccuracy": 1,
+    "negativeTransferRate": 0,
+    "actionOutcomeSha256": "bfb0f61c406cd5faea7302d39d60d098571c7c564c8509dc07c504dfa6feab9e",
+    "retrievalTraceSha256": "fd661ccbd5cb1f6c98393de4f1c7ed2e496a72bbb9d350b9ec13a5f69c09c934",
+    "retrievalLatencyMs": {
+      "p50": 41.48720000000003,
+      "p95": 171.79989999999998
+    },
+    "returnedTokens": 1001,
+    "ingestedTokens": 1001,
+    "modelTokens": 0,
+    "estimatedQueryCostUsd": 0,
+    "estimatedIngestionCostUsd": 0,
+    "networkEgressBytes": 0
+  },
+  "tasks": [
+    {
+      "id": "deployment-rollback",
+      "query": "What deployment action applies when the health check fails?",
+      "projectScope": "action-heldout:deployment-rollback",
+      "initialState": {
+        "health_check": "failed",
+        "rollout_action": "continue"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "38ee5adf-32c8-4165-8cc2-362ceb998cff",
+          "content": "Deployment policy: When health_check is failed, set rollout_action to rollback.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "18b539d3-6da4-4db6-9324-86bbc23c70cd",
+          "content": "Deployment note: When health_check is passed, set rollout_action to continue.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "9c06851d-42cb-41c9-91d9-60a9f48b1adf",
+          "content": "Incident archive: When database_load is high, set rollout_action to pause.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 51.026,
+      "returnedTokens": 59,
+      "chosenAction": {
+        "conditionField": "health_check",
+        "conditionValue": "failed",
+        "targetField": "rollout_action",
+        "targetValue": "rollback"
+      },
+      "chosenEvidenceRank": 1,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "health_check",
+        "conditionValue": "failed",
+        "targetField": "rollout_action",
+        "targetValue": "rollback"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "health_check": "failed",
+          "rollout_action": "rollback"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "health_check": "failed",
+          "rollout_action": "continue"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "health_check": "failed",
+        "rollout_action": "rollback"
+      }
+    },
+    {
+      "id": "payment-review",
+      "query": "How should a payment be handled when fraud review is pending?",
+      "projectScope": "action-heldout:payment-review",
+      "initialState": {
+        "fraud_review": "pending",
+        "payment_action": "release"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "6882787c-072b-4899-ad5f-1c22f9098fe7",
+          "content": "Payment procedure: When fraud_review is pending, set payment_action to hold.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "f28aa582-ff09-41f2-a592-a29c55e30f87",
+          "content": "Payment procedure: When fraud_review is cleared, set payment_action to release.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "ffb2a1d7-eaf3-4d89-b662-5709caa97c50",
+          "content": "Account note: When account_status is closed, set payment_action to reject.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 39.926,
+      "returnedTokens": 58,
+      "chosenAction": {
+        "conditionField": "fraud_review",
+        "conditionValue": "pending",
+        "targetField": "payment_action",
+        "targetValue": "hold"
+      },
+      "chosenEvidenceRank": 1,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "fraud_review",
+        "conditionValue": "pending",
+        "targetField": "payment_action",
+        "targetValue": "hold"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "fraud_review": "pending",
+          "payment_action": "hold"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "fraud_review": "pending",
+          "payment_action": "release"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "fraud_review": "pending",
+        "payment_action": "hold"
+      }
+    },
+    {
+      "id": "privacy-export",
+      "query": "What do we do with an export request before identity verification?",
+      "projectScope": "action-heldout:privacy-export",
+      "initialState": {
+        "identity_check": "incomplete",
+        "export_status": "pending"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "e1d493b5-512f-4588-aabd-81e38c0514d9",
+          "content": "Privacy policy: When identity_check is verified, set export_status to approve.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "88126f1a-db4f-436f-bd70-597a186614b0",
+          "content": "Support note: When request_channel is email, set export_status to queue.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "609da9c2-234c-47ed-87ea-293ebf1b7a90",
+          "content": "Privacy policy: When identity_check is incomplete, set export_status to deny.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 40.468,
+      "returnedTokens": 58,
+      "chosenAction": {
+        "conditionField": "identity_check",
+        "conditionValue": "incomplete",
+        "targetField": "export_status",
+        "targetValue": "deny"
+      },
+      "chosenEvidenceRank": 3,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "identity_check",
+        "conditionValue": "incomplete",
+        "targetField": "export_status",
+        "targetValue": "deny"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "identity_check": "incomplete",
+          "export_status": "deny"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "identity_check": "incomplete",
+          "export_status": "pending"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "identity_check": "incomplete",
+        "export_status": "deny"
+      }
+    },
+    {
+      "id": "incident-notify",
+      "query": "Which notification action applies to a severity-one incident?",
+      "projectScope": "action-heldout:incident-notify",
+      "initialState": {
+        "incident_severity": "sev1",
+        "notification_route": "digest"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "8c215b12-2c18-4c83-9553-477f776769df",
+          "content": "Incident procedure: When incident_severity is sev1, set notification_route to oncall.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "8c87d681-b07d-4a40-a16f-6107e8d460a9",
+          "content": "Incident procedure: When incident_severity is sev3, set notification_route to digest.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "01667136-c935-4d0d-8153-491d63c326b1",
+          "content": "Service note: When service_tier is basic, set notification_route to email.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 37.996,
+      "returnedTokens": 63,
+      "chosenAction": {
+        "conditionField": "incident_severity",
+        "conditionValue": "sev1",
+        "targetField": "notification_route",
+        "targetValue": "oncall"
+      },
+      "chosenEvidenceRank": 1,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "incident_severity",
+        "conditionValue": "sev1",
+        "targetField": "notification_route",
+        "targetValue": "oncall"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "incident_severity": "sev1",
+          "notification_route": "oncall"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "incident_severity": "sev1",
+          "notification_route": "digest"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "incident_severity": "sev1",
+        "notification_route": "oncall"
+      }
+    },
+    {
+      "id": "backup-restore",
+      "query": "What is the restore action if the backup checksum is invalid?",
+      "projectScope": "action-heldout:backup-restore",
+      "initialState": {
+        "checksum_state": "invalid",
+        "restore_action": "proceed"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "397b7f0d-8fc6-4049-9e96-65d7b64fd00a",
+          "content": "Backup runbook: When checksum_state is invalid, set restore_action to abort.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "37771202-76e1-48d0-a5b0-1d6a85f726a8",
+          "content": "Backup runbook: When checksum_state is valid, set restore_action to proceed.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "eeef3eca-b6a0-4381-89cc-98669b05b453",
+          "content": "Storage note: When replica_state is stale, set restore_action to retry.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 39.124,
+      "returnedTokens": 56,
+      "chosenAction": {
+        "conditionField": "checksum_state",
+        "conditionValue": "invalid",
+        "targetField": "restore_action",
+        "targetValue": "abort"
+      },
+      "chosenEvidenceRank": 1,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "checksum_state",
+        "conditionValue": "invalid",
+        "targetField": "restore_action",
+        "targetValue": "abort"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "checksum_state": "invalid",
+          "restore_action": "abort"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "checksum_state": "invalid",
+          "restore_action": "proceed"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "checksum_state": "invalid",
+        "restore_action": "abort"
+      }
+    },
+    {
+      "id": "contract-signature",
+      "query": "How should contract processing proceed when a required signature is missing?",
+      "projectScope": "action-heldout:contract-signature",
+      "initialState": {
+        "signature_state": "missing",
+        "contract_action": "archive"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "16634210-3409-48a8-a34e-cc354855c08d",
+          "content": "Contract workflow: When signature_state is missing, set contract_action to request_signature.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "d83555ad-d2a0-41cd-95e5-6c0cca271974",
+          "content": "Contract workflow: When signature_state is complete, set contract_action to archive.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "bc7f8ec8-c734-46be-b829-c71aed61e4f7",
+          "content": "Legal note: When review_state is pending, set contract_action to hold.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 38.494,
+      "returnedTokens": 63,
+      "chosenAction": {
+        "conditionField": "signature_state",
+        "conditionValue": "missing",
+        "targetField": "contract_action",
+        "targetValue": "request_signature"
+      },
+      "chosenEvidenceRank": 1,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "signature_state",
+        "conditionValue": "missing",
+        "targetField": "contract_action",
+        "targetValue": "request_signature"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "signature_state": "missing",
+          "contract_action": "request_signature"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "signature_state": "missing",
+          "contract_action": "archive"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "signature_state": "missing",
+        "contract_action": "request_signature"
+      }
+    },
+    {
+      "id": "queue-backpressure",
+      "query": "What should happen when the worker queue is saturated?",
+      "projectScope": "action-heldout:queue-backpressure",
+      "initialState": {
+        "queue_state": "saturated",
+        "intake_action": "accept"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "e8ed3d6e-5af7-4870-a3f7-333a51fc1f64",
+          "content": "Queue policy: When queue_state is saturated, set intake_action to throttle.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "e8103155-1199-4c94-9018-a24e31a824f0",
+          "content": "Worker note: When worker_state is offline, set intake_action to pause.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "dd735040-0fba-4906-bcde-40fc6756ea9b",
+          "content": "Queue policy: When queue_state is clear, set intake_action to accept.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 41.487,
+      "returnedTokens": 55,
+      "chosenAction": {
+        "conditionField": "queue_state",
+        "conditionValue": "saturated",
+        "targetField": "intake_action",
+        "targetValue": "throttle"
+      },
+      "chosenEvidenceRank": 1,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "queue_state",
+        "conditionValue": "saturated",
+        "targetField": "intake_action",
+        "targetValue": "throttle"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "queue_state": "saturated",
+          "intake_action": "throttle"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "queue_state": "saturated",
+          "intake_action": "accept"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "queue_state": "saturated",
+        "intake_action": "throttle"
+      }
+    },
+    {
+      "id": "key-rotation",
+      "query": "What is the safe action while replacement-key validation is pending?",
+      "projectScope": "action-heldout:key-rotation",
+      "initialState": {
+        "replacement_key": "pending",
+        "rotation_state": "activate"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "cdcec3c6-ad64-4744-b8aa-54e8ba3f43fc",
+          "content": "Key rotation: When replacement_key is pending, set rotation_state to wait.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "dd8fd738-091d-4392-84dd-a0a89b337018",
+          "content": "Key rotation: When replacement_key is verified, set rotation_state to activate.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "c05a2cd7-e9bd-4350-9359-42e6f392c592",
+          "content": "Security note: When old_key is revoked, set rotation_state to complete.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 38.141,
+      "returnedTokens": 57,
+      "chosenAction": {
+        "conditionField": "replacement_key",
+        "conditionValue": "pending",
+        "targetField": "rotation_state",
+        "targetValue": "wait"
+      },
+      "chosenEvidenceRank": 1,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "replacement_key",
+        "conditionValue": "pending",
+        "targetField": "rotation_state",
+        "targetValue": "wait"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "replacement_key": "pending",
+          "rotation_state": "wait"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "replacement_key": "pending",
+          "rotation_state": "activate"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "replacement_key": "pending",
+        "rotation_state": "wait"
+      }
+    },
+    {
+      "id": "data-retention",
+      "query": "What action applies when a record reaches its legal hold?",
+      "projectScope": "action-heldout:data-retention",
+      "initialState": {
+        "legal_hold": "active",
+        "purge_action": "schedule"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "689a2464-1b26-40d6-9b99-e3692c780a5f",
+          "content": "Records note: When record_age is recent, set purge_action to retain.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "19e2b5a9-a6c7-45d7-853d-fe2cbc3e03c2",
+          "content": "Retention rule: When legal_hold is released, set purge_action to schedule.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "f22b6383-c4ac-4d59-9b95-054a039d6bf4",
+          "content": "Retention rule: When legal_hold is active, set purge_action to suspend.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 39.13,
+      "returnedTokens": 54,
+      "chosenAction": {
+        "conditionField": "legal_hold",
+        "conditionValue": "active",
+        "targetField": "purge_action",
+        "targetValue": "suspend"
+      },
+      "chosenEvidenceRank": 3,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "legal_hold",
+        "conditionValue": "active",
+        "targetField": "purge_action",
+        "targetValue": "suspend"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "legal_hold": "active",
+          "purge_action": "suspend"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "legal_hold": "active",
+          "purge_action": "schedule"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "legal_hold": "active",
+        "purge_action": "suspend"
+      }
+    },
+    {
+      "id": "build-artifact",
+      "query": "How should a build be handled if its signature check fails?",
+      "projectScope": "action-heldout:build-artifact",
+      "initialState": {
+        "signature_check": "failed",
+        "artifact_action": "publish"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "3d41d21d-d293-4e12-aa93-ba7c518d0c27",
+          "content": "Build policy: When signature_check is failed, set artifact_action to quarantine.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "1b619b00-2fb9-4277-86d5-a4660a4dc8de",
+          "content": "Build policy: When signature_check is passed, set artifact_action to publish.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "f4ab0b83-beb0-406f-acfa-66ae0284e02c",
+          "content": "Release note: When approval_state is pending, set artifact_action to hold.",
+          "score": 0.5880629474342159,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 40.146,
+      "returnedTokens": 59,
+      "chosenAction": {
+        "conditionField": "signature_check",
+        "conditionValue": "failed",
+        "targetField": "artifact_action",
+        "targetValue": "quarantine"
+      },
+      "chosenEvidenceRank": 1,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "signature_check",
+        "conditionValue": "failed",
+        "targetField": "artifact_action",
+        "targetValue": "quarantine"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "signature_check": "failed",
+          "artifact_action": "quarantine"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "signature_check": "failed",
+          "artifact_action": "publish"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "signature_check": "failed",
+        "artifact_action": "quarantine"
+      }
+    },
+    {
+      "id": "support-escalation",
+      "query": "What happens when a support case is marked critical?",
+      "projectScope": "action-heldout:support-escalation",
+      "initialState": {
+        "case_priority": "critical",
+        "escalation_route": "queue"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "49a011c2-1d2a-44b3-b716-195de7ecbc43",
+          "content": "Support playbook: When case_priority is critical, set escalation_route to incident_commander.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "203959b1-8d71-48a4-a6cc-7b151a128652",
+          "content": "Support playbook: When case_priority is normal, set escalation_route to queue.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "270d90ff-a4ff-4bcf-9780-7505e9b45fb1",
+          "content": "Customer note: When plan_tier is enterprise, set escalation_route to account_team.",
+          "score": 0.6041269739417994,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 162.577,
+      "returnedTokens": 65,
+      "chosenAction": {
+        "conditionField": "case_priority",
+        "conditionValue": "critical",
+        "targetField": "escalation_route",
+        "targetValue": "incident_commander"
+      },
+      "chosenEvidenceRank": 1,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "case_priority",
+        "conditionValue": "critical",
+        "targetField": "escalation_route",
+        "targetValue": "incident_commander"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "case_priority": "critical",
+          "escalation_route": "incident_commander"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "case_priority": "critical",
+          "escalation_route": "queue"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "case_priority": "critical",
+        "escalation_route": "incident_commander"
+      }
+    },
+    {
+      "id": "approval-rejection",
+      "query": "What state should a request enter after compliance rejects it?",
+      "projectScope": "action-heldout:approval-rejection",
+      "initialState": {
+        "compliance_result": "rejected",
+        "request_state": "ready"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "0733486b-4d5e-4f27-a2f8-e347bdd82769",
+          "content": "Compliance workflow: When compliance_result is rejected, set request_state to blocked.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "118300da-0597-4fac-9c82-5ebb8ed111a2",
+          "content": "Compliance workflow: When compliance_result is approved, set request_state to ready.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "dfb9c11f-f3fa-47df-a40c-6352a5ff5789",
+          "content": "Request note: When owner_state is absent, set request_state to draft.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 161.423,
+      "returnedTokens": 61,
+      "chosenAction": {
+        "conditionField": "compliance_result",
+        "conditionValue": "rejected",
+        "targetField": "request_state",
+        "targetValue": "blocked"
+      },
+      "chosenEvidenceRank": 1,
+      "abstained": false,
+      "expectedAction": {
+        "conditionField": "compliance_result",
+        "conditionValue": "rejected",
+        "targetField": "request_state",
+        "targetValue": "blocked"
+      },
+      "evidenceSupported": true,
+      "contextOn": {
+        "finalState": {
+          "compliance_result": "rejected",
+          "request_state": "blocked"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "compliance_result": "rejected",
+          "request_state": "ready"
+        },
+        "correct": false
+      },
+      "expectedState": {
+        "compliance_result": "rejected",
+        "request_state": "blocked"
+      }
+    },
+    {
+      "id": "ambiguous-device",
+      "query": "What action should we take for this device?",
+      "projectScope": "action-heldout:ambiguous-device",
+      "initialState": {
+        "device_state": "unknown",
+        "access_action": "allow"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "d8af774e-25be-462b-ac2c-a72672d22b98",
+          "content": "Device policy: When device_state is lost, set access_action to revoke.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "8db92aa2-9100-42d3-a401-37334d2f0f0b",
+          "content": "Device policy: When device_state is shared, set access_action to review.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "e15a9358-4669-481f-9d30-54b32f53f8af",
+          "content": "Security note: When owner_state is unknown, set access_action to suspend.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 161.605,
+      "returnedTokens": 55,
+      "chosenAction": null,
+      "chosenEvidenceRank": null,
+      "abstained": true,
+      "expectedAction": null,
+      "evidenceSupported": false,
+      "contextOn": {
+        "finalState": {
+          "device_state": "unknown",
+          "access_action": "allow"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "device_state": "unknown",
+          "access_action": "allow"
+        },
+        "correct": true
+      },
+      "expectedState": {
+        "device_state": "unknown",
+        "access_action": "allow"
+      }
+    },
+    {
+      "id": "unknown-region",
+      "query": "What delivery action applies in region Kappa?",
+      "projectScope": "action-heldout:unknown-region",
+      "initialState": {
+        "region_state": "kappa",
+        "delivery_action": "pending"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "8ec3f979-b8cb-426b-83c8-c2f7b615e063",
+          "content": "Shipping rule: When region_state is open, set delivery_action to dispatch.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "ff1319bc-9b9a-4c77-9100-3d4bc42d53b7",
+          "content": "Shipping rule: When region_state is restricted, set delivery_action to block.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "d6d2e266-0fde-4221-beb6-801c47c32e71",
+          "content": "Carrier note: When weather_state is severe, set delivery_action to delay.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 159.214,
+      "returnedTokens": 58,
+      "chosenAction": null,
+      "chosenEvidenceRank": null,
+      "abstained": true,
+      "expectedAction": null,
+      "evidenceSupported": false,
+      "contextOn": {
+        "finalState": {
+          "region_state": "kappa",
+          "delivery_action": "pending"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "region_state": "kappa",
+          "delivery_action": "pending"
+        },
+        "correct": true
+      },
+      "expectedState": {
+        "region_state": "kappa",
+        "delivery_action": "pending"
+      }
+    },
+    {
+      "id": "unseen-approval-state",
+      "query": "Should this invoice be released?",
+      "projectScope": "action-heldout:unseen-approval-state",
+      "initialState": {
+        "approval_state": "escalated",
+        "invoice_action": "pending"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "b6e58b14-46aa-4d95-974a-16fb8841257a",
+          "content": "Invoice procedure: When approval_state is approved, set invoice_action to release.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "99487d3e-1c9c-4efa-ada9-8c2b96212e83",
+          "content": "Invoice procedure: When approval_state is pending, set invoice_action to hold.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "e100120e-13ff-40b3-9921-255ea1af9048",
+          "content": "Finance note: When payment_state is overdue, set invoice_action to review.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 171.8,
+      "returnedTokens": 60,
+      "chosenAction": null,
+      "chosenEvidenceRank": null,
+      "abstained": true,
+      "expectedAction": null,
+      "evidenceSupported": false,
+      "contextOn": {
+        "finalState": {
+          "approval_state": "escalated",
+          "invoice_action": "pending"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "approval_state": "escalated",
+          "invoice_action": "pending"
+        },
+        "correct": true
+      },
+      "expectedState": {
+        "approval_state": "escalated",
+        "invoice_action": "pending"
+      }
+    },
+    {
+      "id": "no-matching-retention",
+      "query": "What should happen to this record?",
+      "projectScope": "action-heldout:no-matching-retention",
+      "initialState": {
+        "record_state": "disputed",
+        "record_action": "review"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "3819a2eb-5c4b-4594-93ca-edfca566f627",
+          "content": "Retention procedure: When record_state is active, set record_action to preserve.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "9699ae82-5944-4f5f-be8b-588ef1b44f6a",
+          "content": "Audit note: When audit_state is open, set record_action to lock.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "f2184781-1aa9-4461-8de8-845a317c9e8d",
+          "content": "Retention procedure: When record_state is expired, set record_action to delete.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 161.698,
+      "returnedTokens": 56,
+      "chosenAction": null,
+      "chosenEvidenceRank": null,
+      "abstained": true,
+      "expectedAction": null,
+      "evidenceSupported": false,
+      "contextOn": {
+        "finalState": {
+          "record_state": "disputed",
+          "record_action": "review"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "record_state": "disputed",
+          "record_action": "review"
+        },
+        "correct": true
+      },
+      "expectedState": {
+        "record_state": "disputed",
+        "record_action": "review"
+      }
+    },
+    {
+      "id": "expired-credential",
+      "query": "Which action should apply to this credential?",
+      "projectScope": "action-heldout:expired-credential",
+      "initialState": {
+        "credential_state": "rotating",
+        "credential_action": "retain"
+      },
+      "retrievedEvidence": [
+        {
+          "rank": 1,
+          "id": "b19bb5ac-c969-424a-b342-f39e9f804c23",
+          "content": "Credential rule: When credential_state is expired, set credential_action to revoke.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 2,
+          "id": "a592e1a7-5be9-46a6-a248-0ab310cad265",
+          "content": "Credential rule: When credential_state is valid, set credential_action to retain.",
+          "score": 1,
+          "source": "hybrid"
+        },
+        {
+          "rank": 3,
+          "id": "846ff2f7-f8cc-4a04-ac7f-5b090cb73068",
+          "content": "Identity note: When identity_state is suspended, set credential_action to quarantine.",
+          "score": 1,
+          "source": "hybrid"
+        }
+      ],
+      "retrievalLatencyMs": 159.177,
+      "returnedTokens": 64,
+      "chosenAction": null,
+      "chosenEvidenceRank": null,
+      "abstained": true,
+      "expectedAction": null,
+      "evidenceSupported": false,
+      "contextOn": {
+        "finalState": {
+          "credential_state": "rotating",
+          "credential_action": "retain"
+        },
+        "correct": true
+      },
+      "contextOff": {
+        "action": null,
+        "abstained": true,
+        "finalState": {
+          "credential_state": "rotating",
+          "credential_action": "retain"
+        },
+        "correct": true
+      },
+      "expectedState": {
+        "credential_state": "rotating",
+        "credential_action": "retain"
+      }
+    }
+  ]
+}

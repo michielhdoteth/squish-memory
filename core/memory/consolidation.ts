@@ -11,18 +11,39 @@
  * Falls back to extractive summary if geometry is disabled.
  */
 
-import { randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import { eq, inArray, and } from 'drizzle-orm';
+import { withSqliteTransaction } from '../storage/sqlite-transaction.js';
 import { config } from '../../config.js';
 import { createDatabaseClient } from '../storage/database.js';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
+import { getDbClient } from '../lib/db-client.js';
 import { getEmbedding } from '../../core/embeddings.js';
 import { parseEmbedding } from '../lib/parse-embedding.js';
 import { getLowImportanceMemories } from './importance.js';
 import { rememberMemory } from './memories.js';
+import { rememberMemoryWithConsolidatedSource } from './memory-write.js';
+import { normalizeMemoryRecord } from './memory-crud.js';
 import { logger } from '../logger.js';
 import { callLLM } from '../llm/client.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
+
+async function denyStrictConsolidationSurface(resourceId: string, message: string): Promise<void> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(resourceId, 'memory', message);
+  }
+}
+
+interface SqliteTransactionBoundary {
+  exec: (sql: string) => void;
+  inTransaction?: boolean;
+}
+
+async function withSqliteTransactionBoundary<T>(sqlite: SqliteTransactionBoundary, operation: () => Promise<T>): Promise<T> {
+  return withSqliteTransaction(sqlite, operation);
+}
 
 // Geometry-aware consolidation imports
 import {
@@ -75,12 +96,104 @@ export interface ClusterResult {
   representativeId: string;
 }
 
+export interface ReviewedMemoryCompactionInput {
+  sourceMemoryId: string;
+  compactedContent: string;
+  modelId: string;
+  promptVersion: string;
+}
+
+export interface ReviewedMemoryCompactionResult {
+  memoryId: string;
+  sourceMemoryId: string;
+  sourceLength: number;
+  compactedLength: number;
+}
+
+/**
+ * Store a user-reviewed local-model rewrite as a derived memory and retain the
+ * original as its reversible source. Unreviewed model output is never written.
+ */
+export async function applyReviewedMemoryCompaction(
+  input: ReviewedMemoryCompactionInput,
+): Promise<ReviewedMemoryCompactionResult> {
+  await denyStrictConsolidationSurface('reviewed_memory_compaction', 'Memory compaction requires caller-scoped source authorization under strict trust');
+
+  const sourceMemoryId = input.sourceMemoryId.trim();
+  const compactedContent = input.compactedContent.trim();
+  const modelId = input.modelId.trim();
+  const promptVersion = input.promptVersion.trim();
+  if (!sourceMemoryId || !compactedContent || compactedContent.length > 12_000 || !modelId || !promptVersion) {
+    throw new Error('Reviewed compaction input is incomplete or too large.');
+  }
+
+  const { db, schema } = await getDbClient();
+  const sourceRows = await db.select().from(schema.memories)
+    .where(eq(schema.memories.id, sourceMemoryId)).limit(1);
+  const sourceState = sourceRows[0];
+  if (!sourceState) throw new Error('The source memory no longer exists.');
+  const source = normalizeMemoryRecord(sourceState);
+  if (!source.content.trim() || compactedContent.length >= Math.ceil(source.content.trim().length * 0.9)) {
+    throw new Error('The proposed memory is not shorter enough to compact.');
+  }
+  if (!sourceState?.isActive) throw new Error('Only active memories can be compacted.');
+  if (sourceState.isConsolidated) throw new Error('This memory is already part of a consolidation.');
+  if (sourceState.isProtected || sourceState.isPinned || sourceState.hasSecrets) {
+    throw new Error('Protected, pinned, or secret-bearing memories cannot be compacted.');
+  }
+  if (sourceState.teamId) throw new Error('Team-scoped memories need an authorized team consolidation route.');
+
+  const allowedTypes = new Set(['observation', 'fact', 'decision', 'context', 'preference', 'note', 'task']);
+  const memoryType = allowedTypes.has(source.type) ? source.type : 'note';
+  let projectPath: string | undefined;
+  if (source.projectId) {
+    const projects = await db.select({ path: schema.projects.path })
+      .from(schema.projects)
+      .where(eq(schema.projects.id, source.projectId))
+      .limit(1);
+    projectPath = projects[0]?.path ?? undefined;
+  }
+
+  const digest = createHash('sha256').update(`${sourceMemoryId}\n${modelId}\n${promptVersion}\n${compactedContent}`).digest('hex');
+  const created = await rememberMemoryWithConsolidatedSource({
+    content: compactedContent,
+    type: memoryType as 'observation' | 'fact' | 'decision' | 'context' | 'preference' | 'note' | 'task',
+    tags: source.tags,
+    project: projectPath,
+    user: sourceState.userId ?? undefined,
+    source: 'reviewed-local-model-compaction',
+    captureKey: `reviewed-compaction-v1:${digest}`,
+    metadata: {
+      consolidatedFrom: [sourceMemoryId],
+      clusterSize: 1,
+      compactionSourceMemoryId: sourceMemoryId,
+      compactionModelId: modelId,
+      compactionPromptVersion: promptVersion,
+      compactionReviewedAt: new Date().toISOString(),
+    },
+  }, {
+    id: sourceMemoryId,
+    content: sourceState.content,
+    projectId: sourceState.projectId ?? null,
+    userId: sourceState.userId ?? null,
+    type: sourceState.type,
+  });
+  return {
+    memoryId: created.id,
+    sourceMemoryId,
+    sourceLength: source.content.length,
+    compactedLength: compactedContent.length,
+  };
+}
+
 /**
  * Main consolidation function - consolidates low-importance old memories
  */
 export async function consolidateMemories(
   options: ConsolidationOptions
 ): Promise<ConsolidationResult[]> {
+  await denyStrictConsolidationSurface('consolidation_run', 'Memory consolidation is disabled under strict trust');
+
   const {
     projectId,
     minAge = 90,
@@ -147,7 +260,7 @@ async function clusterMemoriesWithEngine(
   for (const memory of memories) {
     const emb = parseEmbedding(memory.embedding) ?? parseEmbedding(memory.embedding_json);
     if (emb) {
-      await findOrCreateCluster(memory.id, emb, similarityThreshold);
+      await findOrCreateCluster(memory.id, emb, similarityThreshold, memory.embeddingModel ?? null);
     }
   }
 
@@ -590,6 +703,8 @@ export function truncate(text: string, maxLength: number): string {
 export async function reverseConsolidation(
   consolidatedMemoryId: string
 ): Promise<void> {
+  await denyStrictConsolidationSurface('consolidation_reverse', 'Reversing memory consolidation is disabled under strict trust');
+
   const db = createDatabaseClient(await getDb());
   const schema = await getSchema();
 
@@ -604,27 +719,39 @@ export async function reverseConsolidation(
     throw new Error(`Consolidated memory not found: ${consolidatedMemoryId}`);
   }
 
-  const metadata = consolidated[0].metadata as any;
-  const sourceIds = metadata?.consolidatedFrom as string[] | undefined;
+  let metadata = consolidated[0].metadata as unknown;
+  if (typeof metadata === 'string') {
+    try { metadata = JSON.parse(metadata); } catch { metadata = null; }
+  }
+  const sourceIds = typeof metadata === 'object' && metadata !== null && 'consolidatedFrom' in metadata
+    ? (metadata as Record<string, unknown>).consolidatedFrom as string[] | undefined
+    : undefined;
 
   if (!sourceIds || sourceIds.length === 0) {
     throw new Error('No source memories found in consolidated memory metadata');
   }
 
-  // Restore original memories
-  await db
-    .update(schema.memories)
-    .set({
-      isConsolidated: 0,
-      consolidatedInto: null,
-      consolidatedAt: null,
-    })
-    .where(inArray(schema.memories.id, sourceIds));
+  const { deleteMemoryPermanently } = await import('./stale-cleaner.js');
+  const restoreAndDelete = async () => {
+    await db
+      .update(schema.memories)
+      .set({
+        isConsolidated: 0,
+        consolidatedInto: null,
+        consolidatedAt: null,
+      })
+      .where(inArray(schema.memories.id, sourceIds));
 
-  // Delete the consolidated memory
-  await db
-    .delete(schema.memories)
-    .where(eq(schema.memories.id, consolidatedMemoryId));
+    // Remove its canonical projection, temporal edges, and indexes through
+    // the same lifecycle used by permanent forget before deleting the row.
+    await deleteMemoryPermanently(consolidatedMemoryId);
+  };
+
+  if (db.$clientType === 'sqlite') {
+    await withSqliteTransactionBoundary(db.$client as SqliteTransactionBoundary, restoreAndDelete);
+  } else {
+    await restoreAndDelete();
+  }
 
   logger.info('Reversed consolidation', {
     consolidatedId: consolidatedMemoryId,
@@ -643,6 +770,8 @@ export async function getConsolidationStats(
   consolidationsCreated: number;
   avgClusterSize: number;
 }> {
+  await denyStrictConsolidationSurface('consolidation_statistics', 'Unscoped consolidation statistics are disabled under strict trust');
+
   const db = createDatabaseClient(await getDb());
   const schema = await getSchema();
 

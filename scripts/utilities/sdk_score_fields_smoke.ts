@@ -2,7 +2,13 @@
  * Smoke test: SDK search results must expose finalScore + scoreBreakdown
  * (Batch 3-5 review, minor hardening).
  */
-process.env.SQUISH_DATA_DIR = process.env.SQUISH_DATA_DIR || '.squish-sdk-smoke-' + Date.now();
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// Isolated data dir. Must be absolute: a relative SQUISH_DATA_DIR is ignored
+// now and would fall through to the live global database.
+process.env.SQUISH_DATA_DIR = process.env.SQUISH_DATA_DIR || mkdtempSync(join(tmpdir(), 'squish-sdk-smoke-'));
 process.env.SQUISH_EMBEDDINGS_PROVIDER = 'local';
 process.env.DATABASE_URL = '';
 process.env.SQUISH_RERANKER_ENABLED = 'false';

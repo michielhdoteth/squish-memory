@@ -28,6 +28,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { logger } from '../core/logger.js';
 import { ensureSqliteSchema } from './bootstrap.js';
+import { isBunRuntime, errorMessage, quoteIdent } from './utils.js';
 
 export const MERGE_MANIFEST_FILENAME = 'client-merge-manifest.json';
 
@@ -70,14 +71,6 @@ interface NativeSqliteHandle {
   };
   pragma?(statement: string): unknown;
   close(exception?: unknown): void;
-}
-
-function isBunRuntime(): boolean {
-  return typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined';
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -162,10 +155,6 @@ function loadTableInfo(handle: NativeSqliteHandle): SourceTableInfo[] {
     });
   }
   return tables;
-}
-
-function quoteIdent(identifier: string): string {
-  return `"${identifier.replace(/"/g, '""')}"`;
 }
 
 function sha256(value: string): string {

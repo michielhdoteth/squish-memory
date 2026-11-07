@@ -4,6 +4,7 @@ import {
   updateClusterStats,
   getClusterGeometry,
   removeFromCluster,
+  getClusterMemories,
   clearClusters,
 } from '../../../core/clustering/cluster-engine.js';
 import { CompressionSafetyResult } from '../../../core/clustering/consolidation-check.js';
@@ -43,6 +44,22 @@ describe('findOrCreateCluster', () => {
     const clusterId3 = await findOrCreateCluster('mem-c', [0, 0, 1]);
     // All should be different clusters since they're orthogonal
     expect(clusterId2).not.toBe(clusterId3);
+  });
+
+  test('same-dimension vectors from different known models never share a cluster', async () => {
+    clearClusters();
+    const first = await findOrCreateCluster('model-a-memory', [1, 0, 0], undefined, 'provider/model-a');
+    const second = await findOrCreateCluster('model-b-memory', [1, 0, 0], undefined, 'provider/model-b');
+    expect(second).not.toBe(first);
+  });
+
+  test('reembedding a clustered memory under a different model moves it to a compatible cluster', async () => {
+    clearClusters();
+    const oldCluster = await findOrCreateCluster('reembedded-memory', [1, 0, 0], undefined, 'provider/model-a');
+    const newCluster = await findOrCreateCluster('reembedded-memory', [1, 0, 0], undefined, 'provider/model-b');
+    expect(newCluster).not.toBe(oldCluster);
+    expect(await getClusterMemories(oldCluster)).toEqual([]);
+    expect(await getClusterMemories(newCluster)).toEqual(['reembedded-memory']);
   });
 });
 

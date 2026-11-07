@@ -86,7 +86,7 @@ function seedLegacyTables(sqlite: Database): void {
       change_summary TEXT,
       created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
     );
-    DELETE FROM _schema_versions WHERE version = '${WIKI_TO_MEMORY_MARKER}';
+    DELETE FROM _schema_versions WHERE version IN ('${WIKI_TO_MEMORY_MARKER}', '2.2.1-wiki-links-knowledge-edges');
   `);
 
   const now = Math.floor(Date.now() / 1000);
@@ -104,6 +104,24 @@ function seedLegacyTables(sqlite: Database): void {
 }
 
 describe('wiki-to-memory migration', () => {
+  test('startup reconciles wiki-imported memories and links into canonical knowledge edges', async () => {
+    const sqlite = await freshDb();
+    seedLegacyTables(sqlite);
+
+    await ensureSqliteSchema(sqlite);
+
+    const memoryCount = sqlite.prepare("SELECT COUNT(*) AS count FROM knowledge WHERE knowledge_kind='memory' AND json_extract(metadata, '$.wikiOrigin')=1").get() as { count: number };
+    const edgeCount = sqlite.prepare("SELECT COUNT(*) AS count FROM knowledge_edges WHERE edge_type='relates_to' AND json_extract(metadata, '$.coactivation_count')=1").get() as { count: number };
+    const legacyTable = sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_associations'").get();
+    const migrationMarker = sqlite.prepare("SELECT 1 FROM _schema_versions WHERE version='2.2.1-wiki-links-knowledge-edges'").get();
+
+    expect(memoryCount.count).toBe(3);
+    expect(edgeCount.count).toBe(1);
+    expect(legacyTable).toBeNull();
+    expect(migrationMarker).toBeDefined();
+    sqlite.close();
+  });
+
   test('migrates pages into memories, links into associations, drops legacy tables', async () => {
     const sqlite = await freshDb();
     seedLegacyTables(sqlite);
@@ -133,12 +151,12 @@ describe('wiki-to-memory migration', () => {
     const decision = memories.find((m) => String(m.content).includes('Decision Log'))!;
     expect(decision.type).toBe('decision');
 
-    // Resolvable link became an association; unresolvable did not.
-    const assocs = sqlite.prepare("SELECT * FROM memory_associations WHERE association_type = 'relates_to'").all() as any[];
+    // Resolvable link became a canonical graph edge; unresolvable did not.
+    const assocs = sqlite.prepare("SELECT * FROM knowledge_edges WHERE edge_type = 'relates_to' AND json_extract(metadata, '$.source')='wiki-migration'").all() as any[];
     expect(assocs.length).toBe(1);
     const fromMem = memIdBySlug(sqlite, 'architecture-overview');
     const toMem = memIdBySlug(sqlite, 'decision-log');
-    expect([assocs[0].from_memory_id, assocs[0].to_memory_id].sort()).toEqual([fromMem, toMem].sort());
+    expect([assocs[0].from_id, assocs[0].to_id].sort()).toEqual([fromMem, toMem].sort());
 
     // Legacy tables dropped, marker recorded.
     const leftover = sqlite.prepare(

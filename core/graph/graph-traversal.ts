@@ -12,11 +12,34 @@
  * ("Project Atlas uses PostgreSQL") mentions neither Alice nor Tuesday.
  */
 
-import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
+import { getEdgesFrom, getEdgesTo } from '../knowledge/knowledge-edges.js';
+import { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } from '../acl/trust-policy.js';
+import { filterStrictEntityEdges, type StrictGraphEdgeCache } from './strict-access.js';
 import type { RelationType } from './llm-entity-extractor.js';
+
+function graphCaller(): string | undefined {
+  if (!isStrictTrustPolicy()) return undefined;
+  const callerId = resolveTrustedCallerId();
+  if (!callerId) throw new TrustBoundaryError('Strict graph access requires an authenticated caller identity');
+  return callerId;
+}
+
+function graphNode(entity: { id: string; name: string; type: string; description: string | null; properties: unknown }): GraphNode {
+  if (isStrictTrustPolicy()) {
+    return { id: entity.id, name: entity.name, type: 'entity', description: null, properties: null };
+  }
+  return {
+    id: entity.id,
+    name: entity.name,
+    type: entity.type,
+    description: entity.description,
+    properties: entity.properties as GraphNode['properties'],
+  };
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +90,8 @@ export async function traverse(
     limit?: number;
   }
 ): Promise<GraphNode[]> {
+  const callerId = graphCaller();
+  const edgeCache: StrictGraphEdgeCache = new Map();
   const {
     maxDepth = 3,
     relationTypes,
@@ -90,11 +115,11 @@ export async function traverse(
       // Get connected entities
       const connected = await getConnectedEntities(
         entityId,
-        db,
-        schema,
         direction,
         relationTypes,
-        minWeight
+        minWeight,
+        callerId,
+        edgeCache,
       );
 
       for (const { id, edge } of connected) {
@@ -110,13 +135,7 @@ export async function traverse(
             .limit(1);
 
           if (entity.length > 0) {
-            result.push({
-              id: entity[0].id,
-              name: entity[0].name,
-              type: entity[0].type,
-              description: entity[0].description,
-              properties: entity[0].properties,
-            });
+            result.push(graphNode(entity[0]));
           }
 
           if (result.length >= limit) break;
@@ -146,6 +165,8 @@ export async function findPaths(
     maxPaths?: number;
   }
 ): Promise<TraversalPath[]> {
+  const callerId = graphCaller();
+  const edgeCache: StrictGraphEdgeCache = new Map();
   const {
     maxHops = 4,
     relationTypes,
@@ -163,8 +184,6 @@ export async function findPaths(
     path: { nodes: [], edges: [], weight: 0 },
   }];
 
-  const visited = new Map<string, number>(); // nodeId -> best weight to reach it
-
   // Start entity
   const startEntity = await (db as any)
     .select()
@@ -174,13 +193,7 @@ export async function findPaths(
 
   if (startEntity.length === 0) return [];
 
-  const startNode: GraphNode = {
-    id: startEntity[0].id,
-    name: startEntity[0].name,
-    type: startEntity[0].type,
-    description: startEntity[0].description,
-    properties: startEntity[0].properties,
-  };
+  const startNode = graphNode(startEntity[0]);
 
   queue[0].path.nodes.push(startNode);
 
@@ -203,21 +216,16 @@ export async function findPaths(
     // Get connected entities
     const connected = await getConnectedEntities(
       nodeId,
-      db,
-      schema,
       'outgoing',
       relationTypes,
-      minWeight
+      minWeight,
+      callerId,
+      edgeCache,
     );
 
     for (const { id, edge } of connected) {
       // Avoid cycles
       if (path.nodes.some(n => n.id === id)) continue;
-
-      // Prune if we already found a better path to this node
-      const currentBest = visited.get(id);
-      if (currentBest !== undefined && path.weight + edge.weight >= currentBest) continue;
-      visited.set(id, path.weight + edge.weight);
 
       // Get entity details
       const entity = await (db as any)
@@ -228,20 +236,14 @@ export async function findPaths(
 
       if (entity.length === 0) continue;
 
-      const node: GraphNode = {
-        id: entity[0].id,
-        name: entity[0].name,
-        type: entity[0].type,
-        description: entity[0].description,
-        properties: entity[0].properties,
-      };
+      const node = graphNode(entity[0]);
 
       queue.push({
         nodeId: id,
         path: {
           nodes: [...path.nodes, node],
           edges: [...path.edges, edge],
-          weight: path.weight + (edge.weight || 1),
+          weight: path.weight + edge.weight,
         },
       });
     }
@@ -266,6 +268,8 @@ export async function getNeighborhood(
     limit?: number;
   }
 ): Promise<NeighborhoodResult | null> {
+  const callerId = graphCaller();
+  const edgeCache: StrictGraphEdgeCache = new Map();
   const {
     radius = 2,
     relationTypes,
@@ -284,17 +288,14 @@ export async function getNeighborhood(
     .limit(1);
 
   if (centerEntity.length === 0) return null;
+  if (callerId && (await getConnectedEntities(centerEntityId, 'both', relationTypes, minWeight, callerId, edgeCache)).length === 0) return null;
 
-  const center: GraphNode = {
-    id: centerEntity[0].id,
-    name: centerEntity[0].name,
-    type: centerEntity[0].type,
-    description: centerEntity[0].description,
-    properties: centerEntity[0].properties,
-  };
+  const center = graphNode(centerEntity[0]);
 
   const nodes: GraphNode[] = [center];
+  const nodeIds = new Set([centerEntityId]);
   const edges: GraphEdge[] = [];
+  const seenEdges = new Set<string>();
   const visited = new Set<string>([centerEntityId]);
   let currentLevel = [centerEntityId];
 
@@ -304,15 +305,16 @@ export async function getNeighborhood(
     for (const entityId of currentLevel) {
       const connected = await getConnectedEntities(
         entityId,
-        db,
-        schema,
         'both',
         relationTypes,
-        minWeight
+        minWeight,
+        callerId,
+        edgeCache,
       );
 
       for (const { id, edge } of connected) {
         if (!visited.has(id)) {
+          if (nodes.length >= limit) continue;
           visited.add(id);
           nextLevel.push(id);
 
@@ -323,17 +325,15 @@ export async function getNeighborhood(
             .limit(1);
 
           if (entity.length > 0) {
-            nodes.push({
-              id: entity[0].id,
-              name: entity[0].name,
-              type: entity[0].type,
-              description: entity[0].description,
-              properties: entity[0].properties,
-            });
+            nodes.push(graphNode(entity[0]));
+            nodeIds.add(id);
           }
         }
 
-        edges.push(edge);
+        if (nodeIds.has(edge.fromId) && nodeIds.has(edge.toId) && !seenEdges.has(edge.id)) {
+          seenEdges.add(edge.id);
+          edges.push(edge);
+        }
       }
 
       if (nodes.length >= limit) break;
@@ -357,12 +357,14 @@ export async function findEntitiesByName(
     fuzzy?: boolean;
   }
 ): Promise<GraphNode[]> {
+  const callerId = graphCaller();
+  const edgeCache: StrictGraphEdgeCache = new Map();
   const { limit = 10, fuzzy = true } = options || {};
   const db = await getDb();
   const schema = await getSchema();
 
   // Try exact match first
-  const exact = await (db as any)
+  const exactQuery = (db as any)
     .select()
     .from(schema.entities)
     .where(
@@ -370,22 +372,23 @@ export async function findEntitiesByName(
         eq(schema.entities.projectId, projectId),
         eq(schema.entities.name, name)
       )
-    )
-    .limit(limit);
+    );
+  const exact = callerId ? await exactQuery : await exactQuery.limit(limit);
 
   if (exact.length > 0) {
-    return exact.map((e: any) => ({
-      id: e.id,
-      name: e.name,
-      type: e.type,
-      description: e.description,
-      properties: e.properties,
-    }));
+    const visible: GraphNode[] = [];
+    for (const entity of exact) {
+      if (!callerId || (await getConnectedEntities(entity.id, 'both', undefined, 0, callerId, edgeCache)).length > 0) {
+        visible.push(graphNode(entity));
+        if (visible.length >= limit) break;
+      }
+    }
+    if (visible.length > 0 || !fuzzy) return visible;
   }
 
   // Fuzzy match using LIKE
   if (fuzzy) {
-    const fuzzyResults = await (db as any)
+    const fuzzyQuery = (db as any)
       .select()
       .from(schema.entities)
       .where(
@@ -393,16 +396,17 @@ export async function findEntitiesByName(
           eq(schema.entities.projectId, projectId),
           sql`LOWER(${schema.entities.name}) LIKE LOWER(${'%' + name + '%'})`
         )
-      )
-      .limit(limit);
+      );
+    const fuzzyResults = callerId ? await fuzzyQuery : await fuzzyQuery.limit(limit);
 
-    return fuzzyResults.map((e: any) => ({
-      id: e.id,
-      name: e.name,
-      type: e.type,
-      description: e.description,
-      properties: e.properties,
-    }));
+    const visible: GraphNode[] = [];
+    for (const entity of fuzzyResults) {
+      if (!callerId || (await getConnectedEntities(entity.id, 'both', undefined, 0, callerId, edgeCache)).length > 0) {
+        visible.push(graphNode(entity));
+        if (visible.length >= limit) break;
+      }
+    }
+    return visible;
   }
 
   return [];
@@ -415,76 +419,47 @@ export async function findEntitiesByName(
  */
 async function getConnectedEntities(
   entityId: string,
-  db: any,
-  schema: any,
   direction: 'outgoing' | 'incoming' | 'both',
   relationTypes?: RelationType[],
-  minWeight: number = 0
+  minWeight: number = 0,
+  callerId?: string,
+  edgeCache?: StrictGraphEdgeCache,
 ): Promise<Array<{ id: string; edge: GraphEdge }>> {
   const results: Array<{ id: string; edge: GraphEdge }> = [];
 
-  // Build where conditions
-  const conditions: any[] = [];
+  const [outgoing, incoming] = await Promise.all([
+    direction === 'outgoing' || direction === 'both'
+      ? getEdgesFrom(entityId, 'entity')
+      : Promise.resolve([]),
+    direction === 'incoming' || direction === 'both'
+      ? getEdgesTo(entityId, 'entity')
+      : Promise.resolve([]),
+  ]);
+  const trustedEdges = callerId ? await filterStrictEntityEdges([...outgoing, ...incoming], edgeCache, callerId) : [...outgoing, ...incoming];
+  const trustedIds = new Set(trustedEdges.map((edge) => edge.id));
+  const seen = new Set<string>();
+  const append = (rel: Awaited<ReturnType<typeof getEdgesFrom>>[number], neighborId: string) => {
+    if (rel.fromKind !== 'entity' || rel.toKind !== 'entity') return;
+    if (callerId && !trustedIds.has(rel.id)) return;
+    if (rel.weight < minWeight) return;
+    if (relationTypes?.length && !relationTypes.includes(rel.edgeType as RelationType)) return;
+    if (seen.has(rel.id)) return;
+    seen.add(rel.id);
+    results.push({
+      id: neighborId,
+      edge: {
+        id: rel.id,
+        fromId: rel.fromId,
+        toId: rel.toId,
+        relationType: rel.edgeType,
+        weight: rel.weight,
+        properties: rel.metadata,
+      },
+    });
+  };
 
-  if (direction === 'outgoing' || direction === 'both') {
-    // Relations FROM this entity
-    let outgoingWhere: any = eq(schema.entityRelations.fromEntityId, entityId);
-    if (minWeight > 0) {
-      outgoingWhere = and(outgoingWhere, sql`${schema.entityRelations.weight} >= ${minWeight}`);
-    }
-    if (relationTypes && relationTypes.length > 0) {
-      outgoingWhere = and(outgoingWhere, or(...relationTypes.map(t => eq(schema.entityRelations.type, t))));
-    }
-
-    const outgoing = await db
-      .select()
-      .from(schema.entityRelations)
-      .where(outgoingWhere);
-
-    for (const rel of outgoing) {
-      results.push({
-        id: rel.toEntityId,
-        edge: {
-          id: rel.id,
-          fromId: rel.fromEntityId,
-          toId: rel.toEntityId,
-          relationType: rel.type,
-          weight: rel.weight || 1,
-          properties: rel.properties,
-        },
-      });
-    }
-  }
-
-  if (direction === 'incoming' || direction === 'both') {
-    // Relations TO this entity
-    let incomingWhere: any = eq(schema.entityRelations.toEntityId, entityId);
-    if (minWeight > 0) {
-      incomingWhere = and(incomingWhere, sql`${schema.entityRelations.weight} >= ${minWeight}`);
-    }
-    if (relationTypes && relationTypes.length > 0) {
-      incomingWhere = and(incomingWhere, or(...relationTypes.map(t => eq(schema.entityRelations.type, t))));
-    }
-
-    const incoming = await db
-      .select()
-      .from(schema.entityRelations)
-      .where(incomingWhere);
-
-    for (const rel of incoming) {
-      results.push({
-        id: rel.fromEntityId,
-        edge: {
-          id: rel.id,
-          fromId: rel.fromEntityId,
-          toId: rel.toEntityId,
-          relationType: rel.type,
-          weight: rel.weight || 1,
-          properties: rel.properties,
-        },
-      });
-    }
-  }
+  for (const relation of outgoing) append(relation, relation.toId);
+  for (const relation of incoming) append(relation, relation.fromId);
 
   return results;
 }

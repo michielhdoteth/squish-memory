@@ -28,7 +28,7 @@ process.env.SQUISH_SKIP_CONTRADICTION = 'true';
 const DIMS = 768;
 const CLUSTERS = 50;
 
-interface Percentiles { p50: number; p95: number; mean: number }
+interface Percentiles { p50: number; p95: number; mean: number; firstQueryMs: number; rssBeforeFirstMb: number; rssAfterFirstMb: number }
 
 function argFlag(name: string, fallback: string): string {
   const idx = process.argv.indexOf(name);
@@ -106,7 +106,7 @@ async function seedCorpus(n: number): Promise<void> {
         const vec = makeVector(rand, clusterIdx, centroids);
         const blob = encodeEmbeddingBlob(vec)!;
         insert.run(
-          `bench-${String(i).padStart(9, '0')}`,
+          `bench-${String(n).padStart(9, '0')}-${String(i).padStart(9, '0')}`,
           `synthetic memory ${i} belonging to topic cluster ${clusterIdx} with filler words alpha beta gamma`,
           blob,
           DIMS,
@@ -131,6 +131,13 @@ async function measureMode(mode: 'recency' | 'full', runs: number, queryVecs: nu
   process.env.SQUISH_VECTOR_SCAN = mode;
   const ctx = { dbClient, db };
 
+  // Capture first-query behavior before prepared-statement and query warmups.
+  const rssBeforeFirstMb = process.memoryUsage().rss / (1024 * 1024);
+  const coldStart = performance.now();
+  await vectorSearch({ query: '' }, { limit: 20 }, queryVecs[0]!, ctx as any);
+  const firstQueryMs = performance.now() - coldStart;
+  const rssAfterFirstMb = process.memoryUsage().rss / (1024 * 1024);
+
   // Warmup (page cache, prepared statements)
   for (let w = 0; w < 5; w++) {
     await vectorSearch({ query: '' }, { limit: 20 }, queryVecs[w % queryVecs.length], ctx as any);
@@ -146,12 +153,12 @@ async function measureMode(mode: 'recency' | 'full', runs: number, queryVecs: nu
 
   samples.sort((a, b) => a - b);
   const mean = samples.reduce((s, x) => s + x, 0) / samples.length;
-  return { p50: percentile(samples, 50), p95: percentile(samples, 95), mean };
+  return { p50: percentile(samples, 50), p95: percentile(samples, 95), mean, firstQueryMs, rssBeforeFirstMb, rssAfterFirstMb };
 }
 
-function printTable(rows: Array<{ n: number; mode: string; p50: number; p95: number; mean: number; verdict: string }>): void {
-  const headers = ['corpus', 'mode', 'p50 (ms)', 'p95 (ms)', 'mean (ms)', 'verdict'];
-  const cell = (r: any, i: number) => [r.n.toLocaleString(), r.mode, r.p50.toFixed(2), r.p95.toFixed(2), r.mean.toFixed(2), r.verdict][i];
+function printTable(rows: Array<{ n: number; mode: string; p50: number; p95: number; mean: number; firstQueryMs: number; rssBeforeFirstMb: number; rssAfterFirstMb: number; verdict: string }>): void {
+  const headers = ['corpus', 'mode', 'first query (ms)', 'warm p50 (ms)', 'warm p95 (ms)', 'RSS before/after first (MiB)', 'verdict'];
+  const cell = (r: any, i: number) => [r.n.toLocaleString(), r.mode, r.firstQueryMs.toFixed(2), r.p50.toFixed(2), r.p95.toFixed(2), `${r.rssBeforeFirstMb.toFixed(1)} / ${r.rssAfterFirstMb.toFixed(1)}`, r.verdict][i];
   const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => String(cell(r, i)).length)));
   const line = widths.map((w) => '-'.repeat(w + 2)).join('+');
   console.log(widths.map((w, i) => ` ${headers[i].padEnd(w)} `).join('|'));
@@ -169,7 +176,7 @@ async function main(): Promise<void> {
 
   const { closeAllDbs } = await import('../db/index.js');
 
-  const results: Array<{ n: number; mode: string; p50: number; p95: number; mean: number; verdict: string }> = [];
+  const results: Array<{ n: number; mode: string; p50: number; p95: number; mean: number; firstQueryMs: number; rssBeforeFirstMb: number; rssAfterFirstMb: number; verdict: string }> = [];
 
   for (const n of sizes) {
     console.log(`\n=== corpus=${n.toLocaleString()} (${dimsNote}) ===`);
@@ -193,13 +200,13 @@ async function main(): Promise<void> {
       queryVecs.push(makeVector(mulberry32(9000 + q), q % CLUSTERS, centroids));
     }
 
-    const recency = await measureMode('recency', runs, queryVecs);
-    results.push({ n, mode: 'recency', ...recency, verdict: '-' });
     const full = await measureMode('full', runs, queryVecs);
     results.push({
       n, mode: 'full', ...full,
       verdict: full.p95 < 300 ? 'PASS (<300ms)' : 'FAIL (>=300ms)',
     });
+    const recency = await measureMode('recency', runs, queryVecs);
+    results.push({ n, mode: 'recency', ...recency, verdict: '-' });
 
     if (n !== sizes[sizes.length - 1]) {
       await closeAllDbs();

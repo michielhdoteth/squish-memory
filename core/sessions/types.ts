@@ -54,6 +54,10 @@ export interface Chunk {
   branch: string;
   agent: AgentId;
   agent_session_id: string;
+  /** Role supplied by the host transcript, kept separate from message text. */
+  sourceRole?: string;
+  /** Stable host event ID when the session source exposes one. */
+  sourceEventId?: string;
   files?: string[];
   timestamp: string;
 }

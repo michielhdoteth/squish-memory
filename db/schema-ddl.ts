@@ -71,22 +71,6 @@ export function createSingleTable(raw: any, tableName: string): void {
       raw.exec('CREATE INDEX IF NOT EXISTS belief_sources_memory_idx ON belief_memory_sources(memory_id)');
       break;
 
-    case 'belief_edges':
-      raw.exec(`
-        CREATE TABLE IF NOT EXISTS belief_edges (
-          id TEXT PRIMARY KEY,
-          from_belief_id TEXT REFERENCES beliefs(id) ON DELETE CASCADE,
-          to_belief_id TEXT REFERENCES beliefs(id) ON DELETE CASCADE,
-          edge_type TEXT NOT NULL,
-          metadata TEXT,
-          created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
-          UNIQUE(from_belief_id, to_belief_id, edge_type)
-        );
-      `);
-      raw.exec('CREATE INDEX IF NOT EXISTS belief_edges_from_idx ON belief_edges(from_belief_id)');
-      raw.exec('CREATE INDEX IF NOT EXISTS belief_edges_to_idx ON belief_edges(to_belief_id)');
-      break;
-
     case 'knowledge':
       raw.exec(`
         CREATE TABLE IF NOT EXISTS knowledge (
@@ -164,7 +148,11 @@ export function createSingleTable(raw: any, tableName: string): void {
           edge_type TEXT NOT NULL,
           weight REAL DEFAULT 1.0,
           metadata TEXT,
-          created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
+          created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
+          valid_from INTEGER,
+          valid_to INTEGER,
+          recorded_at INTEGER,
+          recorded_to INTEGER
         );
       `);
       raw.exec('CREATE INDEX IF NOT EXISTS knowledge_edges_from_idx ON knowledge_edges(from_id, from_kind)');
@@ -172,7 +160,8 @@ export function createSingleTable(raw: any, tableName: string): void {
       raw.exec('CREATE INDEX IF NOT EXISTS knowledge_edges_type_idx ON knowledge_edges(edge_type)');
       raw.exec('CREATE INDEX IF NOT EXISTS knowledge_edges_from_kind_idx ON knowledge_edges(from_kind)');
       raw.exec('CREATE INDEX IF NOT EXISTS knowledge_edges_to_kind_idx ON knowledge_edges(to_kind)');
-      raw.exec('CREATE UNIQUE INDEX IF NOT EXISTS knowledge_edges_unique ON knowledge_edges(from_id, from_kind, to_id, to_kind, edge_type)');
+      raw.exec('CREATE UNIQUE INDEX IF NOT EXISTS knowledge_edges_unique ON knowledge_edges(from_id, from_kind, to_id, to_kind, edge_type, valid_from, recorded_at)');
+      raw.exec('CREATE INDEX IF NOT EXISTS knowledge_edges_valid_time_idx ON knowledge_edges(valid_from, valid_to, recorded_at, recorded_to)');
       break;
 
     default:

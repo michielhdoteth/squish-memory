@@ -2,6 +2,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDbClient } from '../lib/db-client.js';
 import { logger } from '../logger.js';
+import type { DrizzleExecutor } from '../storage/database.js';
 
 // ============================================================================
 // Types
@@ -41,11 +42,12 @@ export async function addLoadout(input: {
   priority?: number;
   injectionMode?: string;
   metadata?: Record<string, unknown>;
-}): Promise<AgentLoadoutRecord> {
+}, executor?: DrizzleExecutor): Promise<AgentLoadoutRecord> {
   const { db, schema } = await getDbClient();
+  const writer = executor ?? db;
   const id = randomUUID();
 
-  await db.insert(schema.agentLoadouts).values({
+  await writer.insert(schema.agentLoadouts).values({
     id,
     agentId: input.agentId,
     assetType: input.assetType,
@@ -57,13 +59,13 @@ export async function addLoadout(input: {
     createdAt: new Date(),
   } as any);
 
-  const rows = await db.select().from(schema.agentLoadouts).where(eq(schema.agentLoadouts.id, id)).limit(1);
+  const rows = await writer.select().from(schema.agentLoadouts).where(eq(schema.agentLoadouts.id, id)).limit(1);
   return normalizeLoadout(rows[0]);
 }
 
-export async function removeLoadout(agentId: string, assetType: string, assetId: string): Promise<void> {
+export async function removeLoadout(agentId: string, assetType: string, assetId: string): Promise<boolean> {
   const { db, schema } = await getDbClient();
-  await db
+  const removed = await db
     .delete(schema.agentLoadouts)
     .where(
       and(
@@ -71,7 +73,9 @@ export async function removeLoadout(agentId: string, assetType: string, assetId:
         eq(schema.agentLoadouts.assetType, assetType),
         eq(schema.agentLoadouts.assetId, assetId),
       ),
-    );
+    )
+    .returning({ id: schema.agentLoadouts.id });
+  return removed.length > 0;
 }
 
 export async function getAgentLoadout(agentId: string): Promise<AgentLoadoutRecord[]> {
@@ -217,6 +221,9 @@ export async function checkVisibility(
   }
 
   for (const rule of rules) {
+    // A malformed or future permission string must never become a grant by
+    // default. Current reads accept the explicit read/write capabilities.
+    if (rule.permission !== 'read' && rule.permission !== 'write') continue;
     if (rule.granteeType === 'user' && rule.granteeId === userId) {
       return { allowed: true, permission: rule.permission };
     }

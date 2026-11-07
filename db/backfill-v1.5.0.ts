@@ -5,14 +5,14 @@
  * 1. Reads all existing memories with placeId set
  * 2. For each, looks up the placeType from the places table
  * 3. Sets primaryPlace = placeType on the memory
- * 4. Inserts a memory_places row with source='legacy', isPrimary=true, weight=1.0
+ * 4. Creates a canonical placed_in knowledge edge for the legacy placeId
  * 5. Parses existing tags JSON array on each memory
  * 6. For each tag, normalizes it and inserts into memory_tags
  */
 
 import { getDb } from './index';
-import { memories, places, memoryPlaces, memoryTags } from './drizzle/schema-sqlite';
-import { eq, and } from 'drizzle-orm';
+import { memories, places, knowledgeEdges, memoryTags } from './drizzle/schema-sqlite';
+import { eq, and, isNotNull, isNull } from 'drizzle-orm';
 
 /**
  * Normalize a tag string: lowercase, trim, replace spaces with hyphens
@@ -54,7 +54,7 @@ export async function backfillV1_5_0(): Promise<{
     .where(
       and(
         eq(memories.isActive, true),
-        memories.placeId.isNotNull()
+        isNotNull(memories.placeId)
       )
     );
 
@@ -86,30 +86,26 @@ export async function backfillV1_5_0(): Promise<{
 
     memoriesUpdated++;
 
-    // Insert memory_places row with source='legacy'
-    const existingPlace = await db
-      .select()
-      .from(memoryPlaces)
-      .where(
-        and(
-          eq(memoryPlaces.memoryId, memory.id),
-          eq(memoryPlaces.placeType, placeType),
-          eq(memoryPlaces.source, 'legacy')
-        )
-      )
+    // Route through the canonical edge writer so the backfill remains usable
+    // after the legacy assignment table is retired. This validates endpoint
+    // and project scope and treats a repeated backfill as an idempotent write.
+    const { assignMemoryToPlace } = await import('../core/places/memory-places.js');
+    const existingEdge = await db
+      .select({ id: knowledgeEdges.id })
+      .from(knowledgeEdges)
+      .where(and(
+        eq(knowledgeEdges.fromId, memory.id),
+        eq(knowledgeEdges.fromKind, 'knowledge'),
+        eq(knowledgeEdges.toId, placeType),
+        eq(knowledgeEdges.toKind, 'place'),
+        eq(knowledgeEdges.edgeType, 'placed_in'),
+        isNull(knowledgeEdges.validTo),
+        isNull(knowledgeEdges.recordedTo),
+      ))
       .limit(1);
-
-    if (existingPlace.length === 0) {
-      await db.insert(memoryPlaces).values({
-        memoryId: memory.id,
-        placeType: placeType,
-        weight: 1.0,
-        source: 'legacy',
-        isPrimary: true,
-        reason: 'Backfilled from v1.4.x placeId',
-      });
-      placesCreated++;
-    }
+    const assigned = await assignMemoryToPlace({ memoryId: memory.id, placeId: placeType });
+    if (!assigned) throw new Error(`Could not backfill place assignment for memory ${memory.id}`);
+    if (existingEdge.length === 0) placesCreated++;
   }
 
   // 3. Process tags for ALL active memories

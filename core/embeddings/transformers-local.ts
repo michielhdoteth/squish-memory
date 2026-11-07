@@ -16,6 +16,9 @@ import { logger } from '../logger.js';
 import { config } from '../../config.js';
 
 type Pipeline = Awaited<ReturnType<typeof pipeline>>;
+type DisposablePipeline = Pipeline & { dispose?: () => Promise<void> };
+type EmbeddingOutput = { data: ArrayLike<number>; dispose?: () => void };
+type FeatureExtractor = Pipeline & ((text: string, options: { pooling: 'mean'; normalize: true }) => Promise<EmbeddingOutput>);
 
 export interface TransformersLocalConfig {
   model: string;
@@ -23,27 +26,48 @@ export interface TransformersLocalConfig {
   dtype: 'q8' | 'q4' | 'f16' | 'f32';
 }
 
-const DEFAULT_CONFIG: TransformersLocalConfig = {
-  model: '',
-  device: 'cpu',
-  dtype: 'q8', // Quantized for smaller size + faster loading
-};
+const DEFAULT_DTYPE: TransformersLocalConfig['dtype'] = 'q8';
+
+/** Resolve the effective model and device without initializing or downloading the model. */
+export function getTransformersLocalConfig(): TransformersLocalConfig {
+  return {
+    model: resolveActiveModel(),
+    device: config.localEmbeddingDevice,
+    dtype: DEFAULT_DTYPE,
+  };
+}
+
+function toPipelineDtype(dtype: TransformersLocalConfig['dtype']): 'q8' | 'q4' | 'fp16' | 'fp32' {
+  if (dtype === 'f16') return 'fp16';
+  if (dtype === 'f32') return 'fp32';
+  return dtype;
+}
 
 // Singleton pipeline instance
 let embeddingPipeline: Pipeline | null = null;
 let isLoading = false;
 let loadPromise: Promise<Pipeline | null> | null = null;
+let gpuInferenceQueue: Promise<void> = Promise.resolve();
+let gpuQueuedInferenceCount = 0;
+let activeInferenceCount = 0;
+let inferenceIdleWaiters: Array<() => void> = [];
+let unloadPromise: Promise<void> | null = null;
+const MAX_QUEUED_GPU_INFERENCES = 32;
 
 // Model explicitly activated by the embeddings orchestrator (bundled-model
 // path). SQUISH_LOCAL_MODEL always wins over this.
 let activeModelOverride = '';
 
 /** Activate a model for pipelines created without SQUISH_LOCAL_MODEL set. */
-export function setActiveModel(model: string): void {
-  activeModelOverride = model;
-  if (embeddingPipeline) {
-    embeddingPipeline = null; // force rebuild with the new model
+export async function setActiveModel(model: string): Promise<void> {
+  if (config.transformersLocalModel) {
+    activeModelOverride = model;
+    return;
   }
+  if (activeModelOverride === model) return;
+  await unload();
+  activeModelOverride = model;
+  lastKnownDim = 0;
 }
 
 function resolveActiveModel(): string {
@@ -63,6 +87,51 @@ const KNOWN_MODEL_DIMS: Record<string, number> = {
   'Xenova/multilingual-e5-small': 384,
 };
 
+/** Copy an ONNX result into durable JS values and release its tensor buffer. */
+export function copyEmbeddingAndDispose(output: EmbeddingOutput): number[] {
+  try {
+    const embedding = Array.from(output.data);
+    if (embedding.length > 0) lastKnownDim = embedding.length;
+    return embedding;
+  } finally {
+    output.dispose?.();
+  }
+}
+
+/** Keep concurrent callers from overcommitting a shared WebGPU device. */
+export function withSerializedGpuInference<T>(
+  device: TransformersLocalConfig['device'],
+  inference: () => Promise<T>,
+): Promise<T> {
+  if (unloadPromise) return unloadPromise.then(() => withSerializedGpuInference(device, inference));
+  const runTracked = async (): Promise<T> => {
+    activeInferenceCount++;
+    try {
+      return await inference();
+    } finally {
+      activeInferenceCount--;
+      if (activeInferenceCount === 0) {
+        for (const resolve of inferenceIdleWaiters) resolve();
+        inferenceIdleWaiters = [];
+      }
+    }
+  };
+  if (device === 'cpu') return runTracked();
+  if (gpuQueuedInferenceCount >= MAX_QUEUED_GPU_INFERENCES) {
+    return Promise.reject(new Error(`WebGPU embedding queue is full (limit=${MAX_QUEUED_GPU_INFERENCES})`));
+  }
+  gpuQueuedInferenceCount++;
+  const result = gpuInferenceQueue.then(runTracked, runTracked);
+  gpuInferenceQueue = result.then(() => undefined, () => undefined);
+  return result.finally(() => { gpuQueuedInferenceCount--; });
+}
+
+export async function waitForLocalInferenceIdle(): Promise<void> {
+  await gpuInferenceQueue;
+  if (activeInferenceCount === 0) return;
+  await new Promise<void>((resolve) => inferenceIdleWaiters.push(resolve));
+}
+
 /**
  * Get or initialize the embedding pipeline (lazy loading)
  */
@@ -79,22 +148,23 @@ async function getPipeline(): Promise<Pipeline | null> {
 
   // Start loading
   isLoading = true;
-  const model = resolveActiveModel();
+  const runtimeConfig = getTransformersLocalConfig();
+  const { model } = runtimeConfig;
   if (!model) {
     isLoading = false;
     throw new Error('Transformers provider requires SQUISH_LOCAL_MODEL to be set');
   }
 
-  logger.info(`Loading transformers local model: ${model}`);
+  logger.info(`Loading transformers local model: ${model} (device=${runtimeConfig.device}, dtype=${runtimeConfig.dtype})`);
 
   loadPromise = (async () => {
     try {
       embeddingPipeline = await pipeline(
         'feature-extraction',
-        model as any,
+        model,
         {
-          device: DEFAULT_CONFIG.device as any,
-          dtype: DEFAULT_CONFIG.dtype as any,
+          device: runtimeConfig.device,
+          dtype: toPipelineDtype(runtimeConfig.dtype),
         }
       );
 
@@ -142,7 +212,7 @@ export function getEmbeddingDimension(): number {
 /** Identifier stamped into embedding_model on writes, e.g. "transformers:Xenova/all-MiniLM-L6-v2:q8". */
 export function getModelId(): string {
   const model = resolveActiveModel() || 'unknown';
-  return `transformers:${model}:${DEFAULT_CONFIG.dtype}`;
+  return `transformers:${model}:${DEFAULT_DTYPE}`;
 }
 
 /**
@@ -155,27 +225,19 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
   }
 
   try {
-    const embedPipeline = await getPipeline();
-    if (!embedPipeline) {
-      return null;
-    }
-
     // Truncate to max sequence length (256 tokens)
     const truncatedText = text.slice(0, 512);
 
     // Run feature extraction with pooling
-    const output = await (embedPipeline as any)(truncatedText, {
-      pooling: 'mean',
-      normalize: true,
+    return await withSerializedGpuInference(config.localEmbeddingDevice, async () => {
+      const embedPipeline = await getPipeline();
+      if (!embedPipeline) return null;
+      const output = await (embedPipeline as FeatureExtractor)(truncatedText, {
+        pooling: 'mean',
+        normalize: true,
+      });
+      return copyEmbeddingAndDispose(output);
     });
-
-    // Convert tensor to array
-    const embedding = Array.from(output.data) as number[];
-    if (embedding.length > 0) {
-      lastKnownDim = embedding.length;
-    }
-
-    return embedding;
   } catch (error) {
     logger.warn(`Transformers embedding error: ${error}`);
     return null;
@@ -190,6 +252,10 @@ export async function getBatchEmbeddings(
   texts: string[],
   batchSize: number = 8
 ): Promise<Array<number[] | null>> {
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
+    throw new RangeError('Embedding batchSize must be a positive safe integer');
+  }
+  batchSize = Math.min(batchSize, 32);
   if (texts.length === 0) {
     return [];
   }
@@ -203,25 +269,19 @@ export async function getBatchEmbeddings(
     const indices = [...Array(batch.length).keys()].map(j => i + j);
 
     try {
-      const embedPipeline = await getPipeline();
-      if (!embedPipeline) {
-        continue;
-      }
-
       // Truncate each text
       const truncatedBatch = batch.map(t => t.slice(0, 512));
 
       // Process batch
-      const outputs = await Promise.all(
-        truncatedBatch.map(text =>
-          (embedPipeline as any)(text, { pooling: 'mean', normalize: true })
-        )
-      );
-
-      // Store results
-      for (let j = 0; j < outputs.length; j++) {
-        results[indices[j]] = Array.from(outputs[j].data);
-      }
+      const batchResults = await Promise.all(truncatedBatch.map((text) =>
+        withSerializedGpuInference(config.localEmbeddingDevice, async () => {
+          const embedPipeline = await getPipeline();
+          if (!embedPipeline) return null;
+          const output = await (embedPipeline as FeatureExtractor)(text, { pooling: 'mean', normalize: true });
+          return copyEmbeddingAndDispose(output);
+        })
+      ));
+      for (let j = 0; j < batchResults.length; j++) results[indices[j]] = batchResults[j];
     } catch (error) {
       logger.warn(`Transformers batch embedding error: ${error}`);
     }
@@ -239,12 +299,15 @@ export async function checkHealth(): Promise<{
   error?: string;
   model?: string;
   dimension?: number;
+  device?: 'cpu' | 'webgpu';
 }> {
   const model = resolveActiveModel();
+  const device = config.localEmbeddingDevice;
   if (!model) {
     return {
       available: false,
       error: 'SQUISH_LOCAL_MODEL is not configured',
+      device,
     };
   }
 
@@ -255,6 +318,7 @@ export async function checkHealth(): Promise<{
     return {
       available: false,
       error: '@huggingface/transformers not installed',
+      device,
     };
   }
 
@@ -269,12 +333,14 @@ export async function checkHealth(): Promise<{
       latencyMs: latency,
       model,
       dimension: embedding?.length || 0,
+      device,
     };
   } catch (error) {
     return {
       available: false,
       error: (error as Error).message,
       model,
+      device,
     };
   }
 }
@@ -283,10 +349,24 @@ export async function checkHealth(): Promise<{
  * Unload the pipeline (for testing or memory management)
  */
 export async function unload(): Promise<void> {
-  if (embeddingPipeline) {
-    // Pipeline doesn't have explicit cleanup, just release reference
-    embeddingPipeline = null;
-    logger.info('Transformers pipeline unloaded');
+  if (unloadPromise) return unloadPromise;
+  unloadPromise = (async () => {
+    if (loadPromise) {
+      try { await loadPromise; } catch { /* failed loads have no pipeline to dispose */ }
+    }
+    await waitForLocalInferenceIdle();
+    if (embeddingPipeline) {
+      const loadedPipeline: DisposablePipeline = embeddingPipeline;
+      await loadedPipeline.dispose?.();
+      if (embeddingPipeline === loadedPipeline) embeddingPipeline = null;
+      logger.info('Transformers pipeline unloaded');
+    }
+    isLoading = false;
+  })();
+  try {
+    await unloadPromise;
+  } finally {
+    unloadPromise = null;
   }
 }
 

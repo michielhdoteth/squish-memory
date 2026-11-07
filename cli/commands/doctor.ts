@@ -8,10 +8,10 @@
  *   squish doctor --json
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
-import { probeSchemaHealth, ProbeResult } from '../../db/schema-probe.js';
+import { probeSchemaHealth } from '../../db/schema-probe.js';
 import { runHealthChecks, type HealthReport } from '../../core/health-check.js';
-import { migrateToLatest } from '../../db/schema-migrator.js';
 import { fixSchemaIssues } from '../../db/schema-repair.js';
 import { config } from '../../config.js';
 import { remediationFor } from '../errors.js';
@@ -26,8 +26,7 @@ export function registerDoctorCommand(program: Command) {
     .option('--json', 'Emit machine-readable output', false)
     .option('-v, --verbose', 'Show detailed information', false)
     .action(async (options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         // Run health checks
         const report = await runHealthChecks();
@@ -61,6 +60,8 @@ export function registerDoctorCommand(program: Command) {
               backend: probe.backend,
               detail: probe.detail,
               missingTables: probe.missingTables,
+              missingColumns: probe.missingColumns,
+              indexIssues: probe.indexIssues,
             },
             checks: report.checks,
           }, null, 2));
@@ -70,6 +71,10 @@ export function registerDoctorCommand(program: Command) {
           console.log(`  Schema:    ${probe.status === 'ok' ? colors.green('OK') : colors.red(probe.status)}`);
           if (probe.missingTables.length > 0) {
             console.log(`  Missing:   ${colors.red(probe.missingTables.join(', '))}`);
+          }
+          if (probe.indexIssues.length > 0) {
+            const issues = probe.indexIssues.map(({ name, reason }) => `${name} (${reason})`).join(', ');
+            console.log(`  Indexes:   ${colors.red(issues)}`);
           }
           console.log();
           for (const check of report.checks) {
@@ -91,10 +96,7 @@ export function registerDoctorCommand(program: Command) {
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     });
 }

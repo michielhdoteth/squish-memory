@@ -9,6 +9,7 @@ import { config } from '../../../config.js';
 import { logger } from '../../logger.js';
 import { validateOutboundUrl } from '../../lib/url-validator.js';
 import type { LLMProvider, LLMCallOptions, LLMContentPart } from '../types.js';
+import { reportLLMTokenUsage } from '../usage.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -39,14 +40,18 @@ export const googleProvider: LLMProvider = {
   name: 'google',
 
   isAvailable(): boolean {
-    return config.llmEnabled && Boolean(config.googleGeminiApiKey);
+    // "Configured" check only: the master SQUISH_LLM_ENABLED switch lives in
+    // the client router (getActiveProvider), so the decision layer can reuse
+    // this provider with its own independent opt-in.
+    return Boolean(config.googleGeminiApiKey);
   },
 
   async call(options: LLMCallOptions): Promise<string | null> {
     if (!this.isAvailable()) return null;
 
-    const model = config.llmExtractionModel || config.googleGeminiModel;
+    const model = options.model ?? (config.llmExtractionModel || config.googleGeminiModel);
     const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
     const timeout = setTimeout(
       () => controller.abort(),
       options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -74,7 +79,7 @@ export const googleProvider: LLMProvider = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody),
-          signal: controller.signal,
+          signal,
       });
 
       clearTimeout(timeout);
@@ -88,7 +93,11 @@ export const googleProvider: LLMProvider = {
         candidates?: Array<{
           content?: { parts?: Array<{ text?: string }> };
         }>;
+        usageMetadata?: unknown;
       };
+      reportLLMTokenUsage(options, data.usageMetadata, {
+        inputTokens: 'promptTokenCount', outputTokens: 'candidatesTokenCount', totalTokens: 'totalTokenCount',
+      });
       return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
     } catch (err: unknown) {
       clearTimeout(timeout);

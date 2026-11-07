@@ -7,6 +7,7 @@
  *        squish promote <memoryId>      # Promote to sturdy tier
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
 import { pinMemory, unpinMemory } from '../../core/security/governance.js';
 import { promoteToSturdy } from '../../core/memory/tiers.js';
@@ -22,10 +23,7 @@ export function registerPinCommand(program: Command) {
     .option('--unpin', 'Force unpin (no toggle)', false)
     .option('--json', 'Emit machine-readable output', false)
     .action(async (memoryId: string, options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) {
-        process.env.SQUISH_QUIET = '1';
-      }
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const forcePin = options.pin === true;
         const forceUnpin = options.unpin === true;
@@ -88,13 +86,7 @@ export function registerPinCommand(program: Command) {
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) {
-            delete process.env.SQUISH_QUIET;
-          } else {
-            process.env.SQUISH_QUIET = previousQuiet;
-          }
-        }
+        restoreQuiet();
       }
     });
 
@@ -104,10 +96,7 @@ export function registerPinCommand(program: Command) {
     .description('Promote a memory to sturdy tier (pins it, prevents decay, boosts in search)')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (memoryId: string, options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) {
-        process.env.SQUISH_QUIET = '1';
-      }
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const success = await promoteToSturdy(memoryId);
         if (options.json) {
@@ -130,13 +119,7 @@ export function registerPinCommand(program: Command) {
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) {
-            delete process.env.SQUISH_QUIET;
-          } else {
-            process.env.SQUISH_QUIET = previousQuiet;
-          }
-        }
+        restoreQuiet();
       }
     });
 }

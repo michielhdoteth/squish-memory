@@ -11,13 +11,17 @@ import {
   text,
   timestamp,
   integer,
+  bigint,
   jsonb,
   real,
   boolean,
+  uuid,
   index,
+  check,
   unique,
   uniqueIndex,
   foreignKey,
+  customType,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -27,7 +31,6 @@ import { sql } from 'drizzle-orm';
 
 export const beliefStatusEnum = pgEnum('belief_status', ['active', 'superseded', 'disputed']);
 export const beliefTypeEnum = pgEnum('belief_type', ['decision', 'preference', 'failure_cause', 'constraint', 'state_change', 'dispute']);
-export const beliefEdgeTypeEnum = pgEnum('belief_edge_type', ['causes', 'supports', 'rejects', 'supersedes', 'depends_on']);
 export const teamMemberRoleEnum = pgEnum('team_member_role', ['owner', 'admin', 'member']);
 export const teamInvitationStatusEnum = pgEnum('team_invitation_status', ['pending', 'accepted', 'expired']);
 export const knowledgeKindEnum = pgEnum('knowledge_kind', ['memory', 'belief', 'strategy']);
@@ -40,52 +43,149 @@ export const knowledgeKindEnum = pgEnum('knowledge_kind', ['memory', 'belief', '
  * Users - authentication and identity
  */
 export const users = pgTable('users', {
-  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
-  email: text('email').unique(),
+  id: uuid('id').defaultRandom().primaryKey(),
+  externalId: text('external_id').unique(),
+  email: text('email'),
   name: text('name'),
-  passwordHash: text('password_hash'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => [
-  index('users_email_idx').on(table.email),
-]);
+});
 
 /**
  * Projects - memory workspace containers
  */
 export const projects = pgTable('projects', {
-  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
+  id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
-  slug: text('slug').notNull().unique(),
+  // Present in the PostgreSQL base migration and used by project-scoped graph/runtime queries.
+  path: text('path').notNull(),
   description: text('description'),
   metadata: jsonb('metadata'),
-  ownerId: text('owner_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => [
-  index('projects_slug_idx').on(table.slug),
-  index('projects_owner_idx').on(table.ownerId),
-]);
+});
 
 /**
  * Memories - atomic units of knowledge
  */
 export const memories = pgTable('memories', {
-  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
-  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
   teamId: text('team_id').references(() => teams.id, { onDelete: 'set null' }),
   type: text('type').notNull(),
   content: text('content').notNull(),
-  embedding: text('embedding'),  // JSON-serialized vector
-  confidence: real('confidence').default(1.0),
+  summary: text('summary'),
+  encryptedContent: text('encrypted_content'),
+  encryptionNonce: text('encryption_nonce'),
+  isEncrypted: boolean('is_encrypted').default(false),
+  confidenceLevel: text('confidence_level').notNull().default('speculative'),
+  importanceScore: integer('importance_score').notNull().default(50),
+  // The migration stores pgvector, whose node-postgres codec returns its text form.
+  embedding: customType<{ data: string; driverData: string }>({
+    dataType: () => 'vector(1536)',
+  })('embedding'),
+  embeddingModel: text('embedding_model'),
+  confidence: integer('confidence').default(100),
   source: text('source'),
+  tags: text('tags').array(),
+  metadata: jsonb('metadata'),
+  isPrivate: boolean('is_private').default(false),
+  hasSecrets: boolean('has_secrets').default(false),
+  relevanceScore: integer('relevance_score').default(50),
+  tokensEstimate: integer('tokens_estimate').default(0).notNull(),
+  sector: text('sector').default('episodic'),
+  tier: text('tier').default('hot'),
+  decayRate: integer('decay_rate').default(30),
+  coactivationScore: integer('coactivation_score').default(0),
+  lastDecayAt: timestamp('last_decay_at').defaultNow(),
+  agentId: text('agent_id'),
+  agentRole: text('agent_role'),
+  visibilityScope: text('visibility_scope').default('private'),
+  isProtected: boolean('is_protected').default(false),
+  isPinned: boolean('is_pinned').default(false),
+  isImmutable: boolean('is_immutable').default(false),
+  writeScope: text('write_scope').array(),
+  readScope: text('read_scope').array(),
+  triggeredBy: text('triggered_by'),
+  captureReason: text('capture_reason'),
+  lastUsedAt: timestamp('last_used_at'),
+  usageCount: integer('usage_count').default(0),
+  validFrom: timestamp('valid_from'),
+  validTo: timestamp('valid_to'),
+  recordedAt: timestamp('recorded_at').defaultNow().notNull(),
+  supersededBy: uuid('superseded_by'),
+  version: integer('version').default(1),
+  isActive: boolean('is_active').default(true),
+  status: text('status').notNull().default('active'),
+  expiresAt: timestamp('expires_at'),
+  accessCount: integer('access_count').default(0),
+  lastAccessedAt: timestamp('last_accessed_at'),
+  isMerged: boolean('is_merged').default(false),
+  mergedIntoId: uuid('merged_into_id'),
+  mergedAt: timestamp('merged_at'),
+  isCanonical: boolean('is_canonical').default(false),
+  mergeSourceIds: jsonb('merge_source_ids'),
+  isMergeable: boolean('is_mergeable').default(true),
+  mergeVersion: integer('merge_version').default(1),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
   index('memories_project_idx').on(table.projectId),
   index('memories_type_idx').on(table.type),
   index('memories_created_idx').on(table.createdAt),
+  index('memories_tags_idx').on(table.tags),
+  index('memories_relevance_idx').on(table.relevanceScore),
+  index('memories_private_idx').on(table.isPrivate),
+  index('memories_merged_idx').on(table.isMerged),
+  index('memories_canonical_idx').on(table.isCanonical),
+  index('memories_sector_idx').on(table.sector),
+  index('memories_tier_idx').on(table.tier),
+  index('memories_agent_idx').on(table.agentId),
+  index('memories_visibility_idx').on(table.visibilityScope),
+  index('memories_protected_idx').on(table.isProtected),
+  index('memories_pinned_idx').on(table.isPinned),
+  index('memories_valid_from_idx').on(table.validFrom),
+  index('memories_valid_to_idx').on(table.validTo),
+  index('memories_duplicate_detection_idx').on(table.projectId, table.isMerged, table.isMergeable, table.isActive),
+  index('memories_eviction_idx').on(table.projectId, table.tier, table.relevanceScore, table.createdAt),
+  index('memories_decay_idx').on(table.sector, table.lastDecayAt, table.isProtected),
+  index('memories_temporal_idx').on(table.projectId, table.validFrom, table.validTo),
+  index('memories_status_lifecycle_idx').on(table.status, table.isActive, table.expiresAt),
+  index('memories_agent_visibility_idx').on(table.agentId, table.visibilityScope, table.isActive),
   index('memories_team_idx').on(table.teamId),
+]);
+
+/** Analysis queue rows created with ordinary memory writes. */
+export const memoryAnalysisJobs = pgTable('memory_analysis_jobs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  sourceMemoryId: uuid('source_memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  jobKind: text('job_kind').notNull(),
+  status: text('status').notNull().default('pending'),
+  attempts: integer('attempts').notNull().default(0),
+  availableAt: bigint('available_at', { mode: 'number' }).notNull()
+    .default(sql`floor(extract(epoch from now()))::bigint`),
+  lockedAt: bigint('locked_at', { mode: 'number' }),
+  lastErrorCode: text('last_error_code'),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull()
+    .default(sql`floor(extract(epoch from now()))::bigint`),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull()
+    .default(sql`floor(extract(epoch from now()))::bigint`),
+}, (table) => [
+  unique('memory_analysis_jobs_source_kind_uq').on(table.sourceMemoryId, table.jobKind),
+  index('memory_analysis_jobs_status_available_idx').on(table.status, table.availableAt),
+  index('memory_analysis_jobs_project_idx').on(table.projectId),
+]);
+
+/** Hashed host-capture receipts make retries idempotent across concurrent writers. */
+export const memoryCaptureReceipts = pgTable('memory_capture_receipts', {
+  captureKeyHash: text('capture_key_hash').primaryKey(),
+  contentHash: text('content_hash').notNull(),
+  memoryId: uuid('memory_id').notNull().unique().references(() => memories.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('memory_capture_receipts_memory_idx').on(table.memoryId),
 ]);
 
 /**
@@ -168,23 +268,6 @@ export const beliefMemorySources = pgTable('belief_memory_sources', {
 ]);
 
 /**
- * Belief Edges - causal/inference relationships
- */
-export const beliefEdges = pgTable('belief_edges', {
-  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
-  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  fromBeliefId: text('from_belief_id').notNull().references(() => beliefs.id, { onDelete: 'cascade' }),
-  toBeliefId: text('to_belief_id').notNull().references(() => beliefs.id, { onDelete: 'cascade' }),
-  type: beliefEdgeTypeEnum('type').notNull(),
-  weight: real('weight').default(1.0),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (table) => [
-  index('belief_edges_project_idx').on(table.projectId),
-  index('belief_edges_from_idx').on(table.fromBeliefId),
-  index('belief_edges_to_idx').on(table.toBeliefId),
-]);
-
-/**
  * Strategies - execution plans
  */
 export const strategies = pgTable('strategies', {
@@ -204,45 +287,11 @@ export const strategies = pgTable('strategies', {
   index('strategies_status_idx').on(table.status),
 ]);
 
-/**
- * Strategy Edges - step dependencies
- */
-export const strategyEdges = pgTable('strategy_edges', {
-  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
-  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  fromStrategyId: text('from_strategy_id').notNull().references(() => strategies.id, { onDelete: 'cascade' }),
-  toStrategyId: text('to_strategy_id').notNull().references(() => strategies.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(),
-  weight: real('weight').default(1.0),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (table) => [
-  index('strategy_edges_project_idx').on(table.projectId),
-  index('strategy_edges_from_idx').on(table.fromStrategyId),
-  index('strategy_edges_to_idx').on(table.toStrategyId),
-]);
-
-/**
- * Strategy-Belief connections
- */
-export const strategyBeliefEdges = pgTable('strategy_belief_edges', {
-  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
-  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  strategyId: text('strategy_id').notNull().references(() => strategies.id, { onDelete: 'cascade' }),
-  beliefId: text('belief_id').notNull().references(() => beliefs.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(),
-  weight: real('weight').default(1.0),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (table) => [
-  index('strategy_belief_edges_project_idx').on(table.projectId),
-  index('strategy_belief_edges_strategy_idx').on(table.strategyId),
-  index('strategy_belief_edges_belief_idx').on(table.beliefId),
-]);
-
 // =============================================================================
 // Graph & Context Tables
 // =============================================================================
 
-// Existing PostgreSQL migration 0000_needy_cerebro.sql defines both graph tables.
+// Migration 0000 defines the legacy entity store; 0004 adds canonical knowledge and graph-edge tables.
 export const entities = pgTable('entities', {
   id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
   projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
@@ -260,38 +309,6 @@ export const entities = pgTable('entities', {
   index('entities_project_idx').on(table.projectId),
   index('entities_type_idx').on(table.type),
   index('entities_name_idx').on(table.name),
-]);
-
-export const entityRelations = pgTable('entity_relations', {
-  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
-  fromEntityId: text('from_entity_id').notNull().references(() => entities.id, { onDelete: 'cascade' }),
-  toEntityId: text('to_entity_id').notNull().references(() => entities.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(),
-  weight: integer('weight').default(1),
-  properties: jsonb('properties'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (table) => [
-  index('relations_from_idx').on(table.fromEntityId),
-  index('relations_to_idx').on(table.toEntityId),
-  index('relations_type_idx').on(table.type),
-]);
-
-/**
- * Graph Edges - semantic relationships between memories
- */
-export const graphEdges = pgTable('graph_edges', {
-  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
-  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  fromMemoryId: text('from_memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
-  toMemoryId: text('to_memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(),
-  weight: real('weight').default(1.0),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (table) => [
-  index('graph_edges_project_idx').on(table.projectId),
-  index('graph_edges_from_idx').on(table.fromMemoryId),
-  index('graph_edges_to_idx').on(table.toMemoryId),
-  uniqueIndex('graph_edges_unique').on(table.fromMemoryId, table.toMemoryId, table.type),
 ]);
 
 /**
@@ -443,6 +460,38 @@ export const auditLogs = pgTable('audit_logs', {
   index('audit_logs_project_idx').on(table.projectId),
   index('audit_logs_memory_idx').on(table.memoryId),
   index('audit_logs_created_idx').on(table.createdAt),
+]);
+
+/** Knowledge-record audit trail used by memory projection creation and history views. */
+export const knowledgeAuditLog = pgTable('knowledge_audit_log', {
+  id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
+  knowledgeId: text('knowledge_id').notNull(),
+  action: text('action').notNull(),
+  agentId: text('agent_id'),
+  projectId: text('project_id'),
+  sessionId: text('session_id'),
+  details: jsonb('details'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('knowledge_audit_log_knowledge_idx').on(table.knowledgeId),
+  index('knowledge_audit_log_action_idx').on(table.action),
+  index('knowledge_audit_log_agent_idx').on(table.agentId),
+  index('knowledge_audit_log_created_idx').on(table.createdAt),
+  index('knowledge_audit_log_knowledge_action_idx').on(table.knowledgeId, table.action),
+]);
+
+/** Minimized authorization decisions; identities and resource IDs are hashed by the caller. */
+export const trustAuditLog = pgTable('trust_audit_log', {
+  id: text('id').primaryKey(),
+  actorHash: text('actor_hash').notNull(),
+  resourceHash: text('resource_hash').notNull(),
+  assetType: text('asset_type').notNull(),
+  decision: text('decision').notNull(),
+  reason: text('reason').notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+}, (table) => [
+  index('trust_audit_created_idx').on(table.createdAt),
+  index('trust_audit_resource_idx').on(table.resourceHash, table.createdAt),
 ]);
 
 // =============================================================================
@@ -627,11 +676,18 @@ export const knowledgeEdges = pgTable('knowledge_edges', {
   weight: real('weight').default(1.0),
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  validFrom: timestamp('valid_from'),
+  validTo: timestamp('valid_to'),
+  recordedAt: timestamp('recorded_at'),
+  recordedTo: timestamp('recorded_to'),
 }, (table) => [
+  check('knowledge_edges_valid_interval', sql`${table.validTo} IS NULL OR (${table.validFrom} IS NOT NULL AND ${table.validTo} > ${table.validFrom})`),
+  check('knowledge_edges_recorded_interval', sql`${table.recordedTo} IS NULL OR (${table.recordedAt} IS NOT NULL AND ${table.recordedTo} > ${table.recordedAt})`),
   index('knowledge_edges_from_idx').on(table.fromId, table.fromKind),
   index('knowledge_edges_to_idx').on(table.toId, table.toKind),
   index('knowledge_edges_type_idx').on(table.edgeType),
-  uniqueIndex('knowledge_edges_unique').on(table.fromId, table.fromKind, table.toId, table.toKind, table.edgeType),
+  uniqueIndex('knowledge_edges_unique').on(table.fromId, table.fromKind, table.toId, table.toKind, table.edgeType, table.validFrom, table.recordedAt),
+  index('knowledge_edges_valid_time_idx').on(table.validFrom, table.validTo, table.recordedAt, table.recordedTo),
 ]);
 
 /**
@@ -823,7 +879,7 @@ export const memoryEditProposals = pgTable('memory_edit_proposals', {
 export const memorySnapshots = pgTable('memory_snapshots', {
   id: text('id').primaryKey(),
   memoryId: text('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
-  snapshotType: text('snapshot_type').notNull().$type<'before_update' | 'after_update' | 'periodic' | 'correction'>(),
+  snapshotType: text('snapshot_type').notNull().$type<'before_update' | 'after_update' | 'periodic' | 'correction' | 'archive'>(),
   content: text('content').notNull(),
   metadata: jsonb('metadata').$type<Record<string, unknown>>(),
   diff: jsonb('diff').$type<Record<string, unknown>>(),
@@ -857,7 +913,7 @@ export const teams = pgTable('teams', {
 export const team_members = pgTable('team_members', {
   id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
   teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   role: teamMemberRoleEnum('role').notNull().default('member'),
   joinedAt: timestamp('joined_at').defaultNow().notNull(),
 }, (table) => [
@@ -887,15 +943,30 @@ export const team_invitations = pgTable('team_invitations', {
  */
 export const team_shares = pgTable('team_shares', {
   id: text('id').default(sql`gen_random_uuid()`).primaryKey(),
-  memoryId: text('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
+  memoryId: uuid('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
   teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
-  sharedBy: text('shared_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sharedBy: uuid('shared_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
   permission: text('permission').notNull().default('read'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => [
   uniqueIndex('team_shares_memory_team_unique').on(table.memoryId, table.teamId),
   index('team_shares_memory_idx').on(table.memoryId),
   index('team_shares_team_idx').on(table.teamId),
+]);
+
+/** Hashed strict-mode authorization and mutation audit. */
+export const teamSecurityAudit = pgTable('team_security_audit', {
+  id: text('id').primaryKey(),
+  actorHash: text('actor_hash').notNull(),
+  teamHash: text('team_hash').notNull(),
+  targetHash: text('target_hash'),
+  action: text('action').notNull(),
+  decision: text('decision').notNull(),
+  reason: text('reason').notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+}, (table) => [
+  index('team_security_audit_created_idx').on(table.createdAt),
+  index('team_security_audit_team_idx').on(table.teamHash, table.createdAt),
 ]);
 
 // =============================================================================
@@ -983,7 +1054,6 @@ export const projectMembers = pgTable('project_members', {
 
 export type BeliefType = 'decision' | 'preference' | 'failure_cause' | 'constraint' | 'state_change' | 'dispute';
 export type BeliefStatus = 'active' | 'superseded' | 'disputed';
-export type BeliefEdgeType = 'causes' | 'supports' | 'rejects' | 'supersedes' | 'depends_on';
 
 export type MemoryPlace = typeof memoryPlaces.$inferSelect;
 export type NewMemoryPlace = typeof memoryPlaces.$inferInsert;
@@ -995,15 +1065,9 @@ export type Belief = typeof beliefs.$inferSelect;
 export type NewBelief = typeof beliefs.$inferInsert;
 export type BeliefMemorySource = typeof beliefMemorySources.$inferSelect;
 export type NewBeliefMemorySource = typeof beliefMemorySources.$inferInsert;
-export type BeliefEdge = typeof beliefEdges.$inferSelect;
-export type NewBeliefEdge = typeof beliefEdges.$inferInsert;
 
 export type Strategy = typeof strategies.$inferSelect;
 export type NewStrategy = typeof strategies.$inferInsert;
-export type StrategyEdge = typeof strategyEdges.$inferSelect;
-export type NewStrategyEdge = typeof strategyEdges.$inferInsert;
-export type StrategyBeliefEdge = typeof strategyBeliefEdges.$inferSelect;
-export type NewStrategyBeliefEdge = typeof strategyBeliefEdges.$inferInsert;
 
 // Team type exports
 export type Team = typeof teams.$inferSelect;

@@ -7,7 +7,7 @@
 import { randomUUID } from 'crypto';
 import { desc, eq, sql, and } from 'drizzle-orm';
 import { config } from '../../config.js';
-import { getEmbedding, activeEmbeddingModel } from '../embeddings.js';
+import { getEmbedding, embeddingModelFor, activeEmbeddingModel } from '../embeddings.js';
 import { getOrCreateProject, requireProject } from '../projects.js';
 import { serializeMetadata, deserializeMetadata } from '../memory/serialization.js';
 import { normalizeTimestamp, prepareEmbedding } from '../lib/utils.js';
@@ -18,6 +18,7 @@ import { search, type SearchResult } from '../memory/memories.js';
 import { updateAgentPreference } from '../agent-preferences.js';
 import { emit } from '../event-bus.js';
 import { meetsSemanticThreshold } from '../scoring/three-field.js';
+import { isStrictTrustPolicy, TrustBoundaryError } from '../acl/trust-policy.js';
 
 // Learning type: success, failure, fix, insight
 export type LearningType = 'success' | 'failure' | 'fix' | 'insight';
@@ -51,6 +52,10 @@ export interface LearningRecord {
  * Create a learning and optionally auto-link to similar memories/learnings
  */
 export async function createLearning(input: LearningInput): Promise<LearningRecord> {
+  if (isStrictTrustPolicy()) {
+    throw new TrustBoundaryError('Unscoped learning writes are disabled under strict trust; capture through signed owner-bound memory instead');
+  }
+
   const { db, schema } = await getDbClient();
   const project = await getOrCreateProject(input.project);
   const embedding = await getEmbedding(input.content);
@@ -68,7 +73,7 @@ export async function createLearning(input: LearningInput): Promise<LearningReco
 
   // Batch 4: blob+stamp prepared, but the learnings table only persists the
   // JSON compat column today (no embedding_blob columns on that table yet).
-  const { embeddingJson } = prepareEmbedding(embedding, { model: activeEmbeddingModel() });
+  const { embeddingJson } = prepareEmbedding(embedding, { model: embeddingModelFor(embedding) ?? activeEmbeddingModel() });
 
   // Insert the learning
   await db.insert(schema.learnings).values({

@@ -8,13 +8,25 @@
  * positives (graceful degradation to heuristics when LLM is unavailable).
  */
 
+import { toEpochMillisFromMixed } from '../lib/timestamps.js';
+import { withSqliteTransaction } from '../storage/sqlite-transaction.js';
 import { eq, and, not, inArray } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
+import { evictMemoryRuntimeState } from './runtime-cache-lifecycle.js';
+import { invalidateSourceDerivedProjections } from './edit-workflow.js';
 import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
-import { createAssociation } from '../associations.js';
+import { createAssociation, getMemoryAssociationRows, wouldCreateSupersessionCycle } from '../associations.js';
 import { callLLM } from '../llm/client.js';
+import { getDecisionRunner } from '../decision-model/backend-factory.js';
+import { throwIfDecisionAborted } from '../decision-model/types.js';
 import { config } from '../../config.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
+
+async function withSqliteSupersessionTransaction<T>(sqlite: { exec: (sql: string) => void; inTransaction?: boolean }, operation: () => Promise<T>): Promise<T> {
+  return withSqliteTransaction(sqlite, operation);
+}
 
 export interface ContradictionResult {
   hasContradiction: boolean;
@@ -25,6 +37,14 @@ export interface ContradictionResult {
   associationType: 'updates' | 'supersedes';
 }
 
+export { wouldCreateSupersessionCycle } from '../associations.js';
+
+async function assertContradictionWorkflowAvailable(operation: string, resourceId: string): Promise<void> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(resourceId, 'memory_lifecycle', `Contradiction ${operation} is disabled under strict trust until caller-scoped source authorization is implemented`);
+  }
+}
+
 export interface ContradictionCheck {
   newContent: string;
   newType: string;
@@ -32,23 +52,20 @@ export interface ContradictionCheck {
   entities?: string[];
   excludeId?: string; // Exclude this memory from contradiction checks (the newly inserted one)
   newMemoryCreatedAt?: string; // ISO timestamp of the new memory for temporal comparison
+  /** Cancels optional decision-model relation validation; heuristic stays authoritative. */
+  signal?: AbortSignal;
 }
 
 /**
  * Batch 6b: normalize a stored temporal value to ms. Drizzle timestamp-mode
  * columns arrive as Date, raw SQL paths may deliver epoch SECONDS or ISO
- * strings; values below 1e11 are treated as seconds (same heuristic as
- * normalizeTimestamp in core/lib/utils.ts).
+ * strings; values below 1e11 are treated as seconds. Shared with
+ * `normalizeTimestampValue` in core/retrieval/temporal-validity.ts - both are
+ * the same function, defined once in `toEpochMillisFromMixed`. (The micro/milli
+ * ladder in `normalizeTimestamp` is a different, wider rule set.)
  */
 function toMs(value: string | number | Date | null | undefined): number | null {
-  if (value == null) return null;
-  if (value instanceof Date) return isNaN(value.getTime()) ? null : value.getTime();
-  const num = typeof value === 'number' ? value : Number(value);
-  if (Number.isFinite(num) && String(value).trim() !== '' && /^\d+$/.test(String(value).trim())) {
-    return num < 1e11 ? num * 1000 : num; // seconds -> ms
-  }
-  const parsed = new Date(value as any).getTime();
-  return Number.isFinite(parsed) ? parsed : null;
+  return toEpochMillisFromMixed(value);
 }
 
 /**
@@ -72,7 +89,7 @@ function calculateTemporalRelationship(
   }
 
   // If existing fact is completely in the past compared to new time
-  if (toMsVal !== null && toMsVal < newTime.getTime()) {
+  if (toMsVal !== null && toMsVal <= newTime.getTime()) {
     return 'existing_is_older';
   }
 
@@ -101,8 +118,8 @@ function checkTemporalPeriodConflict(
   const normalizedNewEnd = newEnd || new Date(8640000000000000); // Far future
   
   // Check if periods overlap
-  const overlaps = !(existingStartDate > normalizedNewEnd || 
-                    existingEndDate < newStart);
+  const overlaps = !(existingStartDate >= normalizedNewEnd ||
+                    existingEndDate <= newStart);
   
   // Conflict if they don't overlap
   return !overlaps;
@@ -118,6 +135,14 @@ const UPDATE_PATTERNS = [
   /\binstead of\b/i,
   /\b(no longer|not anymore)\b/i,
   /\b(as of|starting|beginning|from now|effective)\s+(\d{4}|\w+\s+\d{1,2})/i, // Temporal updates
+  // Batch WS2b: the state-change verb class, generalized (not per case).
+  // Replacement/migration/transition vocabulary all assert that an old
+  // state was superseded ("migrated from FAISS to Qdrant", "replaces
+  // flake8", "switched providers", "adopted OpenTelemetry") - the same
+  // signal the existing "changed to / switched to / moved to" phrases
+  // carry, previously missed unless the exact preposition matched.
+  /\b(migrated|migrating|migrates|switched|shifted|transitioned|replaced|replaces|swapped|adopted|upgraded)\b/i,
+  /\bmoved\s+from\b/i,
 ];
 
 // Negation patterns (no /g - same stateful-lastIndex reason as above)
@@ -168,8 +193,9 @@ function hasNegation(content: string): boolean {
   return NEGATION_PATTERNS.some(pattern => pattern.test(content));
 }
 
-// Check if content indicates an update
-function hasUpdateIndicator(content: string): boolean {
+// Check if content indicates an update (exported for unit tests of the
+// state-change verb lexicon - scenario 2 of detectContradictions gates on it).
+export function hasUpdateIndicator(content: string): boolean {
   return UPDATE_PATTERNS.some(pattern => pattern.test(content));
 }
 
@@ -229,24 +255,43 @@ export function hasOppositeKeywords(a: string, b: string): boolean {
 
 /**
  * LLM-as-validator verdict for a proposed supersession.
- * Null means "LLM unavailable or unusable response" - caller keeps heuristic verdict.
+ * Null means "validator unavailable or unusable response" - caller keeps heuristic verdict.
  */
 interface SupersessionValidation {
   contradicts: boolean;
   confidence: number;
 }
 
-// Upper bound on LLM validations per detectContradictions call to bound latency
-const MAX_LLM_VALIDATIONS = 5;
+/**
+ * Swappable validator slot: given the proposed supersession, return a verdict
+ * or null ("cannot judge" - heuristics stand). Implementations:
+ * - decision-model validator (relation judge) when SQUISH_DECISION_LAYER_ENABLED
+ *   AND SQUISH_DECISION_MODEL_ENABLED are both set
+ * - legacy ad-hoc callLLM validator when only SQUISH_LLM_ENABLED is set
+ */
+type SupersessionValidator = (
+  newContent: string,
+  existingContent: string,
+  signal?: AbortSignal,
+) => Promise<SupersessionValidation | null>;
 
-// Minimum LLM confidence required to overturn a heuristic proposal
+// Upper bound on validator calls per detectContradictions call to bound latency
+const MAX_VALIDATIONS = 5;
+
+// Minimum legacy LLM confidence required to overturn a heuristic proposal
 const MIN_LLM_VETO_CONFIDENCE = 0.7;
 
+// Minimum decision-model confidence to veto. The client already refuses
+// decisions below the relation threshold (0.75, ADR-004); this mirrors it
+// explicitly for the resolver's own gate.
+const DECISION_MODEL_VETO_CONFIDENCE = 0.75;
+
 /**
- * Validate a proposed supersession with the LLM. Proposition-aware: only
- * same-subject, same-attribute, incompatible-value pairs count as contradictions.
- * Returns null whenever the LLM is disabled, unavailable, or returns garbage -
- * the caller then keeps the heuristic verdict (graceful degradation).
+ * Validate a proposed supersession with the legacy ad-hoc callLLM prompt.
+ * Proposition-aware: only same-subject, same-attribute, incompatible-value
+ * pairs count as contradictions. Returns null whenever the LLM is disabled,
+ * unavailable, or returns garbage - the caller then keeps the heuristic
+ * verdict (graceful degradation).
  */
 async function llmValidateSupersession(
   newContent: string,
@@ -288,9 +333,35 @@ Respond with ONLY minified JSON: {"contradicts": true|false, "confidence": 0.0-1
 }
 
 /**
+ * Validate a proposed supersession with the decision model's relation judge.
+ * Mapping (relation ontology -> veto verdict):
+ * - 'semantic'  -> contradicts=true  (same subject/attribute, incompatible values)
+ * - 'temporal'  -> contradicts=false (the new content is a later update)
+ * - 'causal'    -> contradicts=false (cause/effect, not a contradiction)
+ * - 'entity'    -> contradicts=false (shared entities, different attributes)
+ * The selected decision backend (llm or systemone, off = rules) enforces the
+ * relation confidence band (0.75 default); null on any failure so heuristics
+ * stand.
+ */
+async function decisionModelValidateSupersession(
+  newContent: string,
+  existingContent: string,
+  signal?: AbortSignal,
+): Promise<SupersessionValidation | null> {
+  const decision = await getDecisionRunner().judgeRelationModelOnly(newContent, existingContent, { signal });
+  if (!decision) return null;
+  return {
+    contradicts: decision.relationType === 'semantic',
+    confidence: decision.confidence,
+  };
+}
+
+/**
  * Detect contradictions between new memory and existing memories
  */
 export async function detectContradictions(check: ContradictionCheck): Promise<ContradictionResult> {
+  throwIfDecisionAborted(check.signal);
+  await assertContradictionWorkflowAvailable('detection', check.projectId ?? 'unscoped');
   const result: ContradictionResult = {
     hasContradiction: false,
     supersededMemories: [],
@@ -498,33 +569,47 @@ export async function detectContradictions(check: ContradictionCheck): Promise<C
         }
     }
     
-    // LLM-as-validator: confirm heuristic proposals before committing supersession.
-    // When the LLM is disabled or unavailable, heuristic verdicts stand unchanged.
+    // Validator slot precedence: decision validator ONLY when the layer AND
+    // the model are enabled and the decision backend is not switched off
+    // (backend=off = rules only); otherwise the legacy ad-hoc callLLM
+    // validator when the master LLM is enabled; otherwise null and heuristic
+    // verdicts stand unchanged.
+    const usingDecisionModel =
+      config.decisionLayerEnabled && config.decisionModelEnabled && config.decisionModelBackend !== 'off';
+    const validator: SupersessionValidator | null = usingDecisionModel
+      ? decisionModelValidateSupersession
+      : config.llmEnabled
+        ? llmValidateSupersession
+        : null;
+    const vetoConfidence = usingDecisionModel
+      ? DECISION_MODEL_VETO_CONFIDENCE
+      : MIN_LLM_VETO_CONFIDENCE;
+
     const proposedIds = [...new Set(toSupersede)];
     let validatedIds = proposedIds;
 
-    if (proposedIds.length > 0 && config.llmEnabled) {
+    if (proposedIds.length > 0 && validator) {
       const contentById = new Map<string, string>();
       for (const m of existingMemories as Array<{ id: string; content: string }>) {
         contentById.set(m.id, m.content);
       }
 
-      const cappedIds = proposedIds.slice(0, MAX_LLM_VALIDATIONS);
+      const cappedIds = proposedIds.slice(0, MAX_VALIDATIONS);
       const dropped: string[] = [];
 
       for (const id of cappedIds) {
         const existingContent = contentById.get(id);
         if (!existingContent) continue;
 
-        const verdict = await llmValidateSupersession(check.newContent, existingContent);
-        if (verdict && !verdict.contradicts && verdict.confidence >= MIN_LLM_VETO_CONFIDENCE) {
+        const verdict = await validator(check.newContent, existingContent, check.signal);
+        if (verdict && !verdict.contradicts && verdict.confidence >= vetoConfidence) {
           dropped.push(id);
         }
       }
 
       if (dropped.length > 0) {
         validatedIds = proposedIds.filter(id => !dropped.includes(id));
-        logger.debug('LLM validator dropped supersession proposals', {
+        logger.debug('Validator dropped supersession proposals', {
           droppedCount: dropped.length,
           remaining: validatedIds.length,
         });
@@ -540,6 +625,7 @@ export async function detectContradictions(check: ContradictionCheck): Promise<C
     }
     
   } catch (error) {
+    throwIfDecisionAborted(check.signal);
     logger.error('Error detecting contradictions', error);
   }
   
@@ -555,35 +641,135 @@ export async function applySupersession(
   confidence: number,
   associationType: 'updates' | 'supersedes' = 'supersedes'
 ): Promise<void> {
-  if (supersededIds.length === 0) return;
+  await assertContradictionWorkflowAvailable('supersession', `${newMemoryId}:${[...new Set(supersededIds)].sort().join(',')}`);
+  // An in-place update can appear in the contradiction candidate set. Never
+  // mark the replacement itself as superseded or write a self-referential
+  // successor pointer.
+  const validSupersededIds = [...new Set(supersededIds.filter((id) => id !== newMemoryId))];
+  if (validSupersededIds.length === 0) return;
   
   try {
     const db = await getDb();
     const schema = await getSchema();
+    const sqlite = (db as any).$client;
+    const apply = async (): Promise<string[]> => {
     const now = new Date();
-    
-    // Update superseded memories
-    await (db as any)
-      .update(schema.memories)
-      .set({
-        status: 'superseded',
-        supersededBy: newMemoryId,
-        supersededAt: now,
-        updatedAt: now,
-      })
-      .where(and(
-        inArray(schema.memories.id, supersededIds),
-        eq(schema.memories.status, 'active')
-      ));
-    
-    // Create associations for traceability
-    for (const oldId of supersededIds) {
-      await createAssociation(newMemoryId, oldId, associationType, confidence);
+    const currentRelations = await getMemoryAssociationRows();
+    const safeSupersededIds = validSupersededIds.filter((oldId) => {
+      const createsCycle = wouldCreateSupersessionCycle(newMemoryId, oldId, currentRelations);
+      if (createsCycle) logger.warn('Rejected supersession that would create a cycle', { newMemoryId, oldId });
+      return !createsCycle;
+    });
+    if (safeSupersededIds.length === 0) return [];
+    const replacementRows = await (db as any)
+      .select({ validFrom: schema.memories.validFrom })
+      .from(schema.memories)
+      .where(eq(schema.memories.id, newMemoryId))
+      .limit(1);
+    let replacementValidFrom = replacementRows[0]?.validFrom instanceof Date
+      ? replacementRows[0].validFrom as Date
+      : now;
+    const oldRows = await (db as any)
+      .select({ id: schema.memories.id, validFrom: schema.memories.validFrom, validTo: schema.memories.validTo })
+      .from(schema.memories)
+      .where(and(inArray(schema.memories.id, safeSupersededIds), eq(schema.memories.status, 'active')));
+
+    // Multiple captures can land in the same millisecond. Give the replacement
+    // a deterministic later valid-time boundary so the old interval remains
+    // non-empty, while still rejecting genuinely earlier corrections below.
+    const equalBoundary = (oldRows as Array<{ validFrom: Date | null }>).some(
+      (row) => row.validFrom?.getTime() === replacementValidFrom.getTime()
+    );
+    if (equalBoundary) {
+      replacementValidFrom = new Date(replacementValidFrom.getTime() + 1);
+      await (db as any)
+        .update(schema.memories)
+        .set({ validFrom: replacementValidFrom, recordedAt: now, updatedAt: now })
+        .where(eq(schema.memories.id, newMemoryId));
+      if (sqlite && typeof sqlite.prepare === 'function') {
+        sqlite.prepare(`
+          UPDATE knowledge SET valid_from = ?, recorded_at = ?, updated_at = ?
+          WHERE knowledge_kind = 'memory'
+            AND (id = ? OR json_extract(CASE WHEN json_valid(metadata) THEN metadata ELSE '{}' END, '$.sourceMemoryId') = ?)
+        `).run(Math.floor(replacementValidFrom.getTime() / 1000), Math.floor(now.getTime() / 1000), Math.floor(now.getTime() / 1000), newMemoryId, newMemoryId);
+      }
     }
-    
+
+    const appliedIds: string[] = [];
+    for (const oldMemory of oldRows as Array<{ id: string; validFrom: Date | null; validTo: Date | null }>) {
+      const priorValidFrom = oldMemory.validFrom;
+      if (priorValidFrom && replacementValidFrom <= priorValidFrom) {
+        logger.warn('Rejected supersession that would create an empty valid-time interval', {
+          newMemoryId,
+          oldMemoryId: oldMemory.id,
+        });
+        continue;
+      }
+      const validTo = oldMemory.validTo && oldMemory.validTo < replacementValidFrom
+        ? oldMemory.validTo
+        : replacementValidFrom;
+      const updated = await (db as any)
+        .update(schema.memories)
+        .set({
+          status: 'superseded',
+          isActive: false,
+          supersededBy: newMemoryId,
+          supersededAt: now,
+          validTo,
+          recordedAt: now,
+          updatedAt: now,
+        })
+        .where(and(eq(schema.memories.id, oldMemory.id), eq(schema.memories.status, 'active')))
+        .returning({ id: schema.memories.id });
+      if (updated.length > 0) {
+        appliedIds.push(oldMemory.id);
+        // `knowledge` is the canonical recall projection for each memory.
+        // Keep its lifecycle and valid-time boundary aligned with the source
+        // row so graph and direct knowledge reads cannot revive superseded facts.
+        if (sqlite && typeof sqlite.prepare === 'function') {
+          sqlite.prepare(`
+            UPDATE knowledge
+            SET status = 'superseded', is_active = 0, superseded_by = ?,
+                valid_to = ?, recorded_at = ?, updated_at = ?
+            WHERE knowledge_kind = 'memory'
+              AND (id = ? OR json_extract(CASE WHEN json_valid(metadata) THEN metadata ELSE '{}' END, '$.sourceMemoryId') = ?)
+          `).run(newMemoryId, Math.floor(validTo.getTime() / 1000), Math.floor(now.getTime() / 1000), Math.floor(now.getTime() / 1000), oldMemory.id, oldMemory.id);
+        } else {
+          const projections = await (db as any)
+            .select({ id: schema.knowledge.id, metadata: schema.knowledge.metadata })
+            .from(schema.knowledge)
+            .where(eq(schema.knowledge.knowledgeKind, 'memory'));
+          for (const projection of projections as Array<{ id: string; metadata: Record<string, unknown> | null }>) {
+            if (projection.id !== oldMemory.id && projection.metadata?.sourceMemoryId !== oldMemory.id) continue;
+            await (db as any)
+              .update(schema.knowledge)
+              .set({ status: 'superseded', isActive: false, supersededBy: newMemoryId, validTo, recordedAt: now, updatedAt: now })
+              .where(eq(schema.knowledge.id, projection.id));
+          }
+        }
+        await invalidateSourceDerivedProjections(db, schema, oldMemory.id, now, 'source_superseded');
+      }
+    }
+
+    // Create canonical directed relationships only for records actually closed.
+    for (const oldId of appliedIds) {
+      await createAssociation(newMemoryId, oldId, associationType, confidence, undefined, {
+        validFrom: replacementValidFrom,
+        recordedAt: now,
+      });
+    }
+
+    return appliedIds;
+    };
+
+    const appliedIds = sqlite && typeof sqlite.exec === 'function' && typeof sqlite.prepare === 'function'
+      ? await withSqliteSupersessionTransaction(sqlite, apply)
+      : await apply();
+    for (const oldId of appliedIds) await evictMemoryRuntimeState([oldId]);
+
     logger.debug('Applied supersession', {
       newMemoryId,
-      supersededCount: supersededIds.length,
+      supersededCount: appliedIds.length,
       confidence,
     });
     
@@ -599,6 +785,7 @@ export async function checkTemporalContradictions(
   content: string,
   projectId?: string
 ): Promise<string[]> {
+  await assertContradictionWorkflowAvailable('temporal lookup', projectId ?? 'unscoped');
   const supersededIds: string[] = [];
   
   try {
@@ -636,10 +823,10 @@ export async function checkTemporalContradictions(
       
       if (similarity > 0.5 && candidate.validTo) {
         const validToDate = new Date(candidate.validTo);
-        const now = new Date();
+        const now = new Date(Date.now());
         
         // If the candidate's validity period has passed
-        if (validToDate < now) {
+        if (validToDate <= now) {
           supersededIds.push(candidate.id);
         }
       }

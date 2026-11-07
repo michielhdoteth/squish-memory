@@ -38,15 +38,24 @@ export interface ScoreBreakdown {
   stalenessPenalty?: number;
   /** Validity-at-T boost for anchored past queries (temporal validity v2). */
   temporalValidAtT?: number;
+  /** Source/event-time fit to a relative query range. */
+  temporalDateFit?: number;
   multiHopWeight?: number;
   associationDiscount?: number;
   /** Residual when an external reranker replaces the score outright. */
   rerankResidual?: number;
+  /** WS1a-T1.3: relevance-weight rescale of the semantic term (neutral 0). */
+  relevanceWeight?: number;
+  /** WS1a-T1.3: recency-weight modulation of the heuristicRecency boost. */
+  recencyWeight?: number;
+  /** WS1a-T1.3: importance-weight additive contribution (neutral when off). */
+  importanceWeight?: number;
 }
 
 /** Minimal structural surface this module needs from SearchResult. */
 interface ScoreableResult {
   id: string;
+  content?: string;
   similarity?: number;
   semanticScore?: number;
   boostScore?: number;
@@ -169,6 +178,109 @@ export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+// ---------------------------------------------------------------------------
+// WS1a-T1.3: config-driven serving weights (importance-weighted retrieval)
+// ---------------------------------------------------------------------------
+
+/**
+ * Neutrality anchors for the config scoringWeights that are now genuinely
+ * consumed on the serving path. Each weight is expressed as a *relative
+ * multiplier / additive contribution* around a documented default, so the
+ * default pipeline is byte-for-byte unchanged (no surprise recall shift) while
+ * an operator-set value has real effect:
+ *
+ * - relevance: additive term `semanticScore * (relevance / NEUTRAL - 1)`.
+ *   At the neutral default the factor is 0 (no change); raising it lifts the
+ *   semantic term relative to the accumulated boosts, lowering it compresses.
+ * - importance: additive `importance * normalizedImportance`, neutral at 0.
+ *   The config default was 2 while the field was dead; wiring a literal 2 as an
+ *   additive boost would reshape every ranking, so the shipped default is
+ *   normalized to 0 (off) and it IS applied when an operator sets it > 0.
+ * - recency: consumed by the heuristic stage's recency decay (see
+ *   hybrid-search); exported here so the neutrality anchor has one home.
+ */
+export const NEUTRAL_RELEVANCE_WEIGHT = 3;
+export const NEUTRAL_RECENCY_WEIGHT = 0.5;
+
+export interface RetrievalServingWeights {
+  importance: number;
+  relevance: number;
+  /** Optional; defaults to the neutrality anchor (no recency modulation). */
+  recency?: number;
+}
+
+/**
+ * Fold the configured relevance + importance + recency weights into the
+ * additive boostScore (itemized per component). It NEVER overwrites
+ * semanticScore - the three-field identity `finalScore == clamp01(semantic +
+ * boostScore)` keeps holding. Returns results in the SAME array order; serving
+ * sorts in finalizeScores.
+ *
+ * Each weight is a *relative* term around a documented neutrality anchor, so
+ * the shipped defaults are a strict no-op (identity fast path returns the same
+ * array by reference - the default pipeline cannot shift by even a float), yet
+ * an operator-set value has real effect:
+ *
+ * - relevance: adds `semanticScore * (relevance / NEUTRAL_RELEVANCE - 1)`.
+ *   Neutral at default (factor 0); higher lifts semantic vs the accumulated
+ *   boosts, lower compresses it.
+ * - importance: adds `importance * normalizedImportance`. Neutral at 0. The
+ *   config default was 2 while the field was dead; a literal 2 would reshape
+ *   every ranking, so the shipped default is normalized to 0 (off) and it IS
+ *   applied when an operator sets it > 0.
+ * - recency: modulates the existing itemized `heuristicRecency` boost by the
+ *   factor `recency / NEUTRAL_RECENCY`. Neutral at default (factor 1); the
+ *   adjustment is recorded as its own `recencyWeight` component so the sum of
+ *   components still equals boostScore. Results with no prior recency signal
+ *   are left untouched.
+ */
+export function applyRetrievalServingWeights<T extends ScoreableResult & { importanceScore?: number }>(
+  results: T[],
+  weights: RetrievalServingWeights,
+): T[] {
+  const relevanceDeltaFactor = weights.relevance / NEUTRAL_RELEVANCE_WEIGHT - 1;
+  const recencyScale = (weights.recency ?? NEUTRAL_RECENCY_WEIGHT) / NEUTRAL_RECENCY_WEIGHT;
+  const importanceActive = weights.importance !== 0;
+  const recencyActive = recencyScale !== 1;
+
+  // Fast identity path: nothing to add -> return the same array untouched.
+  if (relevanceDeltaFactor === 0 && !importanceActive && !recencyActive) return results;
+
+  return results.map((r) => {
+    let out = r;
+
+    if (relevanceDeltaFactor !== 0) {
+      const semantic = r.semanticScore ?? r.similarity ?? 0;
+      out = addBoost(out, 'relevanceWeight', semantic * relevanceDeltaFactor);
+    }
+
+    if (recencyActive) {
+      const priorRecency = out.scoreBreakdown?.heuristicRecency;
+      if (typeof priorRecency === 'number' && priorRecency !== 0) {
+        // Scale the already-itemized recency contribution; record only the
+        // delta so components keep summing to boostScore.
+        out = addBoost(out, 'recencyWeight', priorRecency * (recencyScale - 1));
+      }
+    }
+
+    if (importanceActive) {
+      const norm = normalizeImportance(out.importanceScore);
+      if (norm > 0) {
+        out = addBoost(out, 'importanceWeight', weights.importance * norm);
+      }
+    }
+
+    return out;
+  });
+}
+
+/** Normalize a stored importance to [0,1]. Legacy 0-100 -> /100; 0..1 kept. */
+function normalizeImportance(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
+  // A stored importance > 1 is treated as the legacy 0-100 scale.
+  return value > 1 ? Math.min(1, value / 100) : Math.min(1, value);
+}
+
 /**
  * Compute the final served similarity for one result under a serving mode.
  * v2: finalScore (clamped). legacy: unclamped composite (semantic + boost),
@@ -185,9 +297,10 @@ export function servedSimilarity(
 
 /**
  * Finalize results for serving: stamp finalScore/similarity per serving mode
- * and re-sort by the served score when serving v2 (stable sort keeps prior
- * order for clamp-induced ties). Legacy mode keeps the pipeline's existing
- * composite ordering untouched.
+ * and re-sort by quantized served score when serving v2. When clamping makes
+ * distinct composites tie at 1, the unclamped composite preserves the ranking
+ * signal; binary content and ID break only exact score ties.
+ * Legacy mode keeps the pipeline's existing composite ordering untouched.
  */
 export function finalizeScores<T extends ScoreableResult>(
   results: T[],
@@ -204,7 +317,12 @@ export function finalizeScores<T extends ScoreableResult>(
   if (serveV2) {
     finalized.sort(
       (a, b) =>
-        ((b.finalScore ?? b.similarity ?? 0) - (a.finalScore ?? a.similarity ?? 0))
+        (Math.round((b.finalScore ?? b.similarity ?? 0) * 1e6)
+          - Math.round((a.finalScore ?? a.similarity ?? 0) * 1e6))
+        || (Math.round(((b.semanticScore ?? b.similarity ?? 0) + (b.boostScore ?? 0)) * 1e6)
+          - Math.round(((a.semanticScore ?? a.similarity ?? 0) + (a.boostScore ?? 0)) * 1e6))
+        || ((a.content ?? '') < (b.content ?? '') ? -1 : (a.content ?? '') > (b.content ?? '') ? 1 : 0)
+        || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
     );
   }
   return finalized;

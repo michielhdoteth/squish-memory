@@ -10,9 +10,11 @@ import {
   classifyQuery,
   autoRoute,
   getRoutingStats,
+  intentsForRetrievalDecision,
   type QueryIntent,
   type RetrievalStrategy,
 } from './query-router.js';
+import type { RetrievalDecision } from '../decision-model/types.js';
 
 // ---------------------------------------------------------------------------
 // classifyQuery -- pure, synchronous, no DB
@@ -361,6 +363,22 @@ describe('autoRoute', () => {
   it('handles options with no knownEntities', async () => {
     const r = await autoRoute('test query', {});
     expect(r.classification).toBeDefined();
+  });
+});
+
+describe('multi-view decision routing', () => {
+  it('retains every selected view and removes duplicate retrieval intents', () => {
+    const decision: RetrievalDecision = {
+      queryViews: ['entity', 'temporal', 'causal', 'entity'],
+      anchorCount: 3,
+      confidence: 0.9,
+    };
+
+    expect(intentsForRetrievalDecision(decision)).toEqual([
+      'entity_heavy',
+      'temporal',
+      'relational',
+    ]);
   });
 });
 

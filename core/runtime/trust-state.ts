@@ -4,7 +4,8 @@ import { probeSchemaHealth } from '../../db/schema-probe.js';
 import { getRecent } from '../memory/memories.js';
 import { getMemoryStats } from '../memory/stats.js';
 import { explainMemory } from '../memory/explain.js';
-import { getLatestProjectWorkingSetSummary, getProjectSignalStats } from '../session/working-set.js';
+import { compactSessionWorkingSet, getLatestProjectWorkingSetSummary, getProjectSignalStats } from '../session/working-set.js';
+import { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } from '../acl/trust-policy.js';
 import { getGraphStats } from '../graph/index.js';
 import { ensureProject, getAllProjects, getProjectByPath, requireProject, type ProjectRecord } from '../projects.js';
 import { getProjectPlaces } from '../places/places.js';
@@ -12,6 +13,7 @@ import { getMemoryPlace } from '../places/memory-places.js';
 import { getPlace } from '../places/places.js';
 import { config } from '../../config.js';
 import { getBeliefsForMemory } from '../knowledge/store.js';
+import { applyAclReadGate, buildAutoAclContext } from '../acl/read-gate.js';
 import type {
   ContextReportInput,
   CurrentProjectSummary,
@@ -125,6 +127,7 @@ export async function resolveProjectScope(projectPath?: string): Promise<TrustPr
 }
 
 async function getMemoryPlaceName(memoryId: string): Promise<string | null> {
+  if (isStrictTrustPolicy()) return null;
   const placeId = await getMemoryPlace(memoryId);
   if (!placeId) return null;
   const place = await getPlace(placeId);
@@ -134,29 +137,39 @@ async function getMemoryPlaceName(memoryId: string): Promise<string | null> {
 export async function buildContextState(
   projectPath?: string,
   limit: number = 10,
+  caller?: { userId?: string; teamIds?: string[] },
+  session?: { sessionId?: string },
 ): Promise<ContextReportInput> {
+  if (isStrictTrustPolicy() && caller?.userId !== resolveTrustedCallerId()) {
+    throw new TrustBoundaryError('Strict context requires the authenticated caller identity');
+  }
   const scope = await resolveProjectScope(projectPath);
   const projectPathResolved = scope.currentProject.path;
-  const [sessionSummary, signalSummary, graphStats, memories] = await Promise.all([
-    getLatestProjectWorkingSetSummary(projectPathResolved),
+  const strict = isStrictTrustPolicy();
+  const acl = await buildAutoAclContext(caller?.userId, caller?.teamIds);
+  const [sessionSummary, signalSummary, graphStats, recentMemories] = await Promise.all([
+    strict && session?.sessionId
+      ? compactSessionWorkingSet(session.sessionId, projectPathResolved).then((result) => result.summary)
+      : getLatestProjectWorkingSetSummary(projectPathResolved),
     getProjectSignalStats(projectPathResolved),
-    getGraphStats(projectPathResolved),
-    getRecent(projectPathResolved, limit),
+    strict ? Promise.resolve(null) : getGraphStats(projectPathResolved),
+    getRecent(projectPathResolved, strict ? Math.min(500, limit * 10) : limit),
   ]);
+  const memories = (strict ? recentMemories : await applyAclReadGate(recentMemories, acl)).slice(0, limit);
 
   const project = await getProjectByPath(projectPathResolved);
-  const places = project ? await getProjectPlaces(project.id) : [];
-  const activePlaces = places.filter((place) => place.memoryCount > 0).map((place) => place.name);
+  const places = project && !strict ? await getProjectPlaces(project.id) : [];
+  const activePlaces = strict ? [] : places.filter((place) => place.memoryCount > 0).map((place) => place.name);
 
   const durableMemories = await Promise.all(
     memories.map(async (memory) => ({
       id: memory.id,
       type: memory.type,
       content: memory.content,
-      place: await getMemoryPlaceName(memory.id),
+      place: strict ? null : await getMemoryPlaceName(memory.id),
     })),
   );
-  const beliefRows = await Promise.all(memories.map((memory) => getBeliefsForMemory(memory.id)));
+  const beliefRows = strict ? [] : await Promise.all(memories.map((memory) => getBeliefsForMemory(memory.id)));
   const beliefs = beliefRows.flat().slice(0, 6).map((belief) => ({
     type: belief.type,
     statement: belief.statement,
@@ -165,19 +178,19 @@ export async function buildContextState(
 
   return {
     currentProject: scope.currentProject,
-    otherProjects: scope.otherProjects,
+    otherProjects: strict ? [] : scope.otherProjects,
     runtime: {
       sessionSummary,
       activePlaces,
       signalSummary: {
-        captured: signalSummary.captured,
-        suppressed: signalSummary.suppressed,
-        sessionOnly: signalSummary.sessionOnly,
-        durable: signalSummary.durable,
-        durableWithRaw: signalSummary.durableWithRaw,
+        captured: signalSummary?.captured ?? 0,
+        suppressed: signalSummary?.suppressed ?? 0,
+        sessionOnly: signalSummary?.sessionOnly ?? 0,
+        durable: signalSummary?.durable ?? 0,
+        durableWithRaw: signalSummary?.durableWithRaw ?? 0,
       },
-      graphSummary:
-        graphStats.entityCount > 0 || graphStats.relationCount > 0
+      graphSummary: strict ? 'withheld by strict trust policy' :
+        graphStats && (graphStats.entityCount > 0 || graphStats.relationCount > 0)
           ? `enabled; ${graphStats.entityCount} entities, ${graphStats.relationCount} relations`
           : 'enabled; no graph enrichments yet',
     },
@@ -190,49 +203,52 @@ export async function buildContextState(
 export async function buildStatsState(projectPath?: string): Promise<StatsReportInput> {
   const scope = await resolveProjectScope(projectPath);
   const projectPathResolved = scope.currentProject.path;
+  const strict = isStrictTrustPolicy();
   const [stats, graphStats, sessionSummary] = await Promise.all([
-    getMemoryStats(projectPathResolved),
-    getGraphStats(projectPathResolved),
-    getLatestProjectWorkingSetSummary(projectPathResolved),
+    strict ? Promise.resolve(null) : getMemoryStats(projectPathResolved),
+    strict ? Promise.resolve(null) : getGraphStats(projectPathResolved),
+    strict ? Promise.resolve('') : getLatestProjectWorkingSetSummary(projectPathResolved),
   ]);
 
-  const project = await getProjectByPath(projectPathResolved);
-  const places = project ? await getProjectPlaces(project.id) : [];
+  const project = strict ? null : await getProjectByPath(projectPathResolved);
+  const places = project && !isStrictTrustPolicy() ? await getProjectPlaces(project.id) : [];
 
   return {
     currentProject: `${scope.currentProject.name} (${scope.currentProject.path})`,
     totals: {
-      memories: stats.totalMemories,
-      durable: Math.max(
-        stats.totalMemories,
-        (stats.signal?.durable ?? 0) + (stats.signal?.durableWithRaw ?? 0),
-      ),
-      sessionLocal: stats.signal?.sessionOnly ?? 0,
+      memories: strict ? 0 : stats!.totalMemories,
+      // Live durable count (active memory rows). The previous formula
+      // Math.max(totalMemories, signal.durable + signal.durableWithRaw) used
+      // the append-only capture counter, which never decrements on
+      // delete/merge/supersede and inflated durable past the live total.
+      durable: strict ? 0 : stats!.durableMemories ?? stats!.totalMemories,
+      sessionLocal: strict ? 0 : stats!.signal?.sessionOnly ?? 0,
     },
     signal: {
-      captured: stats.signal?.captured ?? 0,
-      suppressed: stats.signal?.suppressed ?? 0,
-      sessionOnly: stats.signal?.sessionOnly ?? 0,
-      durable: stats.signal?.durable ?? 0,
-      durableWithRaw: stats.signal?.durableWithRaw ?? 0,
-      tokensSaved: stats.signal?.tokensSaved ?? 0,
-      placeRouted: stats.signal?.placeRouted ?? 0,
-      graphEnriched: stats.signal?.graphEnriched ?? 0,
+      captured: strict ? 0 : stats!.signal?.captured ?? 0,
+      suppressed: strict ? 0 : stats!.signal?.suppressed ?? 0,
+      sessionOnly: strict ? 0 : stats!.signal?.sessionOnly ?? 0,
+      durable: strict ? 0 : stats!.signal?.durable ?? 0,
+      durableWithRaw: strict ? 0 : stats!.signal?.durableWithRaw ?? 0,
+      tokensSaved: strict ? 0 : stats!.signal?.tokensSaved ?? 0,
+      placeRouted: strict ? 0 : stats!.signal?.placeRouted ?? 0,
+      graphEnriched: strict ? 0 : stats!.signal?.graphEnriched ?? 0,
     },
     places: {
-      active: places.filter((place) => place.memoryCount > 0).length,
-      named: places.filter((place) => place.memoryCount > 0).map((place) => place.name),
+      active: strict ? 0 : places.filter((place) => place.memoryCount > 0).length,
+      named: strict ? [] : places.filter((place) => place.memoryCount > 0).map((place) => place.name),
     },
     graph: {
-      status:
-        graphStats.entityCount > 0 || graphStats.relationCount > 0 ? 'enabled' : 'enabled (idle)',
-      enrichments: stats.signal?.graphEnriched ?? 0,
+      status: strict
+        ? 'withheld by strict trust policy'
+        : graphStats && (graphStats.entityCount > 0 || graphStats.relationCount > 0) ? 'enabled' : 'enabled (idle)',
+      enrichments: strict ? 0 : stats!.signal?.graphEnriched ?? 0,
     },
     wakeUp: sessionSummary || 'No working set yet',
     signalNote:
-      stats.totalMemories > 0 && (stats.signal?.captured ?? 0) === 0
+      !strict && stats!.totalMemories > 0 && (stats!.signal?.captured ?? 0) === 0
         ? 'Signal counts cover capture-era writes only. Legacy durable memories may exist without signal telemetry.'
-        : 'Signal counts cover capture-era writes only.',
+        : strict ? 'Aggregate statistics are withheld by strict trust policy.' : 'Signal counts cover capture-era writes only.',
   };
 }
 
@@ -274,36 +290,49 @@ export async function buildHealthState(projectPath?: string): Promise<HealthRepo
   currentProject = `${scope.currentProject.name} (${scope.currentProject.path})`;
   nextStep = scope.nextStep;
 
-
-  // path yet — the wiki-to-memory migration is SQLite-only. Warn loudly so
-  // operators don't assume team-mode wiki data was preserved.
-  try {
-    const { raw: healthRaw } = await getDbClient();
-    const clientType = String((healthRaw as any)?.$clientType ?? '');
-    const driverName = String((healthRaw as any)?.$client?.constructor?.name ?? '');
-    const isSqlite = clientType === 'sqlite' || /sqlite/i.test(driverName);
-    if (!isSqlite && healthRaw && typeof (healthRaw as any).execute === 'function') {
+  const strict = isStrictTrustPolicy();
+  const legacyWikiTableCount = async (): Promise<number> => {
+    try {
+      const { raw: healthRaw } = await getDbClient();
+      const clientType = String((healthRaw as any)?.$clientType ?? '');
+      const driverName = String((healthRaw as any)?.$client?.constructor?.name ?? '');
+      const isSqlite = clientType === 'sqlite' || /sqlite/i.test(driverName);
+      if (isSqlite || !healthRaw || typeof (healthRaw as any).execute !== 'function') return 0;
       const result = (await (healthRaw as any).execute(
         sql`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('wiki_pages', 'wiki_links', 'wiki_page_versions')`
       )) as unknown;
-      const rows = (result as { rows?: unknown[] }).rows ?? (Array.isArray(result) ? result : []);
-      const wikiTableCount = rows.length;
-      if (wikiTableCount > 0) {
-        checks.push({
-          name: 'legacy wiki tables',
-          status: 'degraded',
-          detail:
-            `${wikiTableCount} legacy wiki table(s) exist in this Postgres database. ` +
-            `Run squish-cloud/squish-api/migrations/009-wiki-to-memory.sql to migrate and preserve legacy team-mode wiki data.`
-        });
-        if (severity === 'ok') severity = 'degraded';
-        nextStep =
-          nextStep ??
-          'Run squish-cloud/squish-api/migrations/009-wiki-to-memory.sql to migrate legacy team-mode wiki tables.';
-      }
+      return ((result as { rows?: unknown[] }).rows ?? (Array.isArray(result) ? result : [])).length;
+    } catch {
+      // Legacy migration diagnostics are best-effort and must not hold up status.
+      return 0;
     }
-  } catch {
-    // Non-fatal: health check best-effort.
+  };
+  const safeMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+  const [wikiTableCount, recentResult, sessionResult, activePlaces, graphStats] = await Promise.all([
+    legacyWikiTableCount(),
+    getRecent(scope.currentProject.path, 1).then(() => ({ ok: true as const }), (error: unknown) => ({ ok: false as const, error })),
+    strict
+      ? Promise.resolve({ summary: '', error: null as unknown })
+      : getLatestProjectWorkingSetSummary(scope.currentProject.path).then(
+        (summary) => ({ summary, error: null as unknown }),
+        (error: unknown) => ({ summary: '', error }),
+      ),
+    getProjectByPath(scope.currentProject.path)
+      .then((project) => project && !strict ? getProjectPlaces(project.id) : [])
+      .then((places) => places.filter((place) => place.memoryCount > 0)),
+    strict ? Promise.resolve(null) : getGraphStats(scope.currentProject.path),
+  ]);
+
+  if (wikiTableCount > 0) {
+    checks.push({
+      name: 'legacy wiki tables',
+      status: 'degraded',
+      detail:
+        `${wikiTableCount} legacy wiki table(s) exist in this Postgres database. ` +
+        'Run squish-cloud/squish-api/migrations/009-wiki-to-memory.sql to migrate and preserve legacy team-mode wiki data.',
+    });
+    if (severity === 'ok') severity = 'degraded';
+    nextStep = nextStep ?? 'Run squish-cloud/squish-api/migrations/009-wiki-to-memory.sql to migrate legacy team-mode wiki tables.';
   }
 
   checks.push({
@@ -312,21 +341,20 @@ export async function buildHealthState(projectPath?: string): Promise<HealthRepo
     detail: `${scope.currentProject.name} at ${scope.currentProject.path} (${scope.currentProject.resolution})`,
   });
 
-  try {
-    await getRecent(scope.currentProject.path, 1);
+  if (recentResult.ok) {
     checks.push({ name: 'memory write path', status: 'ok', detail: 'Memory store is readable for this project.' });
-  } catch (error: any) {
+  } else {
     severity = severity === 'broken' ? 'broken' : 'degraded';
     nextStep = nextStep ?? 'Run `squish doctor` to repair local storage before writing memories.';
     checks.push({
       name: 'memory write path',
       status: 'degraded',
-      detail: error?.message ?? 'Memory store could not be read.',
+      detail: safeMessage(recentResult.error),
     });
   }
 
-  try {
-    const sessionSummary = await getLatestProjectWorkingSetSummary(scope.currentProject.path);
+  if (!sessionResult.error) {
+    const sessionSummary = sessionResult.summary;
     checks.push({
       name: 'session working set',
       status: sessionSummary ? 'ok' : 'degraded',
@@ -336,18 +364,15 @@ export async function buildHealthState(projectPath?: string): Promise<HealthRepo
       severity = 'degraded';
       nextStep = nextStep ?? 'Run a normal session or memory write so Squish can build a working-set wake-up summary.';
     }
-  } catch (error: any) {
+  } else {
     severity = severity === 'broken' ? 'broken' : 'degraded';
     checks.push({
       name: 'session working set',
       status: 'degraded',
-      detail: error?.message ?? 'Working-set state could not be loaded.',
+      detail: safeMessage(sessionResult.error),
     });
   }
 
-  const project = await getProjectByPath(scope.currentProject.path);
-  const places = project ? await getProjectPlaces(project.id) : [];
-  const activePlaces = places.filter((place) => place.memoryCount > 0);
   checks.push({
     name: 'places',
     status: activePlaces.length > 0 ? 'ok' : 'degraded',
@@ -361,18 +386,21 @@ export async function buildHealthState(projectPath?: string): Promise<HealthRepo
     nextStep = nextStep ?? 'Store or recall project memories to populate place routing.';
   }
 
-  const graphStats = await getGraphStats(scope.currentProject.path);
-  checks.push({
-    name: 'graph',
-    status: graphStats.entityCount > 0 || graphStats.relationCount > 0 ? 'ok' : 'degraded',
-    detail:
-      graphStats.entityCount > 0 || graphStats.relationCount > 0
-        ? `${graphStats.entityCount} entities and ${graphStats.relationCount} relations available.`
-        : 'Graph is enabled but has no extracted entities yet.',
-  });
-  if (graphStats.entityCount === 0 && graphStats.relationCount === 0 && severity === 'ok') {
-    severity = 'degraded';
-    nextStep = nextStep ?? 'Write or recall durable memories so graph enrichment has material to process.';
+  if (strict) {
+    checks.push({ name: 'graph', status: 'ok', detail: 'Graph statistics are withheld by strict trust policy.' });
+  } else {
+    checks.push({
+      name: 'graph',
+      status: graphStats && (graphStats.entityCount > 0 || graphStats.relationCount > 0) ? 'ok' : 'degraded',
+      detail:
+        graphStats && (graphStats.entityCount > 0 || graphStats.relationCount > 0)
+          ? `${graphStats.entityCount} entities and ${graphStats.relationCount} relations available.`
+          : 'Graph is enabled but has no extracted entities yet.',
+    });
+    if ((!graphStats || (graphStats.entityCount === 0 && graphStats.relationCount === 0)) && severity === 'ok') {
+      severity = 'degraded';
+      nextStep = nextStep ?? 'Write or recall durable memories so graph enrichment has material to process.';
+    }
   }
 
   checks.push({

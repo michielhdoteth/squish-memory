@@ -40,6 +40,9 @@ export function registerClaudeCodeAdapter(registerAdapter: (adapter: AgentAdapte
     version: 'latest',
     
     getSessionContext: async (input) => {
+      const { getStrictAdapterSessionContext } = await import('../strict-access.js');
+      const strictContext = await getStrictAdapterSessionContext(input);
+      if (strictContext) return strictContext;
       const { getRecent, search } = await import('../../memory/memories.js');
       
       const recent = await getRecent(input.project, input.mode === 'compact' ? 3 : 5);
@@ -56,6 +59,9 @@ export function registerClaudeCodeAdapter(registerAdapter: (adapter: AgentAdapte
     },
     
     recordObservation: async (input) => {
+      const { captureStrictAdapterObservation } = await import('../strict-access.js');
+      const strictObservation = await captureStrictAdapterObservation(input, 'claude-code');
+      if (strictObservation) return strictObservation;
       const { createLearning } = await import('../../ingestion/learnings.js');
       
       // Extract simple string target, not object
@@ -81,6 +87,9 @@ export function registerClaudeCodeAdapter(registerAdapter: (adapter: AgentAdapte
     },
     
     getTimeline: async (query, depth, limit) => {
+      const { getStrictAdapterTimeline } = await import('../strict-access.js');
+      const strictResults = await getStrictAdapterTimeline(query, depth, limit);
+      if (strictResults) return strictResults;
       const { getTimeline } = await import('../timeline.js');
       const result = await getTimeline(query, depth, limit);
       return result.results;

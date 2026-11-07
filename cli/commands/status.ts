@@ -7,6 +7,7 @@
  *   squish status --json
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
 import { client } from '../client.js';
 import { remediationFor } from '../errors.js';
@@ -19,8 +20,7 @@ export function registerStatusCommand(program: Command) {
     .option('-v, --verbose', 'Show detailed information', false)
     .option('--json', 'Emit machine-readable output', false)
     .action(async (options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const stats = await client.getStats();
 
@@ -29,27 +29,45 @@ export function registerStatusCommand(program: Command) {
         } else {
           console.log(colors.bold('Memory System Status:\n'));
           console.log(`  Total memories:  ${colors.cyan(String(stats.totalMemories ?? 0))}`);
-          console.log(`  Storage:         ${colors.cyan(stats.storagePath ?? 'unknown')}`);
-          console.log(`  Backend:         ${colors.cyan(stats.backend ?? 'unknown')}`);
-          if (stats.totalAssociations !== undefined) {
-            console.log(`  Associations:    ${colors.cyan(String(stats.totalAssociations))}`);
+          console.log(`  Project:         ${colors.cyan(stats.projectPath ?? 'unknown')}`);
+          console.log(`  Mode:            ${colors.cyan(stats.mode ?? 'unknown')}`);
+          if (stats.durableMemories !== undefined) {
+            console.log(`  Durable:         ${colors.cyan(String(stats.durableMemories))}`);
           }
-          if (stats.totalGraphEntities !== undefined) {
-            console.log(`  Graph entities:  ${colors.cyan(String(stats.totalGraphEntities))}`);
+          if (stats.totalNotes !== undefined) {
+            console.log(`  Notes:           ${colors.cyan(String(stats.totalNotes))}`);
           }
-          if (stats.recentSessions !== undefined) {
-            console.log(`  Recent sessions: ${colors.cyan(String(stats.recentSessions))}`);
+          if (stats.totalLearnings !== undefined) {
+            console.log(`  Learnings:       ${colors.cyan(String(stats.totalLearnings))}`);
           }
-          if (stats.lastBackup) {
-            console.log(`  Last backup:     ${colors.cyan(stats.lastBackup)}`);
+          if (stats.totalLinks !== undefined) {
+            console.log(`  Links:           ${colors.cyan(String(stats.totalLinks))}`);
+          }
+          if (stats.oldestMemory) {
+            console.log(`  Oldest memory:   ${colors.cyan(stats.oldestMemory)}`);
+          }
+          if (stats.newestMemory) {
+            console.log(`  Newest memory:   ${colors.cyan(stats.newestMemory)}`);
           }
           console.log();
-          if (options.verbose && stats.memoryTypes) {
+          if (options.verbose) {
+            const byType = stats.byType ?? {};
+            const entries = Object.entries(byType);
             console.log(colors.bold('By type:'));
-            for (const [type, count] of Object.entries(stats.memoryTypes)) {
+            if (entries.length === 0) {
+              console.log('  (none)');
+            }
+            for (const [type, count] of entries) {
               console.log(`  ${type}: ${colors.cyan(String(count))}`);
             }
             console.log();
+            if (stats.signal) {
+              console.log(colors.bold('Capture signal:'));
+              console.log(`  captured: ${colors.cyan(String(stats.signal.captured))}`);
+              console.log(`  durable:  ${colors.cyan(String(stats.signal.durable))}`);
+              console.log(`  tokens saved: ${colors.cyan(String(stats.signal.tokensSaved))}`);
+              console.log();
+            }
           }
         }
       } catch (error: any) {
@@ -62,10 +80,7 @@ export function registerStatusCommand(program: Command) {
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     });
 }

@@ -1,8 +1,11 @@
 import { eq, and, sql } from 'drizzle-orm';
+import { estimateTextTokens } from '../lib/tokens.js';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { createDatabaseClient } from '../storage/database.js';
 import { requireProject } from '../projects.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 
 export interface ContextWindowConfig {
   maxTokens: number;
@@ -38,10 +41,21 @@ export interface OptimizationSuggestion {
 
 export function estimateTokens(content: string): number {
   if (!content) return 0;
-  return Math.ceil(content.length / 4);
+  return estimateTextTokens(content);
+}
+
+async function assertContextWindowReadAvailable(operation: string): Promise<void> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(
+      `context_window:${operation}`,
+      'context_window',
+      `Context-window ${operation} is disabled under strict trust until caller-scoped memory authorization is implemented`,
+    );
+  }
 }
 
 export async function getTokenUsage(projectPath: string): Promise<TokenUsageStats> {
+  await assertContextWindowReadAvailable('usage reads');
   const project = await requireProject(projectPath);
   const projectId = project.id;
   const db = createDatabaseClient(await getDb());
@@ -124,6 +138,7 @@ export async function checkContextLimit(
 export async function getOptimizationSuggestions(
   projectPath: string
 ): Promise<OptimizationSuggestion[]> {
+  await assertContextWindowReadAvailable('optimization suggestions');
   const project = await requireProject(projectPath);
   const projectId = project.id;
   const db = createDatabaseClient(await getDb());
@@ -204,8 +219,9 @@ export async function getContextWindowStatus(projectPath: string): Promise<{
   memoryCount: number;
   coreMemorySections: number;
 }> {
-   const project = await requireProject(projectPath);
-   const projectId = project.id;
+  await assertContextWindowReadAvailable('status reads');
+  const project = await requireProject(projectPath);
+  const projectId = project.id;
   const db = createDatabaseClient(await getDb());
   const schema = await getSchema();
 
@@ -230,5 +246,186 @@ export async function getContextWindowStatus(projectPath: string): Promise<{
     suggestions,
     memoryCount: (memoryCount[0] as any)?.count || 0,
     coreMemorySections: (coreMemorySections[0] as any)?.count || 0,
+  };
+}
+
+// ─── Tiered Context Injection (v2.4) ────────────────────────────────────────
+
+export type InjectionTier = 'full' | 'summarized' | 'compressed' | 'dropped';
+
+export interface MemoryForInjection {
+  id: string;
+  content: string;
+  type: string;
+  importanceScore: number;
+  accessCount: number;
+  isPinned: boolean;
+  isProtected: boolean;
+  tokensEstimate: number;
+}
+
+export interface TierConfig {
+  minImportance: number;
+  maxTokens?: number;
+}
+
+export interface TieredInjectionConfig {
+  maxTokens: number;
+  tiers: {
+    full: TierConfig;
+    summarized: TierConfig;
+    compressed: TierConfig;
+    dropped: TierConfig;
+  };
+}
+
+export const DEFAULT_INJECTION_CONFIG: TieredInjectionConfig = {
+  maxTokens: 8000,
+  tiers: {
+    full: { minImportance: 80, maxTokens: 5000 },
+    summarized: { minImportance: 50, maxTokens: 3000 },
+    compressed: { minImportance: 20, maxTokens: 1000 },
+    dropped: { minImportance: 0 },
+  },
+};
+
+export interface InjectedMemory {
+  id: string;
+  content: string;
+  originalContent: string;
+  type: string;
+  tier: InjectionTier;
+  tokens: number;
+  importanceScore: number;
+}
+
+export interface TieredInjectionResult {
+  injected: InjectedMemory[];
+  dropped: MemoryForInjection[];
+  totalTokens: number;
+  remainingTokens: number;
+  budgetExceeded: boolean;
+}
+
+/**
+ * Select the appropriate injection tier for a memory based on its importance
+ * and protection status. Pinned/protected memories always get 'full' tier.
+ */
+export function selectInjectionTier(
+  memory: MemoryForInjection,
+  config: TieredInjectionConfig
+): InjectionTier {
+  if (memory.isPinned || memory.isProtected) {
+    return 'full';
+  }
+
+  const importance = memory.importanceScore;
+
+  if (importance >= config.tiers.full.minImportance) return 'full';
+  if (importance >= config.tiers.summarized.minImportance) return 'summarized';
+  if (importance >= config.tiers.compressed.minImportance) return 'compressed';
+  return 'dropped';
+}
+
+/**
+ * Truncate content to fit within a token budget.
+ */
+function truncateContent(content: string, maxTokens: number): string {
+  const maxChars = maxTokens * 4; // estimateTokens is length/4
+  if (content.length <= maxChars) return content;
+  return content.substring(0, maxChars) + '...';
+}
+
+/**
+ * Inject memories into context using tier-based selection and budget awareness.
+ * - Pinned/protected memories are always injected at full tier
+ * - Remaining memories are sorted by importance and injected until budget is exhausted
+ * - Each tier has its own token limit for individual memories
+ */
+export function injectMemoriesTiered(
+  memories: MemoryForInjection[],
+  config: TieredInjectionConfig
+): TieredInjectionResult {
+  const injected: InjectedMemory[] = [];
+  const dropped: MemoryForInjection[] = [];
+  let totalTokens = 0;
+
+  // Separate pinned/protected from regular memories
+  const pinnedMemories = memories.filter(m => m.isPinned || m.isProtected);
+  const regularMemories = memories.filter(m => !m.isPinned && !m.isProtected);
+
+  // Sort regular memories by importance descending
+  regularMemories.sort((a, b) => b.importanceScore - a.importanceScore);
+
+  // Always inject pinned/protected memories at full tier
+  for (const mem of pinnedMemories) {
+    const tier = 'full' as InjectionTier;
+    const tierConfig = config.tiers[tier];
+    const tokens = mem.tokensEstimate || estimateTokens(mem.content);
+    const effectiveTokens = tierConfig.maxTokens
+      ? Math.min(tokens, tierConfig.maxTokens)
+      : tokens;
+    const content = tierConfig.maxTokens
+      ? truncateContent(mem.content, tierConfig.maxTokens)
+      : mem.content;
+
+    injected.push({
+      id: mem.id,
+      content,
+      originalContent: mem.content,
+      type: mem.type,
+      tier,
+      tokens: effectiveTokens,
+      importanceScore: mem.importanceScore,
+    });
+    totalTokens += effectiveTokens;
+  }
+
+  // Inject regular memories until budget is exhausted
+  for (const mem of regularMemories) {
+    const tier = selectInjectionTier(mem, config);
+
+    if (tier === 'dropped') {
+      dropped.push(mem);
+      continue;
+    }
+
+    const tierConfig = config.tiers[tier];
+    const tokens = mem.tokensEstimate || estimateTokens(mem.content);
+    const effectiveTokens = tierConfig.maxTokens
+      ? Math.min(tokens, tierConfig.maxTokens)
+      : tokens;
+
+    // Check if adding this memory would exceed the budget
+    if (totalTokens + effectiveTokens > config.maxTokens) {
+      dropped.push(mem);
+      continue;
+    }
+
+    const content = tierConfig.maxTokens
+      ? truncateContent(mem.content, tierConfig.maxTokens)
+      : mem.content;
+
+    injected.push({
+      id: mem.id,
+      content,
+      originalContent: mem.content,
+      type: mem.type,
+      tier,
+      tokens: effectiveTokens,
+      importanceScore: mem.importanceScore,
+    });
+    totalTokens += effectiveTokens;
+  }
+
+  const remainingTokens = Math.max(0, config.maxTokens - totalTokens);
+  const budgetExceeded = totalTokens > config.maxTokens;
+
+  return {
+    injected,
+    dropped,
+    totalTokens,
+    remainingTokens,
+    budgetExceeded,
   };
 }

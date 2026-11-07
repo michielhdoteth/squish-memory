@@ -35,12 +35,14 @@ const PRIVATE_IP_PATTERNS = [
   /^169\.254\.\d{1,3}\.\d{1,3}$/,               // 169.254.0.0/16 (link-local)
 ];
 
-/** Hostnames that resolve to loopback */
+/** Hostnames that resolve to loopback (bracket-free IPv6 form; see normalizeHostname) */
 const LOCALHOST_HOSTNAMES = new Set([
   'localhost',
   '127.0.0.1',
   '::1',
   '0.0.0.0',
+  'ip6-localhost',
+  'ip6-loopback',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -60,6 +62,26 @@ export interface ValidateOutboundUrlOptions {
 
 function isPrivateIPv4(hostname: string): boolean {
   return PRIVATE_IP_PATTERNS.some((pattern) => pattern.test(hostname));
+}
+
+/**
+ * Canonical hostname for policy checks: lowercase, with the enclosing
+ * brackets removed from IPv6 literals. WHATWG URL.hostname keeps the
+ * brackets ('[::1]'), so raw comparisons against '::1' never match (F1).
+ */
+export function normalizeHostname(hostname: string): string {
+  const lower = hostname.toLowerCase();
+  return lower.startsWith('[') && lower.endsWith(']') ? lower.slice(1, -1) : lower;
+}
+
+/** True only for explicit loopback URL hosts; malformed or remote URLs fail closed. */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    const hostname = normalizeHostname(new URL(url).hostname);
+    return LOCALHOST_HOSTNAMES.has(hostname) || hostname.startsWith('127.');
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -98,25 +120,26 @@ export function validateOutboundUrl(
   }
 
   // --- Blocked metadata hostnames ---
-  if (BLOCKED_HOSTS.has(parsed.hostname)) {
+  const hostname = normalizeHostname(parsed.hostname);
+  if (BLOCKED_HOSTS.has(hostname)) {
     logger.warn(`[url-validator] Blocked metadata endpoint: ${url}`);
     throw new Error(`Blocked metadata endpoint: ${parsed.hostname}`);
   }
 
   // --- Localhost / loopback ---
-  if (!allowLocalhost && LOCALHOST_HOSTNAMES.has(parsed.hostname)) {
+  if (!allowLocalhost && LOCALHOST_HOSTNAMES.has(hostname)) {
     logger.warn(`[url-validator] Blocked localhost URL: ${url}`);
     throw new Error(`Localhost URLs not allowed: ${url}`);
   }
 
   // --- Private / internal IPs ---
-  if (isPrivateIPv4(parsed.hostname)) {
+  if (isPrivateIPv4(hostname)) {
     // Allow loopback if explicitly permitted (for local providers)
-    if (allowLocalhost && LOCALHOST_HOSTNAMES.has(parsed.hostname)) {
+    if (allowLocalhost && LOCALHOST_HOSTNAMES.has(hostname)) {
       return; // already checked above, this is redundant but safe
     }
     // Allow link-local only if allowLocalhost is true
-    if (parsed.hostname.startsWith('169.254.')) {
+    if (hostname.startsWith('169.254.')) {
       logger.warn(`[url-validator] Blocked link-local IP: ${url}`);
       throw new Error(`Link-local IP not allowed: ${parsed.hostname}`);
     }

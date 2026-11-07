@@ -1,55 +1,27 @@
 # Squish Install Quickstart
 
-Launch-ready install and verification paths for the current release.
+> **Release status (2026-10-20): Squish 2.2.0 is an unpublished source candidate.** The npm
+> package currently resolves to 1.9.0 and has not been validated against this checkout. Do not
+> install the published package or follow these setup notes until a release announcement confirms
+> the package version and host compatibility. The sections below describe target-version reference
+> details, not a currently supported install path. Hosted sync, hosted API, managed AI, and checkout
+> are unavailable.
 
-Squish is free to run locally. Squish Cloud is the paid managed tier when you want sync, dashboard, and team features.
+## Installation status
 
-## 1) Install
+There is no supported package-install command for this source candidate. Installation instructions
+will be restored after a matching release and update path have been verified.
 
-Recommended:
-
-```bash
-npm install -g squish-memory
-squish install --all
-```
-
-Or traditional package install only (MCP config manual):
-
-```bash
-npm install -g squish-memory
-yarn global add squish-memory
-bun add -g squish-memory
-```
-
-## 2) Verify The MCP Server
-
-```bash
-squish-mcp --health
-```
-
-Expected output:
-
-```text
-[MCP] Running health check...
-[MCP] Health check passed. Server initialized with 16 tools.
-```
-
-## 3) Start Specific Surfaces
-
-### MCP server
+## Run local MCP
 
 ```bash
 squish-mcp
 ```
 
-### Web UI
+Configure the MCP client to launch `squish-mcp` using its supported stdio configuration. See
+[MCP Server](MCP-SERVER.md) for transport and tool details.
 
-```bash
-squish run web
-# Then visit http://localhost:37777
-```
-
-## 4) Sanity-Check The Runtime
+## Check the local runtime
 
 ```bash
 squish context --json
@@ -58,37 +30,12 @@ squish stats --json
 squish status --pretty
 ```
 
-If you want to inspect why a specific record exists:
+Inspect a stored memory by ID:
 
 ```bash
 squish inspect <memory-id> --json
 ```
 
-If you are upgrading an older local install and hit schema drift:
-
-```bash
-squish doctor --json --migrate
-```
-
-## Expected Outputs
-
-### squish-mcp --health
-
-```text
-[MCP] Running health check...
-[MCP] Health check passed. Server initialized with 16 tools.
-```
-
-### squish run web
-
-```text
-Starting Squish web UI on http://localhost:37777...
-```
-
-### squish context --json
-
-```json
-{
-  "ok": true
-}
-```
+For transcript search across supported local agent stores and project roots, use the MCP tool
+`squish_sessions` with `action: "search"`. The CLI `squish sessions` commands only operate on
+sessions already stored in the Squish database. See [CLI sessions](CLI.md#sessions).

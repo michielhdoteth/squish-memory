@@ -1,14 +1,15 @@
 # Squish Documentation
 
-This directory contains technical documentation for the Squish memory infrastructure.
+This directory contains technical documentation for Squish. Check the release and availability notes before relying on an installation path or hosted entitlement.
 
 ## Authoritative docs
 
-These docs are current and reflect the codebase as of the latest release:
+Primary references:
 
-- **[ARCHITECTURE.md](Architecture)** — System design, package structure, architecture layers, storage modes, technology stack, key configuration. The canonical technical reference.
-- **[MCP-SERVER.md](MCP-Server)** — MCP server tool reference (15 tools + 1 gated), agent configuration, transport modes, environment variables. Updated to match the current codebase.
-- **[INSTALL-QUICKSTART.md](INSTALL-QUICKSTART)** — Install, verify, first memory. Getting started guide.
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — System design, package structure, architecture layers, storage modes, and key configuration. Verify release-specific details before use.
+- **[MCP-SERVER.md](MCP-SERVER.md)** — MCP server tool reference, agent configuration, transport modes, and environment variables. Verify that each transport is supported by your release.
+- **[INSTALL-QUICKSTART.md](INSTALL-QUICKSTART.md)** — Install, verify, first memory. Check current package/release status before following installation commands.
+- **[PRODUCT-OFFERING.md](PRODUCT-OFFERING)** — License boundary, current cloud availability, pricing sources, and benchmark-claim policy.
 
 ## Deep dives
 

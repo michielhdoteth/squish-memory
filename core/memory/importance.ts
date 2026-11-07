@@ -11,6 +11,8 @@ import type { Memory } from '../../db/drizzle/schema.js';
 import { eq } from 'drizzle-orm';
 import { cosineSimilarity as vectorCosineSimilarity } from '../utils/vector-operations.js';
 import { getDbClient } from '../lib/db-client.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 
 export interface ImportanceScore {
   score: number; // 0-100
@@ -157,10 +159,40 @@ export function denormalizeImportanceScore(score1: number): number {
 }
 
 /**
+ * The shared 3-factor composition: base  -> normalize  -> v2(base, surprise,
+ * emotion)  -> denormalize.
+ *
+ * History: the write path (`computeInitialImportance`) and the batch recalc
+ * (`core/memory/importance-recalc.ts`) each restated these four steps in their
+ * own words, with only a comment linking them. The composition now lives here
+ * once; each path still owns its own inputs (write computes surprise from
+ * contradictions, batch passes the documented 0.5 because pair comparison is
+ * out of scope there).
+ */
+export function scoreWithV2Pipeline(input: {
+  baseInput: Parameters<typeof calculateImportance>[0];
+  content: string;
+  surprise: number;
+}): ImportanceScore {
+  const base = calculateImportance(input.baseInput);
+  const emotion = detectEmotion(input.content);
+  const v2Score = denormalizeImportanceScore(
+    calculateImportanceV2({
+      baseImportance: normalizeImportanceScore(base.score),
+      surprise: input.surprise,
+      emotion,
+    })
+  );
+  return {
+    ...base,
+    score: v2Score,
+    explanation: `3-factor: base=${normalizeImportanceScore(base.score).toFixed(3)}, emotion=${emotion.toFixed(3)}, surprise=${input.surprise.toFixed(3)}`,
+  };
+}
+
+/**
  * Compute initial importance for a new memory (sole write-path entry point;
  * absorbs the former core/engines dispatch wrapper).
- *
- * Runs the full 3-factor pipeline: base → normalize → surprise + emotion → v2 → denormalize.
  */
 export function computeInitialImportance(memoryInput: {
   content: string;
@@ -172,21 +204,11 @@ export function computeInitialImportance(memoryInput: {
   isProtected: boolean;
   isImmutable: boolean;
 }): ImportanceScore {
-  const base = calculateImportance(memoryInput);
-  const surprise = detectSurprise({ content: memoryInput.content, type: memoryInput.type }, []);
-  const emotion = detectEmotion(memoryInput.content);
-  const v2Score = denormalizeImportanceScore(
-    calculateImportanceV2({
-      baseImportance: normalizeImportanceScore(base.score),
-      surprise,
-      emotion,
-    })
-  );
-  return {
-    ...base,
-    score: v2Score,
-    explanation: `3-factor: base=${normalizeImportanceScore(base.score).toFixed(3)}, emotion=${emotion.toFixed(3)}, surprise=${surprise.toFixed(3)}`,
-  };
+  return scoreWithV2Pipeline({
+    baseInput: memoryInput,
+    content: memoryInput.content,
+    surprise: detectSurprise({ content: memoryInput.content, type: memoryInput.type }, []),
+  });
 }
 
 /**
@@ -411,6 +433,10 @@ export async function getLowImportanceMemories(
       limit?: number;
     } = {}
   ): Promise<any[]> {
+    if (isStrictTrustPolicy()) {
+      await denyStrictSurface('maintenance_candidates', 'memory', 'Unscoped maintenance candidate reads are disabled under strict trust');
+    }
+
     const { db, schema } = await getDbClient();
 
     const {

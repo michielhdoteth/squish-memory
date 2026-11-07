@@ -15,8 +15,8 @@ export async function runTeamsMigrations(sqlite: Database): Promise<void> {
         name TEXT NOT NULL,
         slug TEXT NOT NULL UNIQUE,
         description TEXT,
-        created_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
       )
     `);
     sqlite.exec(`CREATE INDEX IF NOT EXISTS teams_slug_idx ON teams(slug)`);
@@ -33,7 +33,7 @@ export async function runTeamsMigrations(sqlite: Database): Promise<void> {
         team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         role TEXT NOT NULL DEFAULT 'member',
-        joined_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        joined_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
         UNIQUE(team_id, user_id)
       )
     `);
@@ -54,7 +54,7 @@ export async function runTeamsMigrations(sqlite: Database): Promise<void> {
         role TEXT NOT NULL DEFAULT 'member',
         code TEXT NOT NULL UNIQUE,
         expires_at INTEGER,
-        created_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
       )
     `);
     sqlite.exec(`CREATE INDEX IF NOT EXISTS team_invitations_team_idx ON team_invitations(team_id)`);
@@ -73,7 +73,7 @@ export async function runTeamsMigrations(sqlite: Database): Promise<void> {
         team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
         shared_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         permission TEXT NOT NULL DEFAULT 'read',
-        created_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
         UNIQUE(memory_id, team_id)
       )
     `);

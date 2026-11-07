@@ -13,7 +13,7 @@
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { spawn } from 'child_process';
-import { attachChildLogging, getDefaultLogFile, resolveRuntimeLaunch } from './runtime-launcher.mjs';
+import { attachChildLogging, buildRuntimeEnv, getDefaultLogFile, resolveRuntimeLaunch } from './runtime-launcher.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -45,7 +45,11 @@ const runtime = resolveRuntimeLaunch({
 
 const child = spawn(runtime.command, runtime.args, {
   stdio: ['pipe', 'pipe', 'pipe'],
-  cwd: rootDir
+  // Inherit the host's cwd (the session workspace) and forward it as
+  // SQUISH_WORKING_DIRECTORY. Pinning the child cwd to the package root made
+  // every tool call resolve project scope to the install directory, because
+  // agent hosts set neither SQUISH_WORKING_DIRECTORY nor INIT_CWD. See ADR-002.
+  env: buildRuntimeEnv(rootDir)
 });
 
 // Relay stdin from OpenCode (or parent) to child MCP server

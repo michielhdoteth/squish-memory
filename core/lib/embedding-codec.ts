@@ -26,18 +26,18 @@ export function embeddingByteLength(dim: number): number {
 export function encodeEmbeddingBlob(vector: number[] | Float32Array | null | undefined): Buffer | null {
   if (!vector || vector.length === 0) return null;
 
-  let norm = 0;
+  // Reject non-finite elements: normalizeVector alone would map them through
+  // and produce an all-zero vector where the old codec returned null.
   for (let i = 0; i < vector.length; i++) {
-    const v = vector[i];
-    norm += v * v;
+    if (!Number.isFinite(vector[i])) return null;
   }
-  if (!Number.isFinite(norm) || norm === 0) return null;
+  const normalized = normalizeVector(Array.from(vector) as number[]);
+  if (!normalized) return null;
 
-  const magnitude = Math.sqrt(norm);
-  const buf = Buffer.allocUnsafe(embeddingByteLength(vector.length));
+  const buf = Buffer.allocUnsafe(embeddingByteLength(normalized.length));
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  for (let i = 0; i < vector.length; i++) {
-    view.setFloat32(i * 4, vector[i] / magnitude, true);
+  for (let i = 0; i < normalized.length; i++) {
+    view.setFloat32(i * 4, normalized[i], true);
   }
   return buf;
 }

@@ -9,6 +9,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
+import { isStrictTrustPolicy, TrustBoundaryError } from '../acl/trust-policy.js';
 
 export interface RetrievalEvent {
   memoryId: string;
@@ -53,6 +54,7 @@ let flushIntervalId: ReturnType<typeof setInterval> | null = null;
  * Safe to call multiple times -- subsequent calls are no-ops.
  */
 export function startTelemetry(): void {
+  if (isStrictTrustPolicy()) return;
   if (flushIntervalId !== null) return;
   flushIntervalId = setInterval(() => {
     flushRetrievalEvents().catch(err => {
@@ -86,6 +88,7 @@ export function recordRetrieval(
   score: number,
   sessionId?: string
 ): void {
+  if (isStrictTrustPolicy()) return;
   const event: RetrievalEvent = {
     memoryId,
     query,
@@ -118,6 +121,7 @@ export function recordEcho(
   memoryId: string,
   sessionId?: string
 ): void {
+  if (isStrictTrustPolicy()) return;
   // Find the most recent retrieval for this memory
   const recentIndex = retrievalEvents.findIndex(
     (e, i) => 
@@ -155,6 +159,7 @@ export function recordFizzle(
   memoryId: string,
   sessionId?: string
 ): void {
+  if (isStrictTrustPolicy()) return;
   incrementMemoryFizzle(memoryId).catch(err => {
     logger.debug('Failed to increment fizzle count', err);
   });
@@ -164,6 +169,10 @@ export function recordFizzle(
  * Flush cached retrieval events to database
  */
 export async function flushRetrievalEvents(): Promise<void> {
+  if (isStrictTrustPolicy()) {
+    retrievalEvents.length = 0;
+    return;
+  }
   if (retrievalEvents.length === 0) return;
   
   const events = [...retrievalEvents];
@@ -285,6 +294,7 @@ async function incrementMemoryFizzle(memoryId: string): Promise<void> {
  * Get telemetry for a specific memory
  */
 export async function getMemoryTelemetry(memoryId: string): Promise<MemoryTelemetry | null> {
+  if (isStrictTrustPolicy()) throw new TrustBoundaryError('Memory telemetry requires caller-scoped provenance and ACL checks under strict trust');
   try {
     const db = await getDb();
     const schema = await getSchema();
@@ -323,6 +333,7 @@ export async function getMemoryTelemetry(memoryId: string): Promise<MemoryTeleme
  * Get overall retrieval statistics
  */
 export async function getRetrievalStats(projectId?: string): Promise<RetrievalStats> {
+  if (isStrictTrustPolicy()) throw new TrustBoundaryError('Aggregate retrieval stats require caller-scoped provenance and ACL checks under strict trust');
   try {
     const db = await getDb();
     const schema = await getSchema();
@@ -421,6 +432,7 @@ export function calculateTelemetryBoost(telemetry: MemoryTelemetry | null): numb
  * Periodic cleanup job for telemetry data
  */
 export async function cleanupOldTelemetry(daysToKeep: number = 90): Promise<number> {
+  if (isStrictTrustPolicy()) throw new TrustBoundaryError('Telemetry maintenance is unavailable under strict trust without an authorized caller scope');
   // This would typically clean up a dedicated telemetry_events table
   // For now, we just flush the in-memory cache
   await flushRetrievalEvents();

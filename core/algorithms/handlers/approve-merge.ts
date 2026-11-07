@@ -10,9 +10,12 @@ import { createDatabaseClient, runInTransaction } from '../../../core/storage/da
 import { eq, inArray } from 'drizzle-orm';
 import { mergeMemories } from '../strategies/merge-strategies.js';
 import { estimateTokensSaved } from '../analytics/token-estimator.js';
-import { getEmbedding } from '../../../core/embeddings.js';
-import { toSqliteJson } from '../../../core/memory/serialization.js';
+import { getEmbedding, embeddingModelFor, activeEmbeddingModel } from '../../../core/embeddings.js';
+import { encodeEmbeddingBlob } from '../../lib/embedding-codec.js';
+import { toSqliteJson, toSqliteTags, deserializeTags, deserializeMetadata } from '../../../core/memory/serialization.js';
 import { asArray } from '../utils/json-fields.js';
+import { assertMergeWorkflowAvailable } from './strict-trust-guard.js';
+import { evictMemoryRuntimeState } from '../../memory/runtime-cache-lifecycle.js';
 
 interface ApproveMergeInput {
   proposalId: string;
@@ -35,6 +38,7 @@ interface ApproveMergeResponse {
 
 export async function handleApproveMerge(input: ApproveMergeInput): Promise<ApproveMergeResponse> {
   try {
+    assertMergeWorkflowAvailable();
     const { proposalId, reviewNotes } = input;
 
     if (!proposalId) {
@@ -79,18 +83,41 @@ export async function handleApproveMerge(input: ApproveMergeInput): Promise<Appr
       };
     }
 
-    const sourceMemories: Memory[] = await db
+    const rawSourceMemories: Memory[] = await db
       .select()
       .from(schema.memories)
       .where(inArray(schema.memories.id, sourceIds));
 
-    if (sourceMemories.length !== sourceIds.length) {
+    if (rawSourceMemories.length !== sourceIds.length) {
       return {
         ok: false,
         message: 'Not all source memories could be found',
         error: 'Missing source memories',
       };
     }
+
+    const hasEncryptedSource = rawSourceMemories.some((source) => {
+      const row = source as unknown as Record<string, unknown>;
+      return Boolean(row.isEncrypted) || Boolean(row.is_encrypted)
+        || Boolean(row.encryptedContent) || Boolean(row.encrypted_content);
+    });
+    if (hasEncryptedSource) {
+      return {
+        ok: false,
+        message: 'Merge proposals cannot include encrypted source memories',
+        error: 'encrypted_memory_unsupported',
+      };
+    }
+
+    // Boundary normalization (DEFECT 1): tags/metadata are TEXT columns typed
+    // as string[]/Record. Same treatment as two-stage-detector: parse before
+    // mergeMemories/estimateTokensSaved, or the persisted canonical row gets
+    // character-mangled tags from mergeTags iterating a JSON string.
+    const sourceMemories: Memory[] = rawSourceMemories.map((row) => ({
+      ...row,
+      tags: deserializeTags(row.tags),
+      metadata: deserializeMetadata(row.metadata),
+    }));
 
     // Step 3: Merge memories
     let merged;
@@ -122,6 +149,58 @@ export async function handleApproveMerge(input: ApproveMergeInput): Promise<Appr
 
     // Steps 6-9: All writes execute atomically in a single transaction
     await runInTransaction(db, async () => {
+      const transactionClient = (db as {
+        $client?: {
+          prepare?: (query: string) => {
+            all: (...params: string[]) => unknown[];
+          };
+        };
+      }).$client;
+      if (typeof transactionClient?.prepare !== 'function') {
+        throw new Error('Merge approval requires transactional SQLite lifecycle validation');
+      }
+
+      // A proposal can sit pending while a source expires or its valid-time
+      // window changes. Recheck from the transaction's SQLite connection
+      // before creating the canonical row or changing any source state.
+      const lifecycleRows = transactionClient.prepare(`
+        SELECT id, status, is_active, is_merged, merged_into_id,
+          valid_from, valid_to, expires_at
+        FROM memories
+        WHERE id IN (${sourceIds.map(() => '?').join(', ')})
+      `).all(...sourceIds) as Array<{
+        id: string;
+        status: string;
+        is_active: number;
+        is_merged: number;
+        merged_into_id: string | null;
+        valid_from: number | null;
+        valid_to: number | null;
+        expires_at: number | null;
+      }>;
+      const nowMs = now.getTime();
+      const timestampMs = (value: number | null): number | null => {
+        if (value === null) return null;
+        if (!Number.isFinite(value)) return Number.NaN;
+        return Math.abs(value) >= 100_000_000_000 ? value : value * 1000;
+      };
+      const isCurrentlyEligible = (source: typeof lifecycleRows[number]): boolean => {
+        const validFrom = timestampMs(source.valid_from);
+        const validTo = timestampMs(source.valid_to);
+        const expiresAt = timestampMs(source.expires_at);
+        return source.status === 'active'
+          && source.is_active === 1
+          && source.is_merged === 0
+          && source.merged_into_id === null
+          && (validFrom === null || validFrom <= nowMs)
+          && (validTo === null || validTo > nowMs)
+          && (expiresAt === null || expiresAt > nowMs);
+      };
+      if (lifecycleRows.length !== sourceIds.length
+        || lifecycleRows.some((source) => !isCurrentlyEligible(source))) {
+        throw new Error('Cannot approve merge: one or more source memories are inactive, merged, expired, or outside their valid-time window');
+      }
+
       // Step 6: Create canonical memory
       await db.insert(schema.memories).values({
         id: canonicalId,
@@ -130,7 +209,12 @@ export async function handleApproveMerge(input: ApproveMergeInput): Promise<Appr
         type: sourceMemories[0].type,
         content: merged.content,
         summary: merged.summary,
-        embedding: embedding || undefined,
+        // bun:sqlite rejects plain number[] bind parameters; store the
+        // float32-LE L2-normalized Buffer (null/empty omitted), matching the
+        // blob-first reader contracts (parseEmbedding, decodeCandidateEmbedding).
+        embedding: encodeEmbeddingBlob(embedding) ?? undefined,
+        embeddingModel: embeddingModelFor(embedding) ?? activeEmbeddingModel(),
+        embeddingDim: embedding?.length ?? null,
         tags: toSqliteJson(merged.tags),
         metadata: toSqliteJson(merged.metadata),
         source: 'merge',
@@ -175,13 +259,16 @@ export async function handleApproveMerge(input: ApproveMergeInput): Promise<Appr
         proposalId,
         sourceMemoryIds: toSqliteJson(sourceIds),
         canonicalMemoryId: canonicalId,
+        // Snapshot stays in STORAGE format (JSON strings) for tags/metadata:
+        // reverse-merge writes these values straight back into the TEXT
+        // columns, so they must not be the normalized array/object shapes.
         sourceMemoriesSnapshot: toSqliteJson(sourceMemories.map((m) => ({
           id: m.id,
           type: m.type,
           content: m.content,
           summary: m.summary,
-          tags: m.tags,
-          metadata: m.metadata,
+          tags: toSqliteTags(m.tags),
+          metadata: toSqliteJson(m.metadata),
           createdAt: m.createdAt,
         }))),
         mergeStrategy: sourceMemories[0].type === 'preference' ? 'latest' : 'union',
@@ -200,6 +287,10 @@ export async function handleApproveMerge(input: ApproveMergeInput): Promise<Appr
         })
         .where(eq(schema.memoryMergeProposals.id, proposalId));
     });
+
+    // Source rows are now inactive. Remove their vectors and feedback from
+    // process-local state only after the database transition commits.
+    await evictMemoryRuntimeState(sourceIds);
 
     return {
       ok: true,

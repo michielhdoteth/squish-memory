@@ -1,5 +1,9 @@
 /** Job Runner - Maintenance job implementations */
 
+import { randomUUID } from 'node:crypto';
+import {
+  sqlEpochSeconds
+} from '../lib/timestamps.js';
 import { logger } from '../logger.js';
 import { type JobExecutionContext } from './cron-scheduler.js';
 import { pruneWeakAssociations } from '../associations.js';
@@ -7,6 +11,7 @@ import { pruneOldSummaries } from '../summarization/cleanup.js';
 import { getDb } from '../../db/index.js';
 import { memories, memoryFeedback } from '../../db/drizzle/schema-sqlite.js';
 import { eq, and, gt, lt } from 'drizzle-orm';
+import { evictMemoryRuntimeState } from '../memory/runtime-cache-lifecycle.js';
 
 export async function runNightlyJob(context: JobExecutionContext): Promise<{
   recordsProcessed: number;
@@ -138,41 +143,93 @@ async function boostFrequentlyAccessed(): Promise<number> {
   return boosted;
 }
 
-async function archiveStaleMemories(daysOld: number): Promise<number> {
+export async function archiveStaleMemories(daysOld: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
-  const staleThreshold = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
   const sqliteDb = db as any;
+  const raw = sqliteDb.$client;
 
-  // Single UPDATE — avoids N+1 select-then-update loop
-  // First count what we'll archive (for the return value)
-  const staleMemories = await sqliteDb
-    .select({ id: memories.id })
-    .from(memories)
-    .where(and(
-      lt(memories.lastAccessedAt, staleThreshold),
-      lt(memories.importanceScore, 30),
-      eq(memories.isProtected, false),
-      eq(memories.isPinned, false),
-      eq(memories.contextStatus, 'out-of-context'),
-    ));
+  if (typeof raw.exec !== 'function' || typeof raw.prepare !== 'function') {
+    throw new Error('Memory archive requires transactional SQLite storage');
+  }
 
+  const thresholdSeconds = Math.floor((Date.now() - daysOld * 24 * 60 * 60 * 1000) / 1000);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const epochSeconds = (column: 'valid_from' | 'valid_to' | 'expires_at') =>
+    sqlEpochSeconds(column);
+  const lifecycleEligible = `
+    AND (valid_from IS NULL OR ${epochSeconds('valid_from')} <= ?)
+    AND (valid_to IS NULL OR ${epochSeconds('valid_to')} > ?)
+    AND (expires_at IS NULL OR ${epochSeconds('expires_at')} > ?)`;
+  const staleMemories = raw.prepare(`
+    SELECT id FROM memories
+    WHERE context_status = 'out-of-context' AND status = 'active' AND is_active = 1
+      AND last_accessed_at < ? AND importance_score < 30 AND is_protected = 0 AND is_pinned = 0
+      ${lifecycleEligible}
+  `).all(thresholdSeconds, nowSeconds, nowSeconds, nowSeconds) as Array<{ id: string }>;
   if (staleMemories.length === 0) return 0;
+  const archiveSource = raw.prepare(`
+    UPDATE memories SET context_status = 'archived', status = 'archived', is_active = 0,
+      recorded_at = ?, updated_at = ?
+    WHERE id = ? AND context_status = 'out-of-context' AND status = 'active' AND is_active = 1
+      AND last_accessed_at < ? AND importance_score < 30 AND is_protected = 0 AND is_pinned = 0
+      ${lifecycleEligible}
+  `);
+  const snapshot = raw.prepare(`
+    INSERT INTO memory_snapshots (id, memory_id, snapshot_type, content, metadata, created_at)
+    VALUES (?, ?, 'archive', ?, ?, ?)
+  `);
+  const archiveProjection = raw.prepare(`
+    UPDATE knowledge SET status = 'archived', is_active = 0, recorded_at = ?, updated_at = ?
+    WHERE knowledge_kind = 'memory'
+      AND (id = ? OR json_extract(CASE WHEN json_valid(metadata) THEN metadata ELSE '{}' END, '$.sourceMemoryId') = ?)
+  `);
 
-  const staleIds = staleMemories.map((m: any) => m.id);
+  let archived = 0;
+  const archivedIds: string[] = [];
+  raw.exec('BEGIN IMMEDIATE');
+  try {
+    for (const candidate of staleMemories) {
+      const current = raw.prepare('SELECT content, metadata FROM memories WHERE id = ?').get(candidate.id) as { content: string; metadata: string | null } | undefined;
+      if (!current) continue;
+      archiveSource.run(nowSeconds, nowSeconds, candidate.id, thresholdSeconds, nowSeconds, nowSeconds, nowSeconds);
+      // The candidate scan happens before BEGIN IMMEDIATE. Another runtime can
+      // complete this lifecycle transition in that gap; do not publish a
+      // second archive snapshot or count a transition this invocation did not
+      // perform.
+      if (raw.prepare('SELECT changes() AS changed').get()?.changed !== 1) continue;
+      const archivedSource = raw.prepare("SELECT status, is_active, context_status FROM memories WHERE id = ?").get(candidate.id) as { status: string; is_active: number; context_status: string } | undefined;
+      if (archivedSource?.status !== 'archived' || archivedSource.is_active !== 0 || archivedSource.context_status !== 'archived') continue;
+      snapshot.run(randomUUID(), candidate.id, current.content, JSON.stringify({
+        lifecycle: 'stale_archive',
+        priorStatus: 'active',
+        priorContextStatus: 'out-of-context',
+        priorMetadata: current.metadata,
+      }), nowSeconds);
+      const projectionChange = archiveProjection.run(nowSeconds, nowSeconds, candidate.id, candidate.id);
+      const projectionState = raw.prepare(`SELECT COUNT(*) AS total,
+        SUM(CASE WHEN status = 'archived' AND is_active = 0 THEN 1 ELSE 0 END) AS archived
+        FROM knowledge WHERE knowledge_kind = 'memory'
+          AND (id = ? OR json_extract(CASE WHEN json_valid(metadata) THEN metadata ELSE '{}' END, '$.sourceMemoryId') = ?)`)
+        .get(candidate.id, candidate.id) as { total: number; archived: number | null };
+      if (projectionChange.changes < 1 || projectionState.total < 1 || projectionState.archived !== projectionState.total) {
+        throw new Error(`Cannot archive memory ${candidate.id} without its canonical knowledge projection`);
+      }
+      archived++;
+      archivedIds.push(candidate.id);
+    }
+    raw.exec('COMMIT');
+  } catch (error) {
+    raw.exec('ROLLBACK');
+    throw error;
+  }
 
-  // Batch update all at once using inArray
-  const { inArray } = await import('drizzle-orm');
-  await sqliteDb
-    .update(memories)
-    .set({
-      contextStatus: 'archived',
-      updatedAt: new Date(),
-    })
-    .where(inArray(memories.id, staleIds));
+  if (archived > 0) {
+    await evictMemoryRuntimeState(archivedIds);
+  }
 
-  return staleIds.length;
+  return archived;
 }
 
 async function cleanupOldFeedbackRecords(daysOld: number): Promise<number> {

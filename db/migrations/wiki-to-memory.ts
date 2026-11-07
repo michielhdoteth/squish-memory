@@ -20,9 +20,8 @@
  *   destroyed.
  * - source: 'wiki-migration'; createdAt/updatedAt preserved.
  *
- * Resolvable [[wikilinks]] become graph associations: every wiki_links row
- * whose target resolved to a real page becomes a 'relates_to' association
- * between the two migrated memory rows.
+ * Resolvable [[wikilinks]] become canonical 'relates_to' knowledge edges
+ * between the migrated memory projections.
  *
  * Gating:
  * - Marker row '2.2.0-wiki-to-memory' in _schema_versions makes it one-time
@@ -166,7 +165,7 @@ export function runWikiToMemoryMigration(
     logger.info(
       `[wiki-migration] DRY RUN: ${pages.length} wiki pages would become memory rows ` +
         `(sector routed via sector-router semantics, tagged wiki-origin); ` +
-        `${links.resolvable} of ${links.total} wikilinks would become graph associations. ` +
+        `${links.resolvable} of ${links.total} wikilinks would become canonical graph edges. ` +
         `Re-run with SQUISH_WIKI_MIGRATE_DRY_RUN unset to apply.`
     );
     return report;
@@ -244,11 +243,10 @@ export function runWikiToMemoryMigration(
       target_slug: string;
     }>;
 
-    const insertAssoc = sqlite.prepare(`
-      INSERT OR IGNORE INTO memory_associations (
-        id, from_memory_id, to_memory_id, association_type, weight,
-        coactivation_count, last_coactivated_at, created_at
-      ) VALUES (?, ?, ?, 'relates_to', 0.9, 1, strftime('%s','now'), strftime('%s','now'))
+    const insertEdge = sqlite.prepare(`
+      INSERT OR IGNORE INTO knowledge_edges (
+        id, from_id, from_kind, to_id, to_kind, edge_type, weight, metadata, valid_from, recorded_at
+      ) VALUES (?, ?, 'knowledge', ?, 'knowledge', 'relates_to', 0.9, ?, ?, ?)
     `);
 
     const projectIdByPage = new Map(pages.map((p) => [p.id, p.project_id]));
@@ -270,7 +268,15 @@ export function runWikiToMemoryMigration(
 
       const fromMem = idByPageId.get(link.source_page_id);
       if (targetId && fromMem) {
-        insertAssoc.run(randomUUID(), fromMem, targetId);
+        const now = Date.now();
+        insertEdge.run(
+          randomUUID(),
+          fromMem,
+          targetId,
+          JSON.stringify({ source: 'wiki-migration', sourceMemoryId: fromMem, targetMemoryId: targetId, coactivation_count: 1 }),
+          now,
+          now,
+        );
         report.linksResolved++;
       } else {
         report.linksUnresolved++;
@@ -289,7 +295,7 @@ export function runWikiToMemoryMigration(
     `[wiki-migration] Migrated ${report.pagesMigrated}/${report.pagesFound} wiki pages into ` +
       `memories (tagged wiki-origin, sector-routed, ${report.versionsMigrated} version-history ` +
       `entries preserved in metadata.wikiVersions). Links: ${report.linksResolved} resolved as ` +
-      `associations, ${report.linksUnresolved} unresolved dropped. Legacy wiki tables removed.`
+      `canonical edges, ${report.linksUnresolved} unresolved dropped. Legacy wiki tables removed.`
   );
 
   return report;

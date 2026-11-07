@@ -17,28 +17,30 @@ describe("background services graceful degradation", () => {
     expect(sdkSource).toContain("cron-scheduler");
   });
 
-  it("server startup does not crash if scheduler throws", async () => {
+  it("stdio transport begins before scheduler catch-up", async () => {
     const source = await readFile(MCP_INDEX, "utf-8");
 
-    // Find the main() function and look for try/catch around initializeScheduler
-    const schedulerCallIdx = source.indexOf("await sdkClient.initializeScheduler()");
+    const transportCallIdx = source.indexOf("const serving = serveStdio(");
+    const schedulerCallIdx = source.indexOf("void sdkClient.initializeScheduler()");
+    expect(transportCallIdx).toBeGreaterThan(-1);
     expect(schedulerCallIdx).toBeGreaterThan(-1);
+    expect(schedulerCallIdx).toBeGreaterThan(transportCallIdx);
 
-    // Walk backwards to find the enclosing try block
-    const preceding = source.substring(Math.max(0, schedulerCallIdx - 500), schedulerCallIdx);
-    const enclosingTryIdx = preceding.lastIndexOf("try {");
-    expect(enclosingTryIdx).toBeGreaterThan(-1);
+    // Background scheduler errors must be logged without taking down MCP.
+    const following = source.substring(schedulerCallIdx, schedulerCallIdx + 500);
+    expect(following).toContain(".catch((error) => {");
+    expect(following).toContain("Warning: Failed to initialize scheduler");
+  });
 
-    // Verify there is a catch block after the scheduler call
-    const following = source.substring(schedulerCallIdx, schedulerCallIdx + 300);
-    const catchIdx = following.indexOf("catch (error)");
-    expect(catchIdx).toBeGreaterThan(-1);
-    expect(catchIdx).toBeLessThan(300);
+  it("scheduler registers cron jobs before deferring missed-job catch-up", async () => {
+    const schedulerSource = await readFile(join(import.meta.dir, "..", "..", "core", "scheduler", "cron-scheduler.ts"), "utf-8");
+    const scheduleLoop = schedulerSource.indexOf("for (const job of jobs)");
+    const catchUpTimer = schedulerSource.indexOf("const catchUpTimer = setTimeout");
 
-    // Verify the catch logs a warning but does not re-throw
-    const catchBlock = following.substring(catchIdx, catchIdx + 200);
-    expect(catchBlock).toContain("Warning");
-    expect(catchBlock).not.toThrow;
+    expect(scheduleLoop).toBeGreaterThan(-1);
+    expect(catchUpTimer).toBeGreaterThan(scheduleLoop);
+    expect(schedulerSource).toContain("STARTUP_CATCH_UP_DELAY_MS = 60_000");
+    expect(schedulerSource).not.toContain("await checkMissedJobs()");
   });
 
   it(

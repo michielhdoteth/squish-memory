@@ -167,4 +167,25 @@ describe('I-2 behavioral: rollout picking', () => {
     expect(result.matched).toBe(true);
     expect(result.excerpt).toContain('explicit transcript content');
   });
+
+  test('reads recent user and assistant messages from large Codex JSONL rollouts', () => {
+    const home = makeHome();
+    const sessions = path.join(home, 'sessions');
+    fs.mkdirSync(sessions, { recursive: true });
+    const rollout = path.join(sessions, 'rollout-large.jsonl');
+    const filler = `${JSON.stringify({ type: 'event_msg', payload: { type: 'task_started' }, padding: 'x'.repeat(1200) })}\n`;
+    const recent = [
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'recent user request' }] } },
+      { type: 'response_item', payload: { type: 'function_call', name: 'tool', arguments: 'private tool output' } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'recent assistant result' }] } },
+    ].map((record) => JSON.stringify(record)).join('\n') + '\n';
+    fs.writeFileSync(rollout, filler.repeat(1100) + recent);
+
+    const result = runPicker(projA, home, { transcript_path: rollout });
+    expect(result.matched).toBe(true);
+    expect(result.excerpt).toContain('recent user request');
+    expect(result.excerpt).toContain('recent assistant result');
+    expect(result.excerpt).not.toContain('private tool output');
+    expect(Buffer.byteLength(result.excerpt, 'utf8')).toBeLessThanOrEqual(2048);
+  });
 });

@@ -18,6 +18,7 @@
  */
 
 import type { TimeReference } from './temporal-query.js';
+import { toEpochMillisFromMixed } from '../lib/timestamps.js';
 
 export interface TemporalConfig {
   enabled: boolean;
@@ -30,6 +31,9 @@ export interface TemporalConfig {
  */
 export const TEMPORAL_VALID_AT_T_BOOST = 0.08;
 
+/** Small additive boost when source/event time falls inside a relative query window. */
+export const TEMPORAL_DATE_FIT_BOOST = 0.12;
+
 /**
  * Normalize a stored temporal value to epoch ms.
  *
@@ -39,27 +43,22 @@ export const TEMPORAL_VALID_AT_T_BOOST = 0.08;
  *   - epoch milliseconds (numeric strings >= 1e11)
  *   - ISO-8601 strings (benchmark/eval harnesses rewrite created_at as TEXT)
  *
- * Same heuristic as normalizeTimestamp in core/lib/utils.ts and toMs in
- * core/memory/contradiction-resolver.ts. Returns null when unparseable.
+ * The 1e11 seconds rule is shared with `toMs` in
+ * core/memory/contradiction-resolver.ts (both are the same function, defined
+ * once in `toEpochMillisFromMixed`). It is deliberately NOT the micro/milli
+ * ladder in `normalizeTimestamp` (core/lib/utils.ts): no shape this module
+ * reads is ever microseconds, and treating a microsecond value as
+ * milliseconds would silently anchor it in the far future.
  */
 export function normalizeTimestampValue(value: Date | string | number | null | undefined): number | null {
-  if (value == null) return null;
-  if (value instanceof Date) return isNaN(value.getTime()) ? null : value.getTime();
-  const numeric = typeof value === 'number' ? value : Number(value);
-  if (
-    Number.isFinite(numeric) &&
-    String(value).trim() !== '' &&
-    /^\d+$/.test(String(value).trim())
-  ) {
-    return numeric < 1e11 ? numeric * 1000 : numeric; // seconds -> ms
-  }
-  const parsed = new Date(value as any).getTime();
-  return Number.isFinite(parsed) ? parsed : null;
+  return toEpochMillisFromMixed(value);
 }
 
 /** Structural surface applyTemporalEligibility / isValidAt need from a memory. */
 export interface TemporalValidityInput {
   createdAt?: Date | string | number | null;
+  validFrom?: Date | string | number | null;
+  validTo?: Date | string | number | null;
   supersededAt?: Date | string | number | null;
 }
 
@@ -77,10 +76,15 @@ export interface TemporalValidityInput {
  *   - Missing supersededAt -> valid forever after creation (never invalidated).
  */
 export function isValidAt(mem: TemporalValidityInput, t: Date): boolean {
-  const createdMs = normalizeTimestampValue(mem.createdAt);
-  if (createdMs === null) return false;
+  // Valid time is when the fact held in the source world. Fall back to
+  // creation time for legacy rows that predate explicit validity metadata.
+  const validFromMs = normalizeTimestampValue(mem.validFrom) ?? normalizeTimestampValue(mem.createdAt);
+  if (validFromMs === null) return false;
   const tMs = t.getTime();
-  if (createdMs > tMs) return false;
+  if (validFromMs > tMs) return false;
+
+  const validToMs = normalizeTimestampValue(mem.validTo);
+  if (validToMs !== null && validToMs <= tMs) return false;
 
   const supersededMs = normalizeTimestampValue(mem.supersededAt);
   if (supersededMs !== null && supersededMs <= tMs) return false;
@@ -88,10 +92,40 @@ export function isValidAt(mem: TemporalValidityInput, t: Date): boolean {
   return true;
 }
 
+/** True when a memory's half-open valid interval overlaps [windowStart, windowEnd). */
+export function overlapsValidTimeWindow(
+  mem: TemporalValidityInput,
+  windowStart: Date | null,
+  windowEnd: Date | null,
+): boolean {
+  const start = normalizeTimestampValue(mem.validFrom) ?? normalizeTimestampValue(mem.createdAt);
+  if (start === null) return false;
+  const end = normalizeTimestampValue(mem.validTo);
+  const from = windowStart?.getTime() ?? null;
+  const to = windowEnd?.getTime() ?? null;
+  if ((from !== null && !Number.isFinite(from)) || (to !== null && !Number.isFinite(to))) return false;
+  if (from !== null && to !== null && from >= to) return false;
+  if (end !== null && end <= start) return false;
+  return (to === null || start < to) && (from === null || end === null || end > from);
+}
+
 /** Per-candidate eligibility verdict returned by applyTemporalEligibility. */
 export interface TemporalEligibility {
   eligible: boolean;
   boost: number;
+}
+
+/** Return a relevance-only boost for event-time range fit; never filters candidates. */
+export function temporalDateFitBoost(
+  mem: TemporalValidityInput,
+  timeRef: TimeReference,
+): number {
+  if (!timeRef.range) return 0;
+  const eventTime = normalizeTimestampValue(mem.validFrom) ?? normalizeTimestampValue(mem.createdAt);
+  if (eventTime === null) return 0;
+  return eventTime >= timeRef.range.from.getTime() && eventTime < timeRef.range.to.getTime()
+    ? TEMPORAL_DATE_FIT_BOOST
+    : 0;
 }
 
 /**

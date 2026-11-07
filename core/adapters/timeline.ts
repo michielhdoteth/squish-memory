@@ -31,6 +31,12 @@ export async function getTimeline(
   tokenEstimate: number;
   query: string;
 }> {
+  const { getStrictAdapterTimeline } = await import('./strict-access.js');
+  const strictResults = await getStrictAdapterTimeline(query, depth, limit);
+  if (strictResults) {
+    return { results: strictResults, layer: depth, tokenEstimate: strictResults.length * (LAYER_TOKENS[depth] / Math.max(strictResults.length, 1)), query };
+  }
+
   // First get search results
   const memories = await searchMemories({
     query,
@@ -88,6 +94,10 @@ export async function getMemoryTimeline(
   memoryId: string,
   depth: TimelineDepth = 'detail'
 ): Promise<unknown> {
+  const { getStrictAdapterMemoryTimeline } = await import('./strict-access.js');
+  const strictResult = await getStrictAdapterMemoryTimeline(memoryId, depth);
+  if (strictResult) return strictResult;
+
   const memory = await getMemory(memoryId);
   
   if (!memory) {

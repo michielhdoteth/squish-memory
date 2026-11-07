@@ -118,6 +118,34 @@ describe('Vector scan modes (Batch 4)', () => {
     }
   });
 
+  test('full scan uses binary content order for near-equal cosine scores', async () => {
+    const { encodeEmbeddingBlob } = await import('../../../core/lib/embedding-codec.js');
+    const alphaId = await seed('alpha near tie vector candidate');
+    const zetaId = await seed('zeta near tie vector candidate');
+    const db = await getDb();
+    const sqlite = (db as any).$client;
+    const slightlyHigher = new Array(768).fill(0);
+    slightlyHigher[0] = 1;
+    slightlyHigher[1] = 0.0000002;
+    const slightlyLower = new Array(768).fill(0);
+    slightlyLower[0] = 1;
+    const higherBlob = encodeEmbeddingBlob(slightlyHigher)!;
+    const lowerBlob = encodeEmbeddingBlob(slightlyLower)!;
+    sqlite.prepare('UPDATE memories SET embedding_blob = ?, embedding_json = NULL, embedding = NULL WHERE id = ?').run(lowerBlob, alphaId);
+    sqlite.prepare('UPDATE memories SET embedding_blob = ?, embedding_json = NULL, embedding = NULL WHERE id = ?').run(higherBlob, zetaId);
+
+    const results = await vectorSearch(
+      { query: 'near tie query', project: TEST_PROJECT },
+      { limit: 2 },
+      slightlyHigher,
+    );
+
+    expect(results.slice(0, 2).map((row) => row.content)).toEqual([
+      'alpha near tie vector candidate',
+      'zeta near tie vector candidate',
+    ]);
+  });
+
   test('full scan returns matches beyond the recency window', async () => {
     const { encodeEmbeddingBlob } = await import('../../../core/lib/embedding-codec.js');
     await rememberMemory({
@@ -201,6 +229,32 @@ describe('Vector scan modes (Batch 4)', () => {
     expect(ids.has(victim.id)).toBe(false);   // mismatched row never surfaces
     expect(ids.has(good)).toBe(true);          // compatible rows still ranked
     expect(results.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('same-dimension vectors from another model are excluded from cosine scoring', async () => {
+    const foreign = await seed('model-mismatch vector must not score as a match');
+    const compatibleContent = 'current model vector space calibration note';
+    const compatible = await seed(compatibleContent);
+    const db = await getDb();
+    const sqlite = (db as any).$client;
+    const compatibleVector = sqlite.prepare('SELECT embedding_blob FROM memories WHERE id = ?').get(compatible).embedding_blob;
+    sqlite.prepare('UPDATE memories SET embedding_blob = ?, embedding_json = NULL, embedding = NULL, embedding_model = ? WHERE id = ?')
+      .run(compatibleVector, sqlite.prepare('SELECT embedding_model FROM memories WHERE id = ?').get(compatible).embedding_model, foreign);
+
+    const query = { query: compatibleContent, project: TEST_PROJECT };
+    const baseline = await vectorSearch(query, { limit: 10 });
+    expect(baseline.some((row) => row.id === foreign)).toBe(true);
+    sqlite.prepare("UPDATE memories SET embedding_model = 'foreign-same-dimension-model' WHERE id = ?")
+      .run(foreign);
+
+    for (const mode of ['recency', 'full'] as const) {
+      setScanMode(mode);
+      const results = await vectorSearch(
+        query,
+        { limit: 10 },
+      );
+      expect(results.some((row) => row.id === foreign)).toBe(false);
+    }
   });
 
   test('backfill converts JSON-only rows once and is idempotent', async () => {

@@ -1,358 +1,309 @@
-/**
- * Tests for the Codex session store.
- *
- * These tests exercise CodexSessionStore against the user's real
- * ~/.codex/ data. If the state_5.sqlite file is missing the tests
- * return early with a descriptive log.
- *
- * Covered:
- *   - available() reflects whether state_5.sqlite exists
- *   - status() returns valid stats when available
- *   - listSessions() returns SessionGroup[] with correct fields
- *   - searchSessions() returns Chunk[] for a matching query
- *   - getSession() returns group + chunks for a known thread id
- *   - findRelatedSessions() returns scored results for a repo_path
- */
+/** Tests for the Codex session store using an isolated synthetic database. */
 
-import { describe, test, expect, beforeAll } from 'bun:test';
+import { afterAll, beforeAll, describe, test, expect } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { Database } from 'bun:sqlite';
 
 import {
   CodexSessionStore,
   codexDbStatus,
-  listCodexSessions,
-  searchCodexSessions,
-  getCodexSession,
-  findCodexRelatedSessions,
   closeCodexDb,
 } from '../../../../core/sessions/agent-stores/codex.js';
-import type { SessionGroup } from '../../../../core/sessions/types.js';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const threadId = '00000000-0000-0000-0000-000000000001';
+const archivedThreadId = '00000000-0000-0000-0000-000000000002';
+const searchNeedle = 'synthetic-codex-search-marker';
+const fixtureRoot = path.resolve(import.meta.dir, '../../../../.workspace');
 
-function codexDbExists(): boolean {
-  const p = path.join(os.homedir(), '.codex', 'state_5.sqlite');
-  return fs.existsSync(p);
-}
+let fixtureDir = '';
+let fixtureDbPath = '';
+let projectPath = '';
+let store!: CodexSessionStore;
+let missingStore!: CodexSessionStore;
 
-function getFirstThreadId(): string | null {
-  const dbPath = path.join(os.homedir(), '.codex', 'state_5.sqlite');
-  if (!fs.existsSync(dbPath)) return null;
+async function withEnvironment<T>(changes: Record<string, string | undefined>, run: () => Promise<T>): Promise<T> {
+  const original = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(changes)) {
+    original.set(key, process.env[key]);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+
   try {
-    const db = new Database(dbPath, { readonly: true });
-    const row = db.query('SELECT id FROM threads LIMIT 1').get() as { id: string } | null;
-    db.close();
-    return row?.id ?? null;
-  } catch {
-    return null;
+    return await run();
+  } finally {
+    for (const [key, value] of original) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 }
 
-function getFirstThreadCwd(): string | null {
-  const dbPath = path.join(os.homedir(), '.codex', 'state_5.sqlite');
-  if (!fs.existsSync(dbPath)) return null;
+function seedDatabase(dbPath: string): void {
+  const db = new Database(dbPath);
   try {
-    const db = new Database(dbPath, { readonly: true });
-    const row = db.query('SELECT cwd FROM threads WHERE archived = 0 LIMIT 1').get() as { cwd: string } | null;
+    db.exec(`
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY,
+        rollout_path TEXT,
+        created_at REAL,
+        updated_at REAL,
+        created_at_ms INTEGER,
+        updated_at_ms INTEGER,
+        cwd TEXT,
+        title TEXT,
+        first_user_message TEXT,
+        tokens_used INTEGER,
+        git_sha TEXT,
+        git_branch TEXT,
+        git_origin_url TEXT,
+        model_provider TEXT,
+        source TEXT,
+        cli_version TEXT,
+        model TEXT,
+        archived INTEGER,
+        has_user_event INTEGER,
+        preview TEXT
+      )
+    `);
+
+    const insert = db.prepare(`
+      INSERT INTO threads (
+        id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
+        cwd, title, first_user_message, tokens_used, git_sha, git_branch,
+        git_origin_url, model_provider, source, cli_version, model,
+        archived, has_user_event, preview
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const nowMs = Date.UTC(2026, 0, 15, 12);
+    const nowSeconds = nowMs / 1000;
+
+    insert.run(
+      threadId,
+      '',
+      nowSeconds,
+      nowSeconds + 60,
+      nowMs,
+      nowMs + 60_000,
+      projectPath,
+      'Synthetic session',
+      `A ${searchNeedle} from a test-only record`,
+      12,
+      'test-sha',
+      'test-branch',
+      'https://example.invalid/test-repository',
+      'test-provider',
+      'test-source',
+      'test-version',
+      'test-model',
+      0,
+      1,
+      `Preview includes ${searchNeedle}`,
+    );
+    insert.run(
+      archivedThreadId,
+      '',
+      nowSeconds - 120,
+      nowSeconds - 60,
+      nowMs - 120_000,
+      nowMs - 60_000,
+      projectPath,
+      'Archived synthetic session',
+      'Archived test-only record',
+      0,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      1,
+      0,
+      null,
+    );
+  } finally {
     db.close();
-    return row?.cwd ?? null;
-  } catch {
-    return null;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Availability gate
-// ---------------------------------------------------------------------------
+beforeAll(() => {
+  fs.mkdirSync(fixtureRoot, { recursive: true });
+  fixtureDir = fs.mkdtempSync(path.join(fixtureRoot, 'codex-session-test-'));
+  try {
+    fixtureDbPath = path.join(fixtureDir, 'state_5.sqlite');
+    projectPath = path.join(fixtureDir, 'synthetic-project');
+    fs.mkdirSync(projectPath);
+    seedDatabase(fixtureDbPath);
+    store = new CodexSessionStore({ codexDir: fixtureDir, dbPath: fixtureDbPath });
+    missingStore = new CodexSessionStore({
+      codexDir: path.join(fixtureDir, 'missing'),
+      dbPath: path.join(fixtureDir, 'missing', 'state_5.sqlite'),
+    });
+  } catch (error) {
+    closeCodexDb();
+    fs.rmSync(fixtureDir, { recursive: true, force: true });
+    fixtureDir = '';
+    throw error;
+  }
+});
 
-const hasCodexDb = codexDbExists();
+afterAll(async () => {
+  closeCodexDb();
+  if (!fixtureDir) return;
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+  let cleanupError: unknown;
+  // Windows may briefly hold a just-closed SQLite fixture while releasing
+  // file handles. Retry for up to five seconds before surfacing the failure.
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
+      fixtureDir = '';
+      return;
+    } catch (error) {
+      cleanupError = error;
+      const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+      if (code !== 'EBUSY' && code !== 'EPERM') throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  throw cleanupError;
+});
 
 describe('CodexSessionStore', () => {
-  const store = new CodexSessionStore();
-
   describe('available()', () => {
-    test('returns ok:true when state_5.sqlite exists', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const result = await store.available();
+    test('reports the synthetic database as available', async () => {
+      const result = await withEnvironment({ SQUISH_CODEX_DISABLED: undefined }, () => store.available());
       expect(result.ok).toBe(true);
-      expect(result.meta).toBeDefined();
-      expect(typeof result.meta!.path).toBe('string');
-      expect(typeof result.meta!.session_count).toBe('number');
+      expect(result.meta?.path).toBe(fixtureDbPath);
+      expect(result.meta).not.toHaveProperty('session_count');
     });
 
-    test('returns ok:false when SQUISH_CODEX_DISABLED=1', async () => {
-      const orig = process.env.SQUISH_CODEX_DISABLED;
-      process.env.SQUISH_CODEX_DISABLED = '1';
-      try {
-        const result = await store.available();
-        expect(result.ok).toBe(false);
-        expect(result.reason).toContain('codex disabled');
-      } finally {
-        if (orig === undefined) delete process.env.SQUISH_CODEX_DISABLED;
-        else process.env.SQUISH_CODEX_DISABLED = orig;
-      }
+    test('returns ok:false when disabled', async () => {
+      const result = await withEnvironment({ SQUISH_CODEX_DISABLED: '1' }, () => store.available());
+      expect(result.ok).toBe(false);
+      expect(result.reason).toContain('codex disabled');
+    });
+
+    test('returns ok:false when the configured database is missing', async () => {
+      const result = await withEnvironment({ SQUISH_CODEX_DISABLED: undefined }, () => missingStore.available());
+      expect(result.ok).toBe(false);
+      expect(result.reason).toContain('not found');
     });
   });
 
   describe('codexDbStatus()', () => {
-    test('returns ok:true with valid fields when data exists', () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const status = codexDbStatus();
+    test('returns counts for the synthetic database', () => {
+      const status = codexDbStatus({ dbPath: fixtureDbPath });
       expect(status.ok).toBe(true);
-      expect(status.path).toBeTruthy();
+      expect(status.path).toBe(fixtureDbPath);
       expect(status.size_bytes).toBeGreaterThan(0);
-      expect(status.session_count).toBeGreaterThanOrEqual(0);
+      expect(status.session_count).toBe(2);
     });
 
-    test('returns ok:false with error when db is missing', () => {
-      const status = codexDbStatus({ dbPath: '/nonexistent-dir-for-tests/state_5.sqlite' });
+    test('returns an error for a missing database under the temporary directory', () => {
+      const status = codexDbStatus({ dbPath: path.join(fixtureDir, 'absent.sqlite') });
       expect(status.ok).toBe(false);
       expect(status.error).toBeTruthy();
     });
   });
 
   describe('status()', () => {
-    test('returns valid stats when available', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const result = await store.status();
+    test('returns stats for the synthetic database', async () => {
+      const result = await withEnvironment(
+        { SQUISH_CODEX_DISABLED: undefined, SQUISH_CODEX_DIR: fixtureDir },
+        () => store.status(),
+      );
       expect(result).not.toBeNull();
-      expect(typeof result!.path).toBe('string');
-      expect(result!.size).toBeGreaterThan(0);
-      expect(typeof result!.sessions).toBe('number');
-      expect(typeof result!.messages).toBe('number');
-      expect(typeof result!.parts).toBe('number');
+      expect(result?.path).toBe(fixtureDbPath);
+      expect(result?.size).toBeGreaterThan(0);
+      expect(result?.sessions).toBe(2);
     });
 
-    test('returns null when data dir is missing', async () => {
-      const orig = process.env.SQUISH_CODEX_DISABLED;
-      process.env.SQUISH_CODEX_DISABLED = '1';
-      try {
-        const result = await store.status();
-        expect(result).toBeNull();
-      } finally {
-        if (orig === undefined) delete process.env.SQUISH_CODEX_DISABLED;
-        else process.env.SQUISH_CODEX_DISABLED = orig;
-      }
-    });
-  });
-
-  describe('listSessions()', () => {
-    test('returns SessionGroup[] with correct fields', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const sessions = await store.listSessions({ limit: 5 });
-      expect(Array.isArray(sessions)).toBe(true);
-      expect(sessions.length).toBeGreaterThan(0);
-      expect(sessions.length).toBeLessThanOrEqual(5);
-
-      for (const s of sessions) {
-        expect(typeof s.session_id).toBe('string');
-        expect(s.session_id.length).toBeGreaterThan(0);
-        expect(typeof s.title).toBe('string');
-        expect(typeof s.project).toBe('string');
-        expect(typeof s.repo_path).toBe('string');
-        expect(s.agent).toBe('codex');
-        expect(typeof s.started_at).toBe('string');
-        // status should be a valid value
-        expect(['active', 'completed', 'errored']).toContain(s.status);
-        expect(typeof s.chunk_count).toBe('number');
-      }
-    });
-
-    test('returns empty array when data dir is missing', async () => {
-      const orig = process.env.SQUISH_CODEX_DISABLED;
-      process.env.SQUISH_CODEX_DISABLED = '1';
-      try {
-        const sessions = await store.listSessions();
-        expect(sessions).toEqual([]);
-      } finally {
-        if (orig === undefined) delete process.env.SQUISH_CODEX_DISABLED;
-        else process.env.SQUISH_CODEX_DISABLED = orig;
-      }
-    });
-
-    test('respects limit parameter', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const sessions = await store.listSessions({ limit: 2 });
-      expect(sessions.length).toBeLessThanOrEqual(2);
-    });
-
-    test('offset parameter does not crash', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const sessions = await store.listSessions({ offset: 0, limit: 3 });
-      expect(Array.isArray(sessions)).toBe(true);
-    });
-
-    test('returns non-archived sessions only', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const sessions = await store.listSessions({ limit: 20 });
-      // All returned sessions should be non-archived (the SQL filters archived=0)
-      for (const s of sessions) {
-        expect(s.session_id).toBeTruthy();
-        expect(s.status).not.toBe('errored');
-      }
-    });
-  });
-
-  describe('searchSessions()', () => {
-    test('returns Chunk[] for a matching query', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      // Use a generic query that likely matches something
-      const chunks = await store.searchSessions({ query: 'test', limit: 3 });
-      expect(Array.isArray(chunks)).toBe(true);
-      if (chunks.length > 0) {
-        for (const c of chunks) {
-          expect(typeof c.type).toBe('string');
-          expect(typeof c.content).toBe('string');
-          expect(c.content.length).toBeGreaterThan(0);
-          expect(typeof c.session_id).toBe('string');
-          expect(c.agent).toBe('codex');
-          expect(typeof c.timestamp).toBe('string');
-        }
-      }
-    });
-
-    test('returns empty array for empty query', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const chunks = await store.searchSessions({ query: '' });
-      expect(chunks).toEqual([]);
-    });
-
-    test('returns empty array for whitespace-only query', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const chunks = await store.searchSessions({ query: '   ' });
-      expect(chunks).toEqual([]);
-    });
-
-    test('returns empty array when data dir is missing', async () => {
-      const orig = process.env.SQUISH_CODEX_DISABLED;
-      process.env.SQUISH_CODEX_DISABLED = '1';
-      try {
-        const chunks = await store.searchSessions({ query: 'test' });
-        expect(chunks).toEqual([]);
-      } finally {
-        if (orig === undefined) delete process.env.SQUISH_CODEX_DISABLED;
-        else process.env.SQUISH_CODEX_DISABLED = orig;
-      }
-    });
-  });
-
-  describe('getSession()', () => {
-    test('returns group + chunks for a known thread id', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const threadId = getFirstThreadId();
-      if (!threadId) {
-        console.log('  [SKIP] no threads found in state_5.sqlite');
-        return;
-      }
-
-      const result = await store.getSession(threadId);
-      expect(result).not.toBeNull();
-      expect(result!.group).toBeDefined();
-      expect(result!.group.session_id).toBe(threadId);
-      expect(result!.group.agent).toBe('codex');
-      expect(typeof result!.group.title).toBe('string');
-      expect(typeof result!.group.started_at).toBe('string');
-      expect(Array.isArray(result!.chunks)).toBe(true);
-
-      // Each chunk should have required fields
-      for (const c of result!.chunks) {
-        expect(typeof c.type).toBe('string');
-        expect(typeof c.content).toBe('string');
-        expect(c.session_id).toBe(threadId);
-        expect(c.agent).toBe('codex');
-      }
-    });
-
-    test('returns null for a nonexistent thread id', async () => {
-      const result = await store.getSession('00000000-0000-0000-0000-000000000000');
+    test('returns null when the configured temporary data directory is missing', async () => {
+      const result = await withEnvironment(
+        { SQUISH_CODEX_DISABLED: undefined, SQUISH_CODEX_DIR: path.join(fixtureDir, 'missing') },
+        () => store.status(),
+      );
       expect(result).toBeNull();
     });
   });
 
+  describe('listSessions()', () => {
+    test('returns synthetic sessions with the expected fields', async () => {
+      const sessions = await store.listSessions({ limit: 5 });
+      expect(sessions).toHaveLength(1);
+      const session = sessions[0]!;
+      expect(session.session_id).toBe(threadId);
+      expect(session.title).toBe('Synthetic session');
+      expect(session.project).toBe('synthetic-project');
+      expect(session.repo_path).toBe(projectPath);
+      expect(session.agent).toBe('codex');
+      expect(session.status).toBe('completed');
+      expect(typeof session.started_at).toBe('string');
+    });
+
+    test('returns an empty array when the configured database is missing', async () => {
+      expect(await missingStore.listSessions()).toEqual([]);
+    });
+
+    test('respects the limit and offset parameters', async () => {
+      expect(await store.listSessions({ limit: 1 })).toHaveLength(1);
+      expect(await store.listSessions({ offset: 1, limit: 3 })).toEqual([]);
+    });
+
+    test('returns only non-archived sessions', async () => {
+      const sessions = await store.listSessions({ limit: 20 });
+      expect(sessions.every((session) => session.session_id !== archivedThreadId)).toBe(true);
+    });
+  });
+
+  describe('searchSessions()', () => {
+    test('finds a matching record in synthetic database metadata', async () => {
+      const chunks = await store.searchSessions({ query: searchNeedle, limit: 3 });
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]?.content).toContain(searchNeedle);
+      expect(chunks[0]?.session_id).toBe(threadId);
+      expect(chunks[0]?.agent).toBe('codex');
+    });
+
+    test('returns empty arrays for empty queries and a missing database', async () => {
+      expect(await store.searchSessions({ query: '' })).toEqual([]);
+      expect(await store.searchSessions({ query: '   ' })).toEqual([]);
+      expect(await missingStore.searchSessions({ query: searchNeedle })).toEqual([]);
+    });
+  });
+
+  describe('getSession()', () => {
+    test('returns a summary for a known synthetic thread id', async () => {
+      const result = await store.getSession(threadId);
+      expect(result).not.toBeNull();
+      expect(result?.group.session_id).toBe(threadId);
+      expect(result?.group.agent).toBe('codex');
+      expect(result?.chunks).toHaveLength(1);
+      expect(result?.chunks[0]?.content).toContain(searchNeedle);
+    });
+
+    test('returns null for an unknown thread id or missing database', async () => {
+      expect(await store.getSession('00000000-0000-0000-0000-000000000000')).toBeNull();
+      expect(await missingStore.getSession(threadId)).toBeNull();
+    });
+  });
+
   describe('findRelatedSessions()', () => {
-    test('returns scored results for a matching repo_path', async () => {
-      if (!hasCodexDb) {
-        console.log('  [SKIP] ~/.codex/state_5.sqlite not found');
-        return;
-      }
-      const cwd = getFirstThreadCwd();
-      if (!cwd) {
-        console.log('  [SKIP] no cwd found in threads table');
-        return;
-      }
-
-      const results = await store.findRelatedSessions({ repo_path: cwd });
-      expect(Array.isArray(results)).toBe(true);
-      if (results.length > 0) {
-        for (const r of results) {
-          expect(r.group).toBeDefined();
-          expect(typeof r.group.session_id).toBe('string');
-          expect(r.group.agent).toBe('codex');
-          expect(typeof r.score).toBe('number');
-          expect(r.score).toBeGreaterThan(0);
-          expect(typeof r.reason).toBe('string');
-          expect(r.reason.length).toBeGreaterThan(0);
-        }
-      }
+    test('returns synthetic sessions matching the repository path', async () => {
+      const results = await store.findRelatedSessions({ repo_path: projectPath });
+      expect(results).toHaveLength(1);
+      expect(results[0]?.group.session_id).toBe(threadId);
+      expect(results[0]?.group.agent).toBe('codex');
+      expect(results[0]?.score).toBeGreaterThan(0);
+      expect(results[0]?.reason).toContain('directory match');
     });
 
-    test('returns empty array when neither repo_path nor files provided', async () => {
-      const results = await store.findRelatedSessions({});
-      expect(results).toEqual([]);
-    });
-
-    test('returns empty array when data dir is missing', async () => {
-      const orig = process.env.SQUISH_CODEX_DISABLED;
-      process.env.SQUISH_CODEX_DISABLED = '1';
-      try {
-        const results = await store.findRelatedSessions({ repo_path: '/tmp' });
-        expect(results).toEqual([]);
-      } finally {
-        if (orig === undefined) delete process.env.SQUISH_CODEX_DISABLED;
-        else process.env.SQUISH_CODEX_DISABLED = orig;
-      }
+    test('returns empty arrays when input or configured database is missing', async () => {
+      expect(await store.findRelatedSessions({})).toEqual([]);
+      expect(await missingStore.findRelatedSessions({ repo_path: projectPath })).toEqual([]);
     });
   });
 });

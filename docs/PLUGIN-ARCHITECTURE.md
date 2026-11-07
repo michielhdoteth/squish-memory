@@ -1,5 +1,9 @@
 # Squish Universal Plugin Architecture
 
+> **Release status (2026-10-20): Squish 2.2.0 is an unpublished source candidate.** The published
+> package currently resolves to 1.9.0 and has not been validated against this architecture guide.
+> Do not use installation commands in this reference until a matching release is announced.
+
 Squish provides a universal plugin system that works as a plugin across all major AI assistant frameworks through a single manifest-driven installer.
 
 ## Overview
@@ -25,12 +29,9 @@ See `config/plugin-manifest.schema.json` for the complete schema definition.
 
 ## squish install (Recommended)
 
-The recommended way to install Squish is using the built-in installer that ships with the CLI. It detects your coding agents and configures both MCP servers and plugins in one step:
-
-```bash
-npm install -g squish-memory
-squish install --all
-```
+The installer behavior below describes the target-version architecture. There is no supported
+package-install command for this source candidate; validated setup instructions will return with a
+matching release.
 
 This automatically installs Squish MCP configs and plugins for:
 - Claude Code
@@ -75,25 +76,9 @@ Benefits:
 
 ### Installation Commands
 
-```bash
-# Install for specific client
-npx squish-memory install-plugin --client=claude-code
-
-# Install for multiple clients
-npx squish-memory install-plugin --client=claude-code,openclaw,opencode
-
-# Install for all supported clients
-npx squish-memory install-plugin --client=all
-
-# Dry-run to preview what would be installed
-npx squish-memory install-plugin --client=all --dry-run
-
-# Verify existing installation
-npx squish-memory install-plugin --client=openclaw --verify
-
-# Uninstall plugin
-npx squish-memory uninstall-plugin --client=claude-code
-```
+Installation and plugin-specific command examples are withheld until the package version and host
+compatibility are validated. Do not use legacy `install-plugin` or `uninstall-plugin` commands from
+older releases.
 
 ### Installation Output
 ```
@@ -220,8 +205,8 @@ Existing installations continue to work:
 ## Troubleshooting
 
 ### Common Issues
-- **Dependencies not found**: Run `npx squish-memory deps:install`
-- **Installation fails**: Use `--dry-run` to preview actions
+- **Dependencies not found**: Follow the dependency guidance shipped with the matching release
+- **Installation fails**: Use only verification commands documented for that release
 - **Verification fails**: Check client-specific requirements
 - **Plugin not activating**: Restart the AI assistant after installation
 
@@ -229,7 +214,7 @@ Existing installations continue to work:
 - Increase verbosity: Check installer output for detailed steps
 - Check logs: Review `~/.squish/squish.log` for runtime issues
 - Verify manifest: Ensure `config/plugin-manifest.json` is valid JSON
-- Test dependencies: Run `npx squish-memory deps:check --versions`
+- Test dependencies: Use the dependency check documented for the matching release
 
 ## References
 - [JSON Schema](https://json-schema.org/) - Manifest validation

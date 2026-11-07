@@ -27,8 +27,8 @@ export async function detectConflicts(memoryId: string, proposedContent: string)
 
   // Check for temporal contradictions
   if (currentMemory[0].validFrom && currentMemory[0].validTo) {
-    const now = new Date();
-    if (now < new Date(currentMemory[0].validFrom) || now > new Date(currentMemory[0].validTo)) {
+    const now = new Date(Date.now());
+    if (now < new Date(currentMemory[0].validFrom) || now >= new Date(currentMemory[0].validTo)) {
       conflicts.push({
         type: 'inconsistency',
         description: 'Current time is outside validity period',

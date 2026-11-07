@@ -40,6 +40,7 @@ let savedRerankerFlag: string | undefined;
 
 let rememberMemory: typeof import('../../../core/memory/memories.js').rememberMemory;
 let hybridSearch: typeof import('../../../core/memory/hybrid-search.js').hybridSearch;
+let recall: typeof import('../../../core/storage/storage-facade.js').recall;
 let getDb: typeof import('../../../db/index.js').getDb;
 let closeAllDbs: typeof import('../../../db/index.js').closeAllDbs;
 
@@ -49,9 +50,11 @@ interface TraceCarrier {
     temporalQuery?: {
       kind: string;
       t: string | null;
+      range: { from: string; to: string } | null;
       supersessionRelaxed: boolean;
       excludedInvalidAtT: number;
       boostedValidAtT: number;
+      dateFitBoosted: number;
     };
   };
 }
@@ -101,9 +104,11 @@ describe('Temporal fact-update point-in-time retrieval (validity-at-T v2)', () =
 
     const memoriesMod = await import('../../../core/memory/memories.js');
     const hybridMod = await import('../../../core/memory/hybrid-search.js');
+    const storageMod = await import('../../../core/storage/storage-facade.js');
     const dbMod = await import('../../../db/index.js');
     rememberMemory = memoriesMod.rememberMemory;
     hybridSearch = hybridMod.hybridSearch;
+    recall = storageMod.recall;
     getDb = dbMod.getDb;
     closeAllDbs = dbMod.closeAllDbs;
   });
@@ -128,9 +133,10 @@ describe('Temporal fact-update point-in-time retrieval (validity-at-T v2)', () =
     const db = await getDb();
     const sqlite = (db as any).$client;
     // Age the v1 memory into 2023 (bi-temporal anchor for point-in-time queries).
+    const nokiaValidFrom = Math.floor(Date.parse('2023-06-15T09:00:00.000Z') / 1000);
     sqlite
-      .prepare("UPDATE memories SET created_at = '2023-06-15T09:00:00.000Z', updated_at = '2023-06-15T09:00:00.000Z', valid_from = '2023-06-15T09:00:00.000Z' WHERE content LIKE 'Kenji uses a Nokia%'")
-      .run();
+      .prepare("UPDATE memories SET created_at = ?, updated_at = ?, valid_from = ? WHERE content LIKE 'Kenji uses a Nokia%'")
+      .run(nokiaValidFrom, nokiaValidFrom, nokiaValidFrom);
 
     await seed(
       'Kenji now uses an iPhone instead of the Nokia phone every day.',
@@ -207,20 +213,98 @@ describe('Temporal fact-update point-in-time retrieval (validity-at-T v2)', () =
     expect(anyTrace?.temporalQuery?.supersessionRelaxed).toBe(true);
   });
 
-  test('anchored past query (in 2023): Nokia top-1, post-t iPhone excluded', async () => {
+  test('anchored past language boosts valid-time evidence without filtering other memories', async () => {
     const results = await hybridSearch(
       { query: 'What phone did Kenji use in 2023?', project: TEST_PROJECT, trace: true },
       { limit: 5 }
     );
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].content).toContain('Nokia');
-    expect(results.some((r) => r.content.toLowerCase().includes('iphone'))).toBe(false);
+    expect(results.some((r) => r.content.toLowerCase().includes('iphone'))).toBe(true);
 
     const trace = (results[0] as TraceCarrier)._trace;
     expect(trace?.temporalQuery?.kind).toBe('past-anchored');
     expect(trace?.temporalQuery?.t).toBe('2023-07-02T12:00:00.000Z');
-    expect(trace?.temporalQuery?.excludedInvalidAtT).toBeGreaterThanOrEqual(1);
+    expect(trace?.temporalQuery?.excludedInvalidAtT).toBe(0);
     expect(trace?.temporalQuery?.boostedValidAtT).toBeGreaterThanOrEqual(1);
+  });
+
+  test('relative past range boosts in-range source events while retaining out-of-range events', async () => {
+    const project = '/relative-range-date-fit';
+    const inRange = await rememberMemory({
+      content: 'Sam completed a trail run near Redwood Creek with steady pacing.',
+      type: 'fact',
+      project,
+      occurredAt: '2025-08-01T12:00:00.000Z',
+    });
+    const outOfRange = await rememberMemory({
+      content: 'Sam completed a trail run near Redwood Canyon with steady pacing.',
+      type: 'fact',
+      project,
+      occurredAt: '2025-07-18T12:00:00.000Z',
+    });
+
+    const results = await hybridSearch({
+      query: 'Where did Sam complete a trail run last week?',
+      project,
+      trace: true,
+      referenceDate: '2025-08-10T12:00:00.000Z',
+      timeZone: 'America/Los_Angeles',
+    }, { limit: 10, includeAssociations: false });
+
+    const ids = results.map((result) => result.id);
+    expect(ids).toContain(inRange.id);
+    expect(ids).toContain(outOfRange.id);
+    expect(ids.indexOf(inRange.id)).toBeLessThan(ids.indexOf(outOfRange.id));
+    const trace = (results[0] as TraceCarrier)._trace?.temporalQuery;
+    expect(trace?.range).toEqual({ from: '2025-07-28T07:00:00.000Z', to: '2025-08-04T07:00:00.000Z' });
+    expect(trace?.dateFitBoosted).toBeGreaterThanOrEqual(1);
+    expect(trace?.excludedInvalidAtT).toBe(0);
+  });
+
+  test('explicit valid-time window is a hard retrieval constraint', async () => {
+    const project = '/explicit-valid-time-window';
+    const older = await rememberMemory({
+      content: 'The Acme inventory count was 17 units.',
+      type: 'fact',
+      project,
+      occurredAt: '2021-06-01T00:00:00.000Z',
+    });
+    const inWindow = await rememberMemory({
+      content: 'The Acme inventory count was 29 units.',
+      type: 'fact',
+      project,
+      occurredAt: '2025-06-01T00:00:00.000Z',
+    });
+
+    const results = await hybridSearch({
+      query: 'Acme inventory count',
+      project,
+      validTimeFrom: '2024-01-01T00:00:00.000Z',
+      validTimeTo: '2026-01-01T00:00:00.000Z',
+    }, { limit: 10, includeAssociations: false });
+
+    expect(results.some((result) => result.id === inWindow.id)).toBe(true);
+    expect(results.some((result) => result.id === older.id)).toBe(false);
+  });
+
+  test('delayed import keeps event time distinct from write time for as-of recall', async () => {
+    const imported = await rememberMemory({
+      content: 'The atlas deployment used the Cedar database in June 2022.',
+      type: 'fact',
+      project: NEUTRAL_PROJECT,
+      occurredAt: '2022-06-10T14:00:00.000Z',
+    });
+    const db = await getDb();
+    const row = (db as any).$client.prepare('SELECT valid_from, recorded_at FROM memories WHERE id = ?').get(imported.id);
+    expect(new Date(Number(row.valid_from) * 1000).toISOString()).toBe('2022-06-10T14:00:00.000Z');
+    expect(new Date(Number(row.recorded_at) * 1000).getUTCFullYear()).toBeGreaterThan(2022);
+
+    const results = await hybridSearch(
+      { query: 'Which database did the atlas deployment use in 2022?', project: NEUTRAL_PROJECT },
+      { limit: 20, includeAssociations: false }
+    );
+    expect(results.some((result) => result.id === imported.id)).toBe(true);
   });
 
   test('non-temporal query ordering is unaffected by the flag (on vs off)', async () => {
@@ -263,6 +347,75 @@ describe('Temporal fact-update point-in-time retrieval (validity-at-T v2)', () =
     expect(trace?.temporalQuery?.kind).toBe('none');
     expect(trace?.temporalQuery?.supersessionRelaxed).toBe(false);
     expect(trace?.temporalQuery?.excludedInvalidAtT).toBe(0);
+  });
+
+  test('latestOnly excludes future-valid facts even when temporal precision is disabled and routing requests graph traversal', async () => {
+    const project = '/latest-only-future-validity';
+    const future = await rememberMemory({
+      content: 'The Acme observatory project begins in 2025.',
+      type: 'fact',
+      project,
+      occurredAt: '2025-01-01T00:00:00.000Z',
+    });
+
+    const previousTemporalFlag = process.env.SQUISH_TEMPORAL_VALIDITY;
+    process.env.SQUISH_TEMPORAL_VALIDITY = 'false';
+    try {
+      const result = await recall('When does the Acme observatory project begin?', {
+        project,
+        strategy: 'multi_hop',
+        referenceDate: '2022-01-01T00:00:00.000Z',
+        latestOnly: true,
+      });
+
+      expect(result.memories.some((memory) => memory.id === future.id)).toBe(false);
+    } finally {
+      if (previousTemporalFlag === undefined) delete process.env.SQUISH_TEMPORAL_VALIDITY;
+      else process.env.SQUISH_TEMPORAL_VALIDITY = previousTemporalFlag;
+    }
+  });
+
+  test('multi-hop recall uses referenceDate to rerank current-state results without filtering', async () => {
+    const project = '/reference-date-current-state';
+    const past = await rememberMemory({
+      content: 'The Acme observatory status was a planning proposal.',
+      type: 'fact',
+      project,
+      occurredAt: '2021-01-01T00:00:00.000Z',
+    });
+    const future = await rememberMemory({
+      content: 'The Acme observatory opens in 2025.',
+      type: 'fact',
+      project,
+      occurredAt: '2025-01-01T00:00:00.000Z',
+    });
+
+    const result = await recall('What is the status of the Acme observatory now?', {
+      project,
+      strategy: 'multi_hop',
+      referenceDate: '2022-01-01T00:00:00.000Z',
+    });
+
+    expect(result.memories.some((memory) => memory.id === future.id)).toBe(true);
+    expect(result.memories[0]?.id).toBe(past.id);
+  });
+
+  test('future-action wording does not filter future-valid memories', async () => {
+    const project = '/future-action-no-valid-time-filter';
+    const futurePlan = await rememberMemory({
+      content: 'Workout planning includes strength training and interval running.',
+      type: 'fact',
+      project,
+      occurredAt: '2025-01-01T00:00:00.000Z',
+    });
+
+    const results = await hybridSearch({
+      query: 'Plan workouts for next week.',
+      project,
+      referenceDate: '2022-01-01T00:00:00.000Z',
+    }, { limit: 10, includeAssociations: false });
+
+    expect(results.some((result) => result.id === futurePlan.id)).toBe(true);
   });
 });
 

@@ -34,10 +34,10 @@ export interface TableSchema {
  */
 const ALLOWED_TABLE_NAMES = new Set([
   'users', 'projects', 'memories', 'places', 'place_rules',
-  'memory_associations', 'memory_tags', 'embeddings', 'sessions',
+  'memory_tags', 'embeddings', 'sessions',
   'session_signals', 'session_working_set', 'context_sessions',
   'context_paging', 'temporal_anchors', 'graph_nodes', 'graph_edges',
-  'entities', 'entity_relations', 'beliefs', 'belief_edges',
+  'entities', 'beliefs',
   'belief_memory_sources', 'maintenance_jobs', 'maintenance_job_history',
   'telemetry_events', 'learnings', 'core_memory', 'conversations',
   'edit_proposals', 'merge_proposals', 'snapshots', 'summaries',

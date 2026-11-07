@@ -6,6 +6,10 @@
  */
 
 import { logger } from '../logger.js';
+import { decisionModelClient } from '../decision-model/provider.js';
+import { getDecisionRunner } from '../decision-model/backend-factory.js';
+import type { QueryView, RetrievalDecision } from '../decision-model/types.js';
+import { throwIfDecisionAborted } from '../decision-model/types.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,12 +48,16 @@ export interface AutoRouteOptions {
   knownEntities?: string[];
   preferGraph?: boolean;
   maxResults?: number;
+  /** Cancels optional model escalation while retaining the rule route. */
+  signal?: AbortSignal;
 }
 
 export interface RouteResult {
   classification: QueryClassification;
   recommendedStrategy: RetrievalStrategy;
   fallbackStrategy: RetrievalStrategy;
+  /** Full accepted decision, including every selected view; rules-only routing leaves this absent. */
+  decision?: RetrievalDecision;
   routingMetadata: {
     classifiedInMs: number;
     intent: QueryIntent;
@@ -124,6 +132,58 @@ const INTENT_STRATEGY_MAP: Record<QueryIntent, RetrievalStrategy> = {
   exploratory: 'graph_expanded',
   default: 'hybrid_search',
 };
+
+// ---------------------------------------------------------------------------
+// Model escalation (decision layer)
+// ---------------------------------------------------------------------------
+
+/** Map a decision-layer retrieval view to the router's intent/strategy. */
+function viewToIntentStrategy(view: QueryView): { intent: QueryIntent; strategy: RetrievalStrategy } {
+  switch (view) {
+    case 'temporal':
+      return { intent: 'temporal', strategy: 'temporal_validity' };
+    case 'causal':
+      return { intent: 'relational', strategy: 'multi_hop' };
+    case 'entity':
+      return { intent: 'entity_heavy', strategy: 'entity_aware' };
+    case 'semantic':
+    default:
+      return { intent: 'factual', strategy: 'hybrid_search' };
+  }
+}
+
+/**
+ * Escalate low-confidence rule routing to the selected decision backend
+ * (llm or systemone; backend=off returns null = rules only). Rules always
+ * execute first; the model is consulted ONLY when the rule classification
+ * is below the escalation threshold, and its result wins only when the model
+ * itself is confident (>= route band). Any failure/timeout/malformed output
+ * leaves the rule result untouched.
+ */
+async function escalateLowConfidenceRouting(classification: QueryClassification, query: string, signal?: AbortSignal): Promise<RetrievalDecision | null> {
+  const escalateBelow = decisionModelClient.thresholds.routeEscalateBelow;
+  if (classification.confidence >= escalateBelow) return null;
+
+  const modelDecision = await getDecisionRunner().routeQueryModelOnly(query, { signal });
+  if (!modelDecision) return null;
+
+  // First view is the primary route; remaining views are kept in the reason.
+  const primary = viewToIntentStrategy(modelDecision.queryViews[0]);
+  classification.intent = primary.intent;
+  classification.strategy = primary.strategy;
+  classification.confidence = modelDecision.confidence ?? decisionModelClient.thresholds.route;
+  classification.reasons.push(
+    `Decision model routed to ${modelDecision.queryViews.join('+')} view` +
+    ` (confidence ${classification.confidence.toFixed(2)})`,
+  );
+  return modelDecision;
+}
+
+/** Map every selected decision view so multi-view decisions are not collapsed to the primary view. */
+export function intentsForRetrievalDecision(decision: RetrievalDecision): QueryIntent[] {
+  const intents = decision.queryViews.map((view) => viewToIntentStrategy(view).intent);
+  return Array.from(new Set(intents));
+}
 
 // ---------------------------------------------------------------------------
 // In-memory routing stats
@@ -299,6 +359,7 @@ export async function autoRoute(
   query: string,
   options?: AutoRouteOptions,
 ): Promise<RouteResult> {
+  throwIfDecisionAborted(options?.signal);
   const start = performance.now();
 
   const MAX_QUERY_LENGTH = 10000;
@@ -342,6 +403,11 @@ export async function autoRoute(
       classification.reasons.push('preferGraph option applied; upgraded to graph_expanded');
     }
 
+    // Decision layer: low-confidence rules may be upgraded by the model.
+    // Disabled layer / confident rules / model failure all leave the rule
+    // result untouched.
+    const decision = await escalateLowConfidenceRouting(classification, query, options?.signal);
+
     // Determine fallback strategy
     const fallbackStrategy: RetrievalStrategy =
       classification.strategy === 'hybrid_search' ? 'contextual' : 'hybrid_search';
@@ -365,6 +431,7 @@ export async function autoRoute(
       classification,
       recommendedStrategy: classification.strategy,
       fallbackStrategy,
+      ...(decision ? { decision } : {}),
       routingMetadata: {
         classifiedInMs,
         intent: classification.intent,
@@ -372,6 +439,7 @@ export async function autoRoute(
       },
     };
   } catch (error) {
+    throwIfDecisionAborted(options?.signal);
     logger.error('Query routing failed, falling back to hybrid_search', { error });
     const classifiedInMs = performance.now() - start;
     return {

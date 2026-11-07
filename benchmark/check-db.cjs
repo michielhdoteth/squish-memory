@@ -1,0 +1,12 @@
+const Database = require('better-sqlite3');
+const db = new Database('benchmark/.bench-data/squish.db');
+const cols = db.prepare("PRAGMA table_info(entities)").all();
+console.log("entities columns:", JSON.stringify(cols.map(c => c.name)));
+const memCount = db.prepare("SELECT COUNT(*) as c FROM memories").get();
+console.log("memories count:", memCount.c);
+const projCount = db.prepare("SELECT COUNT(*) as c FROM projects").get();
+console.log("projects count:", projCount.c);
+const benchProjs = db.prepare("SELECT id, name, path FROM projects WHERE path LIKE 'locomo-bench%'").all();
+console.log("bench projects:", benchProjs.length);
+if (benchProjs.length > 0) console.log("first project:", benchProjs[0]);
+db.close();

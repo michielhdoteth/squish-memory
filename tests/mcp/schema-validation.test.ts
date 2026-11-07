@@ -1,6 +1,10 @@
 import { describe, it, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  MAX_RECALL_RESPONSE_TOKENS,
+  MIN_RECALL_RESPONSE_TOKENS,
+} from "../../core/retrieval/recall-response.js";
 
 // ---------------------------------------------------------------------------
 // Helpers – extract tool registrations from MCP server source
@@ -91,8 +95,13 @@ function extractTools(source: string): ToolInfo[] {
 function evalZodSchema(schemaSource: string): any {
   const { z } = require("zod/v3");
   // eslint-disable-next-line no-new-func
-  const fn = new Function("z", `return { ${schemaSource} };`);
-  const fields = fn(z);
+  const fn = new Function(
+    "z",
+    "MIN_RECALL_RESPONSE_TOKENS",
+    "MAX_RECALL_RESPONSE_TOKENS",
+    `return { ${schemaSource} };`,
+  );
+  const fields = fn(z, MIN_RECALL_RESPONSE_TOKENS, MAX_RECALL_RESPONSE_TOKENS);
   return z.object(fields);
 }
 
@@ -105,7 +114,7 @@ describe("MCP schema validation", () => {
     const source = readSource();
     const tools = extractTools(source);
 
-    expect(tools.length).toBe(20);
+    expect(tools.length).toBe(19);
 
     const validPropertyTypes = new Set([
       "string", "number", "boolean", "object", "array", "integer",
@@ -142,7 +151,7 @@ describe("MCP schema validation", () => {
     const source = readSource();
     const tools = extractTools(source);
 
-    expect(tools.length).toBe(20);
+    expect(tools.length).toBe(19);
 
     for (const tool of tools) {
       expect(tool.description.length).toBeGreaterThan(0);
@@ -166,7 +175,6 @@ describe("MCP schema validation", () => {
       "squish_inspect",
       "squish_skill",
       "squish_loadout",
-      "squish_extract",
       "squish_places",
       "squish_sessions",
       "squish_tier",
@@ -255,7 +263,7 @@ describe("MCP schema validation", () => {
     const source = readSource();
     const tools = extractTools(source);
 
-    expect(tools.length).toBe(20);
+    expect(tools.length).toBe(19);
 
     for (const tool of tools) {
       const schemaObj = evalZodSchema(tool.inputSchemaZod);

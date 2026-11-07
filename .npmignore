@@ -7,6 +7,11 @@ node_modules/
 # Documentation (users can read README/CHANGELOG online)
 docs/
 *.md
+MAP.md
+**/MAP.md
+PLAN.md
+LOG.md
+ROADMAP.md
 !README.md
 !CHANGELOG.md
 !LICENSE
@@ -34,6 +39,12 @@ squish-test.log
 .cache/
 coverage/
 .nyc_output/
+.carto/
+**/.carto/
+**/.carto/**
+__pycache__/
+**/__pycache__/
+*.py[cod]
 .DS_Store
 Thumbs.db
 

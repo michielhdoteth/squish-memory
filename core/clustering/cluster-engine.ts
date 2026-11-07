@@ -21,6 +21,7 @@ import { computeCentroid, computeMeanCosineDistance, estimateEffectiveDimension 
  */
 interface MemoryCluster {
   id: string;
+  embeddingModel: string | null;
   memoryIds: string[];
   memoryVectors: Map<string, number[]>;
   centroid: number[] | null;
@@ -56,7 +57,8 @@ export function clearClusters(): void {
 export async function findOrCreateCluster(
   memoryId: string,
   embedding: number[],
-  threshold?: number
+  threshold?: number,
+  embeddingModel?: string | null,
 ): Promise<string> {
   const simThreshold = threshold ?? config.consolidationSimilarityThreshold ?? 0.8;
 
@@ -64,13 +66,19 @@ export async function findOrCreateCluster(
   const existingClusterId = memoryToCluster.get(memoryId);
   if (existingClusterId && clusters.has(existingClusterId)) {
     const cluster = clusters.get(existingClusterId)!;
-    if (!cluster.memoryIds.includes(memoryId)) {
-      cluster.memoryIds.push(memoryId);
+    const existingModel = cluster.embeddingModel;
+    if (existingModel && embeddingModel && existingModel !== embeddingModel) {
+      await removeFromCluster(memoryId);
+    } else {
+      if (!cluster.memoryIds.includes(memoryId)) {
+        cluster.memoryIds.push(memoryId);
+      }
       cluster.memoryVectors.set(memoryId, embedding);
+      cluster.embeddingModel ??= embeddingModel ?? null;
       cluster.centroid = null;
       cluster.stats = null;
+      return existingClusterId;
     }
-    return existingClusterId;
   }
 
   // Find the nearest cluster by centroid similarity
@@ -88,6 +96,7 @@ export async function findOrCreateCluster(
       // Batch 4 mismatch policy: mixed-model centroids can't be compared;
       // skip that cluster rather than faking a similarity.
       if (centroid.length !== embedding.length) continue;
+      if (cluster.embeddingModel && embeddingModel && cluster.embeddingModel !== embeddingModel) continue;
       const sim = cosineSimilarity(embedding, centroid);
       if (sim > bestSimilarity) {
         bestSimilarity = sim;
@@ -101,6 +110,7 @@ export async function findOrCreateCluster(
     const cluster = clusters.get(bestClusterId)!;
     cluster.memoryIds.push(memoryId);
     cluster.memoryVectors.set(memoryId, embedding);
+    cluster.embeddingModel ??= embeddingModel ?? null;
     cluster.centroid = null; // Invalidate cached centroid
     cluster.stats = null;
     memoryToCluster.set(memoryId, bestClusterId);
@@ -111,6 +121,7 @@ export async function findOrCreateCluster(
   const newClusterId = randomUUID();
   const newCluster: MemoryCluster = {
     id: newClusterId,
+    embeddingModel: embeddingModel ?? null,
     memoryIds: [memoryId],
     memoryVectors: new Map([[memoryId, embedding]]),
     centroid: embedding,

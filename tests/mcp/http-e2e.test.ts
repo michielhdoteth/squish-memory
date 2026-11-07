@@ -166,7 +166,10 @@ describe("MCP HTTP server e2e", () => {
       const body = await res.json();
       expect(body).toHaveProperty("status");
       expect(body).toHaveProperty("server", "squish-memory");
-      expect(body).toHaveProperty("version", "2.1.0");
+      // Shape-checked rather than pinned: a hardcoded version here re-breaks
+      // every time SERVER_VERSION is bumped. Matches the approach already used
+      // in tests/mcp/tool-handlers.test.ts.
+      expect(body.version).toMatch(/^\d+\.\d+\.\d+/);
       expect(["ok", "degraded", "broken"]).toContain(body.status);
     },
     15_000,
@@ -194,7 +197,8 @@ describe("MCP HTTP server e2e", () => {
       expect(json).toHaveProperty("result");
       expect(json.result).toHaveProperty("serverInfo");
       expect(json.result.serverInfo).toHaveProperty("name", "squish-memory");
-      expect(json.result.serverInfo).toHaveProperty("version", "2.1.0");
+      // Shape-checked rather than pinned, same as the /health assertion above.
+      expect(json.result.serverInfo.version).toMatch(/^\d+\.\d+\.\d+/);
       expect(json.result).toHaveProperty("capabilities");
     },
     15_000,
@@ -231,7 +235,7 @@ describe("MCP HTTP server e2e", () => {
       expect(list.json).toHaveProperty("result");
       expect(list.json.result).toHaveProperty("tools");
       expect(Array.isArray(list.json.result.tools)).toBe(true);
-      expect(list.json.result.tools.length).toBe(19);
+      expect(list.json.result.tools.length).toBe(18); // Automatic skill extraction is retired; see ADR-014.
     },
     15_000,
   );

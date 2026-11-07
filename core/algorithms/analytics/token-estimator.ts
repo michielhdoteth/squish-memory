@@ -9,10 +9,11 @@ import { getDb } from '../../../db/index.js';
 import { getSchema } from '../../../db/schema.js';
 import { createDatabaseClient } from '../../../core/storage/database.js';
 import { eq } from 'drizzle-orm';
+import { deserializeTags } from '../../memory/serialization.js';
+import { estimateTextTokens } from '../../lib/tokens.js';
 
 function estimateTokensSimple(text: string): number {
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
+  return estimateTextTokens(text);
 }
 
 function estimateMetadataOverhead(): number {
@@ -28,8 +29,11 @@ function estimateMemoryTokens(memory: Memory): number {
     tokens += estimateTokensSimple(memory.summary);
   }
 
-  if (memory.tags && memory.tags.length > 0) {
-    tokens += estimateTokensSimple(memory.tags.join(' '));
+  // Defense in depth: the schema types tags as string[] but the column is
+  // TEXT; an un-normalized row can still arrive here as a JSON string.
+  const tags = Array.isArray(memory.tags) ? memory.tags : deserializeTags(memory.tags);
+  if (tags.length > 0) {
+    tokens += estimateTokensSimple(tags.join(' '));
   }
 
   if (memory.metadata) {

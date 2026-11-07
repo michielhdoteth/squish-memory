@@ -10,6 +10,7 @@ import { getSchema } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { findEntitiesByName } from '../graph/graph-traversal.js';
 import { getEntityRelations, getProjectEntities } from '../graph/relationship-extractor.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
 import type { EntityRecord, EntityRelation } from './types.js';
 
 /**
@@ -58,7 +59,7 @@ export async function getEntity(
   const relations = await getEntityRelations([entityNode.id]);
 
   let mentionCount = 0;
-  try {
+  if (!isStrictTrustPolicy()) try {
     const db = await getDb();
     const schema = await getSchema();
     const entityRow = await (db as any)

@@ -1,3 +1,5 @@
+import { getRetrievalProfile, resolveProfileFlag } from './profiles.js';
+
 /**
  * Retrieval Configuration for Squish v1.5.0
  * 
@@ -121,9 +123,9 @@ export interface ScoreBreakdown {
 // ---------------------------------------------------------------------------
 // Batch 5 feature flags
 //
-// Precision stack defaults as of Batch 5, each individually disableable via
-// its env var ('false' | '0' | 'no' | 'off'):
-//   - Cross-encoder rerank:      ON by default. Unavailability degrades
+// Precision stages follow the selected offline profile; explicit stage flags
+// override its defaults:
+//   - Cross-encoder rerank:      high-recall only by default. Unavailability degrades
 //                                gracefully (timeout cap ~10s, skips counted).
 //   - Temporal validity (v2):    ON by default. Query-conditioned: the stage
 //                                only activates when the query itself reaches
@@ -134,7 +136,7 @@ export interface ScoreBreakdown {
 //                                aged corpora; the v2 validity-at-T path is
 //                                inert for current/none queries (identical
 //                                pipeline), so the breach cannot recur.
-//   - Query expansion:           ON by default.
+//   - Query expansion:           high-recall only by default.
 // LLM reranking is intentionally NOT part of this flip - it requires a
 // provider and stays config-gated (llm.enabled, default false).
 // ---------------------------------------------------------------------------
@@ -160,13 +162,17 @@ export interface PrecisionStackFlags {
   temporalValidity: boolean;
   /** Rule-based query expansion (SQUISH_QUERY_EXPANSION, default true). */
   queryExpansion: boolean;
+  /** Bounded graph boosting and multi-hop candidate expansion. */
+  graphExpansion: boolean;
 }
 
 export function getPrecisionStackFlags(env: NodeJS.ProcessEnv = process.env): PrecisionStackFlags {
+  const profile = getRetrievalProfile(env);
   return {
-    reranker: parseEnvFlag(env.SQUISH_RERANKER_ENABLED, true),
+    reranker: resolveProfileFlag(env.SQUISH_RERANKER_ENABLED, profile.reranker).value,
     temporalValidity: parseEnvFlag(env.SQUISH_TEMPORAL_VALIDITY, true),
-    queryExpansion: parseEnvFlag(env.SQUISH_QUERY_EXPANSION, true),
+    queryExpansion: resolveProfileFlag(env.SQUISH_QUERY_EXPANSION, profile.queryExpansion).value,
+    graphExpansion: resolveProfileFlag(env.SQUISH_GRAPH_EXPANSION, profile.graphExpansion).value,
   };
 }
 
@@ -222,10 +228,13 @@ export interface RetrievalTrace {
     kind: 'past-anchored' | 'past-unanchored' | 'current' | 'none';
     /** ISO instant of the parsed anchor; null unless kind is past-anchored. */
     t: string | null;
+    /** Half-open relative phrase range [from, to), when applicable. */
+    range: { from: string; to: string } | null;
     raw: string | null;
     supersessionRelaxed: boolean;
     excludedInvalidAtT: number;
     boostedValidAtT: number;
+    dateFitBoosted: number;
   };
   /**
    * Batch 6a: abstention-aware recall assessment for the response as a whole
@@ -236,5 +245,11 @@ export interface RetrievalTrace {
     tier: 'HIGH' | 'QUALIFIED' | 'LOW';
     verdict: 'confident' | 'qualified' | 'no_reliable_memory';
     message: string;
+  };
+  /** Accepted decision-model retrieval controls; excludes query text and credentials. */
+  routingDecision?: {
+    queryViews: string[];
+    anchorCount: number;
+    confidence: number | null;
   };
 }

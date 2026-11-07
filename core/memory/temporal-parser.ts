@@ -9,6 +9,8 @@ import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { logger } from '../logger.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 
 export type TemporalExpressionType = 'absolute' | 'relative' | 'duration' | 'frequency';
 
@@ -17,7 +19,9 @@ export interface TemporalFact {
   value: string;
   parsed: {
     start?: Date;
+    /** Exclusive interval end; equals start for a relative offset anchored to an instant. */
     end?: Date;
+    precision?: 'instant' | 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
     duration?: number; // in milliseconds
     frequency?: string;
   };
@@ -31,10 +35,28 @@ export interface TemporalRelation {
   confidence: number;
 }
 
+export interface TemporalParseOptions {
+  /** IANA zone used to interpret date-only and relative calendar expressions. */
+  timeZone?: string;
+}
+
+export function normalizeIanaTimeZone(timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone }).resolvedOptions().timeZone;
+  } catch {
+    throw new RangeError(`Invalid IANA time zone: ${timeZone}`);
+  }
+}
+
 // Regex patterns for temporal expression detection
 const PATTERNS = {
   // ISO dates: 2024-01-05, 2024-01-05T10:30:00Z
-  isoDate: /\b(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z?)?\b/g,
+  isoDate: /\b(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:?\d{2})?)?\b/g,
+
+  // ISO year-month without a day, and month/year written in words.
+  isoYearMonth: /\b(\d{4})-(0[1-9]|1[0-2])\b(?!-\d{2})/g,
+  naturalMonthYear: /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/gi,
+  year: /\b(?:19\d{2}|20\d{2}|21\d{2})\b/g,
 
   // Natural dates: January 5, Jan 5, 1/5/2024, 01-05-2024
   naturalDate: /\b(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,?\s+\d{4})?\b/gi,
@@ -42,8 +64,8 @@ const PATTERNS = {
   // Relative times: yesterday, today, tomorrow, last week, next month
   relativeTime: /\b(?:yesterday|today|tomorrow|last\s+(?:week|month|year|day|hour)|next\s+(?:week|month|year|day|hour))\b/gi,
 
-  // Time offsets: 3 days ago, in 2 weeks, 5 minutes ago
-  timeOffset: /\b(\d+)\s+(?:days?|weeks?|months?|years?|hours?|minutes?|seconds?)\s+(?:ago|from now|in the past|in the future)\b/gi,
+  // Time offsets: 3 days ago, 3 weeks from now, in 2 weeks
+  timeOffset: /\b(?:(in)\s+(\d+)\s+(days?|weeks?|months?|years?|hours?|minutes?|seconds?)|(\d+)\s+(days?|weeks?|months?|years?|hours?|minutes?|seconds?)\s+(?:ago|from now|in the past|in the future))\b/gi,
 
   // Durations: for 2 hours, over 3 weeks, during 5 days
   duration: /\b(?:for|during|over)\s+(\d+)\s+(?:days?|weeks?|months?|years?|hours?|minutes?|seconds?)\b/gi,
@@ -57,20 +79,35 @@ const PATTERNS = {
  */
 export async function parseTemporalFacts(
   content: string,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  options: TemporalParseOptions = {},
 ): Promise<TemporalFact[]> {
+  const timeZone = options.timeZone ? normalizeIanaTimeZone(options.timeZone) : 'UTC';
   const facts: TemporalFact[] = [];
 
   // Parse absolute dates (ISO and natural format)
   const isoDates = Array.from(content.matchAll(PATTERNS.isoDate));
+  const naturalDates = Array.from(content.matchAll(PATTERNS.naturalDate));
   for (const match of isoDates) {
     try {
-      const date = new Date(match[0]);
+      const calendarDate = match[0].match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!calendarDate || !isValidCalendarDate(Number(calendarDate[1]), Number(calendarDate[2]), Number(calendarDate[3]))) {
+        continue;
+      }
+      const date = match[0].includes('T')
+        ? parseIsoInstant(match[0], timeZone)
+        : new Date(`${match[0]}T00:00:00.000Z`);
       if (!isNaN(date.getTime())) {
+        const isTimestamp = match[0].includes('T');
+        const start = isTimestamp
+          ? date
+          : localDateStart(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), timeZone);
         facts.push({
           type: 'absolute',
           value: match[0],
-          parsed: { start: date, end: date },
+          parsed: isTimestamp
+            ? { start, end: start, precision: 'instant' }
+            : { start, end: localDateStart(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1, timeZone), precision: 'day' },
           confidence: 0.95,
           context: extractContext(content, match.index || 0),
         });
@@ -80,15 +117,76 @@ export async function parseTemporalFacts(
     }
   }
 
-  const naturalDates = Array.from(content.matchAll(PATTERNS.naturalDate));
+  const isoYearMonths = Array.from(content.matchAll(PATTERNS.isoYearMonth));
+  for (const match of isoYearMonths) {
+    const year = Number(match[1]);
+    const monthIndex = Number(match[2]) - 1;
+    const start = localDateStart(year, monthIndex, 1, timeZone);
+    facts.push({
+      type: 'absolute',
+      value: match[0],
+      parsed: { start, end: localDateStart(year, monthIndex + 1, 1, timeZone), precision: 'month' },
+      confidence: 0.95,
+      context: extractContext(content, match.index || 0),
+    });
+  }
+
+  const monthYears = Array.from(content.matchAll(PATTERNS.naturalMonthYear));
+  for (const match of monthYears) {
+    const monthIndex = monthIndexFromName(match[1] ?? '');
+    if (monthIndex < 0) continue;
+    const year = Number(match[2]);
+    const start = localDateStart(year, monthIndex, 1, timeZone);
+    facts.push({
+      type: 'absolute',
+      value: match[0],
+      parsed: { start, end: localDateStart(year, monthIndex + 1, 1, timeZone), precision: 'month' },
+      confidence: 0.9,
+      context: extractContext(content, match.index || 0),
+    });
+  }
+
+  const years = Array.from(content.matchAll(PATTERNS.year));
+  for (const match of years) {
+    const index = match.index || 0;
+    const overlapsMonthYear = monthYears.some((monthYear) => {
+      const monthStart = monthYear.index || 0;
+      return index >= monthStart && index < monthStart + monthYear[0].length;
+    });
+    const overlapsIsoDate = isoDates.some((isoDate) => {
+      const isoStart = isoDate.index || 0;
+      return index >= isoStart && index < isoStart + isoDate[0].length;
+    });
+    const overlapsIsoYearMonth = isoYearMonths.some((isoMonth) => {
+      const isoStart = isoMonth.index || 0;
+      return index >= isoStart && index < isoStart + isoMonth[0].length;
+    });
+    const overlapsNaturalDate = naturalDates.some((naturalDate) => {
+      const dateStart = naturalDate.index || 0;
+      return index >= dateStart && index < dateStart + naturalDate[0].length;
+    });
+    if (overlapsMonthYear || overlapsIsoDate || overlapsIsoYearMonth || overlapsNaturalDate) continue;
+
+    const year = Number(match[0]);
+    const start = localDateStart(year, 0, 1, timeZone);
+    facts.push({
+      type: 'absolute',
+      value: match[0],
+      parsed: { start, end: localDateStart(year + 1, 0, 1, timeZone), precision: 'year' },
+      confidence: 0.85,
+      context: extractContext(content, index),
+    });
+  }
+
   for (const match of naturalDates) {
     try {
-      const date = parseNaturalDate(match[0], referenceDate);
+      const date = parseNaturalDate(match[0], referenceDate, timeZone);
       if (date) {
+        const start = localDateStart(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), timeZone);
         facts.push({
           type: 'absolute',
           value: match[0],
-          parsed: { start: date, end: date },
+          parsed: { start, end: localDateStart(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1, timeZone), precision: 'day' },
           confidence: 0.85,
           context: extractContext(content, match.index || 0),
         });
@@ -101,12 +199,12 @@ export async function parseTemporalFacts(
   // Parse relative times
   const relativeTimes = Array.from(content.matchAll(PATTERNS.relativeTime));
   for (const match of relativeTimes) {
-    const date = parseRelativeTime(match[0], referenceDate);
-    if (date) {
+    const parsed = parseRelativeTimeRange(match[0], referenceDate, timeZone);
+    if (parsed) {
       facts.push({
         type: 'relative',
         value: match[0],
-        parsed: { start: date, end: date },
+        parsed,
         confidence: 0.9,
         context: extractContext(content, match.index || 0),
       });
@@ -116,14 +214,14 @@ export async function parseTemporalFacts(
   // Parse time offsets (3 days ago, in 2 weeks, etc.)
   const timeOffsets = Array.from(content.matchAll(PATTERNS.timeOffset));
   for (const match of timeOffsets) {
-    const amount = parseInt(match[1]);
-    const unit = match[0].split(/\s+/)[1].toLowerCase();
-    const date = calculateDateOffset(referenceDate, amount, unit, match[0]);
-    if (date) {
+    const amount = parseInt(match[2] ?? match[4] ?? '0');
+    const unit = (match[3] ?? match[5] ?? '').toLowerCase();
+    const parsed = calculateOffsetRange(referenceDate, amount, unit, match[0], timeZone);
+    if (parsed) {
       facts.push({
         type: 'relative',
         value: match[0],
-        parsed: { start: date, end: date },
+        parsed,
         confidence: 0.85,
         context: extractContext(content, match.index || 0),
       });
@@ -169,6 +267,10 @@ export async function linkTemporalRelations(
   memoryId: string,
   facts: TemporalFact[]
 ): Promise<TemporalRelation[]> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(memoryId, 'memory', 'Unscoped temporal relation linking is disabled under strict trust');
+  }
+
   const relations: TemporalRelation[] = [];
 
   if (facts.length === 0) return relations;
@@ -313,75 +415,192 @@ function analyzeTemporalRelation(
 /**
  * Parse natural date formats (e.g., "January 5", "Jan 5, 2024")
  */
-function parseNaturalDate(dateStr: string, referenceDate: Date): Date | null {
-  try {
-    // Handle "Month Day, Year" or "Month Day"
-    const date = new Date(dateStr);
-    if (!isNaN(date.getTime())) {
-      // If year is missing, use reference year
-      if (!dateStr.includes(date.getFullYear().toString())) {
-        date.setFullYear(referenceDate.getFullYear());
-      }
-      return date;
-    }
-  } catch {
-    return null;
+function parseNaturalDate(dateStr: string, referenceDate: Date, timeZone: string): Date | null {
+  const match = dateStr.match(/^(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:,?\s+(\d{4}))?$/i);
+  if (!match) return null;
+  const month = monthIndexFromName(match[1] ?? '');
+  const day = Number(match[2]);
+  const year = Number(match[3] ?? localDateParts(referenceDate, timeZone).year);
+  if (month < 0 || day < 1 || day > 31) return null;
+  const check = new Date(Date.UTC(year, month, day));
+  return check.getUTCFullYear() === year && check.getUTCMonth() === month && check.getUTCDate() === day
+    ? check
+    : null;
+}
+
+type LocalParts = { year: number; month: number; day: number; hour: number; minute: number; second: number };
+
+function localDateParts(date: Date, timeZone: string): LocalParts {
+  const values = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(values.find((item) => item.type === type)?.value);
+  return { year: part('year'), month: part('month'), day: part('day'), hour: part('hour'), minute: part('minute'), second: part('second') };
+}
+
+function localDateStart(year: number, monthIndex: number, day: number, timeZone: string): Date {
+  const civil = new Date(Date.UTC(year, monthIndex, day));
+  return localDateTimeToUtc({
+    year: civil.getUTCFullYear(), month: civil.getUTCMonth() + 1, day: civil.getUTCDate(),
+    hour: 0, minute: 0, second: 0,
+  }, timeZone);
+}
+
+function parseIsoInstant(value: string, timeZone: string): Date {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/);
+  const dateParts = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!dateParts || !isValidCalendarDate(Number(dateParts[1]), Number(dateParts[2]), Number(dateParts[3]))) {
+    return new Date(Number.NaN);
   }
-  return null;
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)) {
+    return new Date(value);
+  }
+  if (!match) return new Date(Number.NaN);
+  const millisecond = Number((match[7] ?? '').padEnd(3, '0'));
+  const wholeSecond = localDateTimeToUtc({
+    year: Number(match[1]), month: Number(match[2]), day: Number(match[3]),
+    hour: Number(match[4]), minute: Number(match[5]), second: Number(match[6]),
+  }, timeZone);
+  wholeSecond.setUTCMilliseconds(millisecond);
+  return wholeSecond;
+}
+
+function isValidCalendarDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function localDateTimeToUtc(target: LocalParts, timeZone: string): Date {
+  const wallClockUtc = Date.UTC(target.year, target.month - 1, target.day, target.hour, target.minute, target.second);
+  const offsets = new Set<number>();
+  for (const probe of [wallClockUtc - 36 * 60 * 60_000, wallClockUtc, wallClockUtc + 36 * 60 * 60_000]) {
+    const parts = localDateParts(new Date(probe), timeZone);
+    const representedAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+    offsets.add(representedAsUtc - probe);
+  }
+  const matches: number[] = [];
+  for (const offset of offsets) {
+    const candidate = wallClockUtc - offset;
+    const parts = localDateParts(new Date(candidate), timeZone);
+    if (parts.year === target.year && parts.month === target.month && parts.day === target.day &&
+        parts.hour === target.hour && parts.minute === target.minute && parts.second === target.second) {
+      matches.push(candidate);
+    }
+  }
+  if (matches.length) return new Date(Math.min(...matches));
+
+  // A local clock gap can make midnight nonexistent. Advance to the first
+  // representable minute after the gap; ambiguous times choose the earlier instant.
+  for (let minute = 1; minute <= 180; minute += 1) {
+    const shifted = new Date(Date.UTC(target.year, target.month - 1, target.day, target.hour, target.minute + minute, target.second));
+    const next: LocalParts = { ...target, year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1,
+      day: shifted.getUTCDate(), hour: shifted.getUTCHours(), minute: shifted.getUTCMinutes(), second: shifted.getUTCSeconds() };
+    const result = localDateTimeToUtcExact(next, timeZone, offsets);
+    if (result !== null) return new Date(result);
+  }
+  throw new RangeError(`Could not resolve local time in ${timeZone}`);
+}
+
+function localDateTimeToUtcExact(target: LocalParts, timeZone: string, offsets: Set<number>): number | null {
+  const wallClockUtc = Date.UTC(target.year, target.month - 1, target.day, target.hour, target.minute, target.second);
+  const matches = [...offsets].map((offset) => wallClockUtc - offset).filter((candidate) => {
+    const parts = localDateParts(new Date(candidate), timeZone);
+    return parts.year === target.year && parts.month === target.month && parts.day === target.day &&
+      parts.hour === target.hour && parts.minute === target.minute && parts.second === target.second;
+  });
+  return matches.length ? Math.min(...matches) : null;
+}
+
+function monthIndexFromName(name: string): number {
+  const normalized = name.toLowerCase().slice(0, 3);
+  return ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+    .indexOf(normalized);
+}
+
+function shiftUtcDay(date: Date, amount: number): Date {
+  const shifted = new Date(date);
+  shifted.setUTCDate(shifted.getUTCDate() + amount);
+  return shifted;
+}
+
+function addUtcMonths(date: Date, amount: number): Date {
+  const shifted = new Date(date);
+  shiftUtcMonth(shifted, amount);
+  return shifted;
 }
 
 /**
  * Parse relative time expressions
  */
-function parseRelativeTime(timeStr: string, referenceDate: Date): Date | null {
+function parseRelativeTimeRange(
+  timeStr: string,
+  referenceDate: Date,
+  timeZone: string,
+): TemporalFact['parsed'] | null {
   const str = timeStr.toLowerCase();
-  const date = new Date(referenceDate);
-
-  if (str === 'yesterday') {
-    date.setDate(date.getDate() - 1);
-    return date;
+  const local = localDateParts(referenceDate, timeZone);
+  const dayStart = new Date(Date.UTC(local.year, local.month - 1, local.day));
+  const dayOffset = str === 'yesterday' || str === 'last day' ? -1
+    : str === 'tomorrow' || str === 'next day' ? 1
+      : str === 'today' ? 0 : null;
+  if (dayOffset !== null) {
+    const startDay = shiftUtcDay(dayStart, dayOffset);
+    const endDay = shiftUtcDay(startDay, 1);
+    return { start: localDateStart(startDay.getUTCFullYear(), startDay.getUTCMonth(), startDay.getUTCDate(), timeZone),
+      end: localDateStart(endDay.getUTCFullYear(), endDay.getUTCMonth(), endDay.getUTCDate(), timeZone), precision: 'day' };
   }
 
-  if (str === 'today') {
-    return date;
+  if (str === 'last week' || str === 'next week') {
+    const currentWeekStart = shiftUtcDay(dayStart, -((dayStart.getUTCDay() + 6) % 7));
+    const weekOffset = str === 'last week' ? -1 : 1;
+    const start = shiftUtcDay(currentWeekStart, weekOffset * 7);
+    const end = shiftUtcDay(start, 7);
+    return { start: localDateStart(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate(), timeZone),
+      end: localDateStart(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate(), timeZone), precision: 'week' };
   }
 
-  if (str === 'tomorrow') {
-    date.setDate(date.getDate() + 1);
-    return date;
+  if (str === 'last month' || str === 'next month') {
+    const currentMonthStart = new Date(Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth(), 1));
+    const start = addUtcMonths(currentMonthStart, str === 'last month' ? -1 : 1);
+    return { start: localDateStart(start.getUTCFullYear(), start.getUTCMonth(), 1, timeZone),
+      end: localDateStart(start.getUTCFullYear(), start.getUTCMonth() + 1, 1, timeZone), precision: 'month' };
   }
 
-  if (str.includes('last week')) {
-    date.setDate(date.getDate() - 7);
-    return date;
+  if (str === 'last year' || str === 'next year') {
+    const yearOffset = str === 'last year' ? -1 : 1;
+    const year = dayStart.getUTCFullYear() + yearOffset;
+    return { start: localDateStart(year, 0, 1, timeZone), end: localDateStart(year + 1, 0, 1, timeZone), precision: 'year' };
   }
 
-  if (str.includes('next week')) {
-    date.setDate(date.getDate() + 7);
-    return date;
-  }
-
-  if (str.includes('last month')) {
-    date.setMonth(date.getMonth() - 1);
-    return date;
-  }
-
-  if (str.includes('next month')) {
-    date.setMonth(date.getMonth() + 1);
-    return date;
-  }
-
-  if (str.includes('last year')) {
-    date.setFullYear(date.getFullYear() - 1);
-    return date;
-  }
-
-  if (str.includes('next year')) {
-    date.setFullYear(date.getFullYear() + 1);
-    return date;
+  if (str === 'last hour' || str === 'next hour') {
+    const end = new Date(referenceDate);
+    const start = new Date(end);
+    if (str === 'last hour') start.setUTCHours(start.getUTCHours() - 1);
+    else end.setUTCHours(end.getUTCHours() + 1);
+    return { start, end, precision: 'hour' };
   }
 
   return null;
+}
+
+function shiftUtcMonth(date: Date, amount: number): void {
+  const day = date.getUTCDate();
+  date.setUTCDate(1);
+  date.setUTCMonth(date.getUTCMonth() + amount);
+  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+  date.setUTCDate(Math.min(day, lastDay));
+}
+
+function shiftUtcYear(date: Date, amount: number): void {
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  date.setUTCDate(1);
+  date.setUTCFullYear(date.getUTCFullYear() + amount);
+  date.setUTCMonth(month);
+  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), month + 1, 0)).getUTCDate();
+  date.setUTCDate(Math.min(day, lastDay));
 }
 
 /**
@@ -401,28 +620,90 @@ function calculateDateOffset(
 
   switch (unitLower) {
     case 'day':
-      date.setDate(date.getDate() + multiplier * amount);
+      date.setUTCDate(date.getUTCDate() + multiplier * amount);
       break;
     case 'week':
-      date.setDate(date.getDate() + multiplier * amount * 7);
+      date.setUTCDate(date.getUTCDate() + multiplier * amount * 7);
       break;
     case 'month':
-      date.setMonth(date.getMonth() + multiplier * amount);
+      shiftUtcMonth(date, multiplier * amount);
       break;
     case 'year':
-      date.setFullYear(date.getFullYear() + multiplier * amount);
+      shiftUtcYear(date, multiplier * amount);
       break;
     case 'hour':
-      date.setHours(date.getHours() + multiplier * amount);
+      date.setUTCHours(date.getUTCHours() + multiplier * amount);
       break;
     case 'minute':
-      date.setMinutes(date.getMinutes() + multiplier * amount);
+      date.setUTCMinutes(date.getUTCMinutes() + multiplier * amount);
+      break;
+    case 'second':
+      date.setUTCSeconds(date.getUTCSeconds() + multiplier * amount);
       break;
     default:
       return null;
   }
 
   return date;
+}
+
+function calculateOffsetRange(
+  referenceDate: Date,
+  amount: number,
+  unit: string,
+  fullText: string,
+  timeZone = 'UTC',
+): TemporalFact['parsed'] | null {
+  if (!Number.isSafeInteger(amount) || amount <= 0) return null;
+  const normalizedUnit = unit.replace(/s$/, '').toLowerCase();
+  const date = ['year', 'month', 'week', 'day'].includes(normalizedUnit)
+    ? calculateLocalCalendarOffset(referenceDate, amount, normalizedUnit, fullText, timeZone)
+    : calculateDateOffset(referenceDate, amount, unit, fullText);
+  if (!date || Number.isNaN(date.getTime())) return null;
+
+  if (['year', 'month', 'week', 'day'].includes(normalizedUnit)) {
+    // Numeric offsets resolve relative to the supplied instant; retain its clock time.
+    return { start: date, end: date, precision: 'day' };
+  }
+  if (normalizedUnit === 'hour') {
+    const start = new Date(date);
+    start.setUTCMinutes(0, 0, 0);
+    const end = new Date(start);
+    end.setUTCHours(end.getUTCHours() + 1);
+    return { start, end, precision: 'hour' };
+  }
+  if (normalizedUnit === 'minute') {
+    const start = new Date(date);
+    start.setUTCSeconds(0, 0);
+    const end = new Date(start);
+    end.setUTCMinutes(end.getUTCMinutes() + 1);
+    return { start, end, precision: 'minute' };
+  }
+  if (normalizedUnit === 'second') {
+    const start = new Date(date);
+    start.setUTCMilliseconds(0);
+    const end = new Date(start);
+    end.setUTCSeconds(end.getUTCSeconds() + 1);
+    return { start, end, precision: 'second' };
+  }
+  return null;
+}
+
+function calculateLocalCalendarOffset(referenceDate: Date, amount: number, unit: string, fullText: string, timeZone: string): Date {
+  const local = localDateParts(referenceDate, timeZone);
+  const civilDate = new Date(Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second));
+  const multiplier = fullText.includes('ago') || fullText.includes('past') ? -1 : 1;
+  switch (unit) {
+    case 'day': civilDate.setUTCDate(civilDate.getUTCDate() + multiplier * amount); break;
+    case 'week': civilDate.setUTCDate(civilDate.getUTCDate() + multiplier * amount * 7); break;
+    case 'month': shiftUtcMonth(civilDate, multiplier * amount); break;
+    case 'year': shiftUtcYear(civilDate, multiplier * amount); break;
+  }
+  const result = localDateTimeToUtc({ year: civilDate.getUTCFullYear(), month: civilDate.getUTCMonth() + 1,
+    day: civilDate.getUTCDate(), hour: civilDate.getUTCHours(), minute: civilDate.getUTCMinutes(),
+    second: civilDate.getUTCSeconds() }, timeZone);
+  result.setUTCMilliseconds(referenceDate.getUTCMilliseconds());
+  return result;
 }
 
 /**

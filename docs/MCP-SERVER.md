@@ -1,10 +1,15 @@
 # Squish Memory Infrastructure — MCP Server
 
+> **Release status (2026-10-20): Squish 2.2.0 is an unpublished source candidate.** The published
+> package currently resolves to 1.9.0 and has not been validated against these setup examples. Do
+> not install or configure Squish from this page until a matching release is announced. The MCP
+> configuration material below is a target-version reference.
+
 Universal memory layer for AI agents via Model Context Protocol (MCP). Local-first, works with any MCP-compatible client.
 
 ## What it is
 
-The Squish MCP server is how agents talk to Squish's memory runtime. It exposes 15 tools by default, with a 16th (squish_maintenance) gated behind `SQUISH_ENABLE_MAINTENANCE_TOOLS=true`. The server runs locally via stdio (default) or Streamable HTTP. Under the hood it uses the same runtime as the CLI and SDK — SQLite or PostgreSQL storage, local TF-IDF embeddings, hybrid retrieval, belief engine, decay, and knowledge graph.
+The Squish MCP server is how agents talk to Squish's memory runtime. The available tools depend on the build and optional feature flags, including `SQUISH_ENABLE_MAINTENANCE_TOOLS`. The server runs locally via stdio (default) or Streamable HTTP. Under the hood it uses the same runtime as the CLI and SDK — SQLite or PostgreSQL storage, local TF-IDF embeddings, hybrid retrieval, belief engine, decay, and knowledge graph.
 
 ## Quick start
 
@@ -38,7 +43,7 @@ Expected output:
 
 ```
 [MCP] Running health check...
-[MCP] Health check passed. Server initialized with 16 tools.
+[MCP] Health check passed. Server initialized; the tool count depends on the build and enabled optional tools.
 ```
 
 ### Endpoints (HTTP Mode)
@@ -87,7 +92,7 @@ Auto-detection: the tool classifies content into memory, learning (success/failu
 
 ### 2. squish_recall
 
-Recall memories by query, or retrieve a specific memory by ID. Returns a top-level `recallAssessment` with a calibrated verdict.
+Recall memories by query, or retrieve a specific memory by ID. Success returns `{ status, memories, missing }`. Status is `ok`, `partial`, or `none`; memory rows contain `id`, `content`, `type`, and `confidence` when available. `missing` lists query fragments not covered by returned memories. These are retrieval signals, not guarantees that a result is complete or correct.
 
 ```json
 {
@@ -111,10 +116,11 @@ Retrieve by ID:
 }
 ```
 
-**Recall assessment verdicts:**
-- `confident` — best match >= 0.90, rely on it
-- `qualified` — best match plausible but not certain, verify before relying on it
-- `no_reliable_memory` — no result clears the reliability floor, treat as no memory found
+**Recall status:**
+- `ok` — returned memories cover the query fragments
+- `partial` — `missing` lists query fragments not covered by returned memories
+- `none` — no memory was returned
+- `maxTokens` bounds the compact serialized success response; errors retain the standard error envelope
 
 **Parameters:**
 - `query` (required): Query text or memory ID to recall.
@@ -310,29 +316,7 @@ Actions: `add_loadout`, `remove_loadout`, `get_loadout`, `set_visibility`, `remo
 - `userId` (optional): User ID for visibility check.
 - `teamIds` (optional): Team IDs for visibility check.
 
-### 10. squish_extract
-
-Auto-extract reusable skills (SOPs) from accumulated memories using LLM analysis.
-
-Actions: `run`, `status`.
-
-```json
-{
-  "name": "squish_extract",
-  "arguments": {
-    "action": "run",
-    "hoursBack": 24,
-    "projectId": "project-uuid"
-  }
-}
-```
-
-**Parameters:**
-- `action` (required): `run` or `status`.
-- `hoursBack` (optional, default 24): How many hours back to look for memories.
-- `projectId` (optional): Project ID to extract from.
-
-### 11. squish_feedback
+### 10. squish_feedback
 
 Reinforce or weaken a recalled item. Push confirm/used/contradict signals back into memory, beliefs, or strategies.
 
@@ -354,7 +338,7 @@ Reinforce or weaken a recalled item. Push confirm/used/contradict signals back i
 - `signal` (required): `confirm`, `contradict`, or `used`.
 - `project` (optional): Project path (feedback is rejected when the target belongs to a different project).
 
-### 12. squish_places
+### 11. squish_places
 
 Memory places (spatial organization). Actions: `list` (all places for project), `get` (memories at a place by ID or type).
 
@@ -376,29 +360,35 @@ Place types: `inbox`, `ref`, `wip`, `sandbox`, `board`, `sparks`, `archive`.
 - `limit` (optional, default 50): Max memories to return for `get`.
 - `project` (optional): Project path filter.
 
-### 13. squish_sessions
+### 12. squish_sessions
 
-Agent session history across harnesses. Actions: `list` (recent sessions), `show` (chunks of a session), `search` (search chunk content), `related` (sessions related to current project directory).
+Search and inspect local agent transcript history. Actions: `list`, `show`, `search`, `related`, and `recover`. Search defaults to all accessible project roots; set `searchScope` to `project` to restrict it. Results include bounded-scan diagnostics. In strict-trust mode, raw transcript actions can be denied until the source access and provenance contract is satisfied.
 
 ```json
 {
   "name": "squish_sessions",
   "arguments": {
-    "action": "list",
-    "limit": 10,
-    "source": "claude-code"
+    "action": "search",
+    "query": "authentication decision",
+    "searchScope": "all_projects",
+    "limit": 10
   }
 }
 ```
 
 **Parameters:**
-- `action` (required): `list`, `show`, `search`, or `related`.
-- `sessionId` (optional): Session ID (for show).
+- `action` (required): `list`, `show`, `search`, `related`, or `recover`.
+- `sessionId` (optional): Session ID for `show` or `recover`.
 - `limit` (optional): Max results.
 - `query` (optional): Search query (for search).
-- `source` (optional): `opencode`, `claude-code`, `codex`, `gemini`, `all`. Every result is tagged with its harness origin.
+- `searchScope` (optional, default `all_projects`): `all_projects` searches all accessible roots; `project` restricts results to the resolved `project` path.
+- `project` (optional): Project path filter when `searchScope` is `project`.
+- `repoPath` and `files` (optional): Scope `related` session lookup.
+- `source` (optional): `all`, `opencode`, `claude-code`, `claude`, `codex`, or `gemini`; `claude` aliases `claude-code`.
+- `scanBudgetSessions` (optional, default 5000, max 5000): Maximum transcript sessions inspected per source; search returns scan diagnostics.
+- `budgetTokens`, `progressiveTree`, `includeProjectContext`, `expandNodeId` (optional): Recovery controls.
 
-### 14. squish_tier
+### 13. squish_tier
 
 Memory tier management. Promote, demote, and list memories by tier.
 
@@ -418,7 +408,7 @@ Memory tier management. Promote, demote, and list memories by tier.
 - `tier` (optional): Filter by tier.
 - `limit` (optional): Max results.
 
-### 15. squish_dedup
+### 14. squish_dedup
 
 Duplicate detection and merge workflow for memories.
 
@@ -446,7 +436,7 @@ Actions: `scan` (detect duplicates, create proposals — no merges), `list` (pen
 - `reason` (optional): Optional reason recorded with reverse.
 - `project` (optional): Project path filter (for scan/list).
 
-### 16. squish_maintenance (gated)
+### 15. squish_maintenance (gated)
 
 Gated behind `SQUISH_ENABLE_MAINTENANCE_TOOLS=true`. Run maintenance operations (dedup, stale, consolidate, inbox) in one call.
 
@@ -483,8 +473,22 @@ SQUISH_DATA_DIR=/path/to/data         # Data directory (default: ~/.squish)
 SQUISH_DB_TYPE=sqlite                # Database: sqlite or postgres
 
 # Embeddings
-SQUISH_EMBEDDINGS_PROVIDER=local     # Provider: local|openai|ollama|google|auto
+SQUISH_EMBEDDINGS_PROVIDER=local     # Provider: local|transformers|openai|ollama|google|auto
 SQUISH_LOCAL_BUNDLED_MODEL=bundled   # Set 'off' to pin deterministic TF-IDF (CI, offline evals)
+SQUISH_LOCAL_MODEL=Xenova/all-MiniLM-L6-v2  # Required by the explicit transformers provider
+SQUISH_LOCAL_EMBEDDING_DEVICE=cpu    # cpu (default) or webgpu; WebGPU mode refuses CPU fallback
+
+WebGPU is opt-in. In the Windows validation environment, inference returned a
+vector but the ONNX WebGPU process crashed during native shutdown, including
+after explicit session disposal. CPU remains the default until that
+runtime/driver combination exits cleanly. Closing a Squish runtime disposes
+initialized transformer sessions. WebGPU inference requests are serialized
+with at most 32 active or pending requests; excess work returns no embedding
+instead of growing the queue without bound. CPU requests remain parallel.
+Batch embedding calls reject nonpositive or noninteger sizes and cap each
+work batch at 32 inputs.
+
+WebGPU is opt-in and requires a compatible local runtime and driver. In the Windows validation environment, inference returned a vector but the ONNX WebGPU process crashed during native shutdown, including after explicit session disposal. CPU remains the default until that combination exits cleanly. Closing a Squish runtime disposes initialized transformer sessions.
 
 # Multimodal Ingestion
 SQUISH_MULTIMODAL_ENABLED=true        # Enable multimodal ingestion (default: true)
@@ -505,7 +509,7 @@ SQUISH_DEDUP_AUTO=false              # When true, nightly dedup may auto-execute
 SQUISH_ENABLE_MAINTENANCE_TOOLS=false  # Set true to expose squish_maintenance (16th tool)
 
 # Vector Scan
-SQUISH_VECTOR_SCAN=recency           # Candidate selection: full (complete recall) or recency (newest window)
+SQUISH_VECTOR_SCAN=full              # Candidate selection: full (complete recall, default) or recency (newest window)
 
 # Recall Behavior
 SQUISH_SEARCH_BELIEFS=true           # Include belief records in hybrid retrieval
@@ -571,11 +575,8 @@ Add the same MCP server block to your editor's MCP settings:
 
 #### OpenCode
 
-```bash
-squish install --all
-```
-
-OpenCode gets both MCP tools and auto-capture hooks.
+OpenCode setup commands and automatic capture behavior vary by release. Follow the validated
+OpenCode guide for the matching published package before configuring the client.
 
 #### Any MCP Client
 
@@ -608,6 +609,13 @@ The server exposes a `/mcp` endpoint using the Streamable HTTP transport. Useful
 Health endpoint: `GET /health`
 
 ## Security note
+
+With `SQUISH_TRUST_POLICY=strict`, raw external session history is withheld;
+captured-memory recovery and core recall use the trust-gated memory path.
+Specialized tools for skills, links, teams, loadouts, tier operations,
+maintenance, stale reports, deduplication, edits, and feedback are also withheld
+until each route carries verified caller identity, ACL, and provenance checks.
+The default `local-compatible` policy preserves their existing behavior.
 
 The following operations are NOT available via MCP:
 - Setting encryption passphrase

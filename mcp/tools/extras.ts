@@ -1,3 +1,6 @@
+import { jsonResult, type ToolCtx } from './shared.js';
+// Compatibility: mcp/tools/memory.ts still imports ToolCtx from this module.
+export type { ToolCtx } from './shared.js';
 import type { McpServer } from "@modelcontextprotocol/server";
 
 // Additive MCP tools exposing existing SDK capabilities:
@@ -5,24 +8,11 @@ import type { McpServer } from "@modelcontextprotocol/server";
 // Handlers are thin wrappers — all logic lives in @squish/core-sdk / core.
 import { z } from "zod";
 import type { SquishRuntime } from "../../core/runtime/squish-runtime.js";
+import { isStrictTrustPolicy, resolveTrustedCallerId } from "../../core/acl/trust-policy.js";
 
-export interface ToolCtx {
-  register: (server: McpServer, name: string, definition: any, handler: any) => boolean;
-  server: McpServer;
-  sdkClient: SquishRuntime;
-  resolveProjectPath: (projectArg?: string) => string | undefined;
-  errorResponse: (code: string, message: string, detail?: string, remediation?: string) => any;
-  SERVER_VERSION: string;
-}
 
-function jsonResult(payload: unknown, version?: string) {
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(version ? { ...(payload as Record<string, unknown>), version } : payload, null, 2),
-    }],
-  };
-}
+
+
 
 export function registerPlacesTools(ctx: ToolCtx): number {
   const { register, server, sdkClient, resolveProjectPath, errorResponse, SERVER_VERSION } = ctx;
@@ -39,12 +29,23 @@ export function registerPlacesTools(ctx: ToolCtx): number {
         placeId: z.string().optional().describe("Place ID or place type (required for get action; types: inbox, ref, wip, sandbox, board, sparks, archive)"),
         limit: z.number().min(1).max(100).default(50).describe("Max memories to return for get action"),
         project: z.string().optional().describe("Project path filter"),
+        user: z.string().optional().describe("Authenticated caller identity for ACL-protected reads"),
+        teamId: z.string().optional().describe("Team scope for ACL-protected reads"),
       })
     },
-    async ({ action, placeId, limit = 50, project }: { action: "list" | "get"; placeId?: string; limit?: number; project?: string }) => {
+    async ({ action, placeId, limit = 50, project, user, teamId }: { action: "list" | "get"; placeId?: string; limit?: number; project?: string; user?: string; teamId?: string }) => {
       const resolvedProject = resolveProjectPath(project);
 
       if (action === "list") {
+        if (isStrictTrustPolicy()) {
+          try {
+            const { buildAutoAclContext } = await import("../../core/acl/read-gate.js");
+            await buildAutoAclContext(user, teamId ? [teamId] : undefined);
+          } catch (error) {
+            return errorResponse("trust_denied", "Place listing requires an authenticated caller", error instanceof Error ? error.message : String(error));
+          }
+          return errorResponse("strict_aggregate_unavailable", "Place aggregates are withheld under strict trust until place metadata has provenance and ACL filtering.");
+        }
         const places = await sdkClient.getPlaces(resolvedProject);
         return jsonResult({ ok: true, count: places.length, places }, SERVER_VERSION);
       }
@@ -53,14 +54,15 @@ export function registerPlacesTools(ctx: ToolCtx): number {
       if (!placeId) {
         return errorResponse("missing_param", "placeId is required for get action");
       }
-      const memoryIds = await sdkClient.getPlaceMemories(placeId, limit);
-      const memories = await sdkClient.getMemoriesByIds(memoryIds.slice(0, limit));
+      const caller = { userId: user, teamIds: teamId ? [teamId] : undefined, project: resolvedProject };
+      const memoryIds = await sdkClient.getPlaceMemories(placeId, limit, caller);
+      const memories = await sdkClient.getMemoriesByIds(memoryIds.slice(0, limit), caller);
 
       return jsonResult({
         ok: true,
         placeId,
         count: memories.length,
-        totalInPlace: memoryIds.length,
+        ...(isStrictTrustPolicy() ? {} : { totalInPlace: memoryIds.length }),
         memories,
       }, SERVER_VERSION);
     }
@@ -77,32 +79,82 @@ export function registerSessionsTools(ctx: ToolCtx): number {
     server,
     "squish_sessions",
     {
-      description: "Agent session history across harnesses. Actions: list (recent sessions), show (chunks of a session), search (search chunk content), related (sessions related to current project directory). Use source to scope results to one harness; every result is tagged with its harness origin.",
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      description: "Search and inspect local agent transcript history across accessible project roots; search defaults to all projects and returns bounded-scan diagnostics. Set searchScope to project to restrict history, or source to filter by harness. Actions: list, show, search, related, recover (retrieve captured Squish memory), and capture (capture a supported host session by its ID; speaker roles and transcript text are read from the local host source). Raw history can be denied under strict trust until source access and provenance checks are satisfied.",
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
       inputSchema: z.object({
-        action: z.enum(["list", "show", "search", "related"]).describe("Action to perform"),
-        sessionId: z.string().optional().describe("Session ID (required for show action)"),
+        action: z.enum(["list", "show", "search", "related", "recover", "capture"]).describe("Action to perform"),
+        sessionId: z.string().min(1).max(256).optional().describe("Session ID (required for show/recover/capture actions)"),
         query: z.string().optional().describe("Search query (required for search action)"),
+        searchScope: z.enum(["all_projects", "project"]).default("all_projects").describe("Search all accessible local session history by default; set project to restrict history to the selected project"),
         repoPath: z.string().optional().describe("Repository path (for related action; defaults to project)"),
         files: z.array(z.string()).optional().describe("File paths to narrow related sessions"),
         source: z.enum(["all", "opencode", "claude-code", "claude", "codex", "gemini"]).optional().describe("Harness filter for list/show/search/related (default all; 'claude' aliases 'claude-code')"),
         limit: z.number().min(1).max(100).default(20).describe("Maximum results"),
+        scanBudgetSessions: z.number().int().min(1).max(5000).default(5000).describe("Maximum transcript sessions inspected per source"),
         project: z.string().optional().describe("Project path filter"),
+        user: z.string().optional().describe("Authenticated caller identity for ACL-protected recovery/capture"),
+        teamId: z.string().optional().describe("Team scope for ACL-protected recovery"),
+        budgetTokens: z.number().int().min(128).max(20000).optional().describe("Maximum approximate tokens returned by recover; progressive tree recovery requires at least 256 tokens when sources are found"),
+        progressiveTree: z.boolean().optional().describe("Return a bounded progressive temporal summary tree for recover action"),
+        includeProjectContext: z.boolean().optional().describe("Include a small caller-authorized durable-memory section from the selected project"),
+        expandNodeId: z.string().min(1).max(256).optional().describe("Expand a summary node from a prior recover response; sources are re-read and re-authorized"),
       })
     },
     async (input: {
-      action: "list" | "show" | "search" | "related";
+      action: "list" | "show" | "search" | "related" | "recover" | "capture";
       sessionId?: string;
       query?: string;
+      searchScope?: "all_projects" | "project";
       repoPath?: string;
       files?: string[];
       source?: "all" | "opencode" | "claude-code" | "claude" | "codex" | "gemini";
       limit?: number;
+      scanBudgetSessions?: number;
       project?: string;
+      user?: string;
+      teamId?: string;
+      budgetTokens?: number;
+      progressiveTree?: boolean;
+      includeProjectContext?: boolean;
+      expandNodeId?: string;
     }) => {
+      if (input.action === "capture") {
+        if (!input.source || input.source === "all" || input.source === "claude") {
+          return errorResponse("invalid_source", "Capture requires source=opencode, claude-code, codex, or gemini");
+        }
+        if (!input.sessionId) {
+          return errorResponse("missing_param", "sessionId is required for capture action");
+        }
+        if (input.project || input.teamId) {
+          return errorResponse("invalid_scope", "Capture uses the project recorded by the host and stores caller-owned memories");
+        }
+        let callerId: string | undefined;
+        try {
+          callerId = resolveTrustedCallerId(input.user) ?? undefined;
+        } catch (error) {
+          return errorResponse("trust_denied", "Capture requires the authenticated caller", error instanceof Error ? error.message : undefined);
+        }
+        try {
+          const memoryIds = await sdkClient.captureHostSession(input.source, input.sessionId, { user: callerId });
+          return jsonResult({ ok: true, action: "capture", source: input.source, sessionId: input.sessionId, capturedCount: memoryIds.length, memoryIds }, SERVER_VERSION);
+        } catch {
+          return errorResponse("capture_failed", "Transcript capture failed; verify that the local host session is available and trusted");
+        }
+      }
+
       const resolvedProject = resolveProjectPath(input.project);
       const limit = input.limit ?? 20;
       const source = input.source === "claude" ? "claude-code" : input.source;
+
+      if (isStrictTrustPolicy() && input.action !== "recover") {
+        try {
+          const { buildAutoAclContext } = await import("../../core/acl/read-gate.js");
+          await buildAutoAclContext(input.user, input.teamId ? [input.teamId] : undefined);
+        } catch (error) {
+          return errorResponse("trust_denied", "Session history requires an authenticated caller under strict trust", error instanceof Error ? error.message : String(error));
+        }
+        return errorResponse("strict_session_history_unavailable", "Raw external session history is withheld under strict trust until each harness source has an ACL and verifiable provenance contract.");
+      }
 
       switch (input.action) {
         case "list": {
@@ -123,7 +175,16 @@ export function registerSessionsTools(ctx: ToolCtx): number {
           if (!input.query) {
             return errorResponse("missing_param", "query is required for search action");
           }
-          const chunks = await sdkClient.searchChunks(input.query, { limit, source });
+          if (input.searchScope === "project" && !resolvedProject) {
+            return errorResponse("missing_param", "project scope requires a project path");
+          }
+          const detailed = await sdkClient.searchChunksDetailed(input.query, {
+            limit,
+            source,
+            project: input.searchScope === "project" ? resolvedProject : undefined,
+            scanBudgetSessions: input.scanBudgetSessions,
+          });
+          const chunks = detailed.results;
           const bySource: Record<string, number> = {};
           for (const c of chunks as Array<Record<string, any>>) {
             const agent = c.agent ?? "unknown";
@@ -134,6 +195,7 @@ export function registerSessionsTools(ctx: ToolCtx): number {
             query: input.query,
             count: chunks.length,
             sources: bySource,
+            scan: detailed.diagnostics,
             chunks,
           }, SERVER_VERSION);
         }
@@ -156,6 +218,24 @@ export function registerSessionsTools(ctx: ToolCtx): number {
               chunkCount: r.matching_chunks?.length ?? 0,
             })),
           }, SERVER_VERSION);
+        }
+        case "recover": {
+          if (!input.sessionId) {
+            return errorResponse("missing_param", "sessionId is required for recover action");
+          }
+          const recovery = await sdkClient.recoverCapturedSession({
+            sessionId: input.sessionId,
+            query: input.query,
+            project: resolvedProject,
+            user: input.user,
+            teamId: input.teamId,
+            budgetTokens: input.budgetTokens,
+            progressiveTree: input.progressiveTree,
+            includeProjectContext: input.includeProjectContext,
+            expandNodeId: input.expandNodeId,
+            limit,
+          });
+          return { content: [{ type: "text", text: JSON.stringify({ ok: true, ...recovery, version: SERVER_VERSION }) }] };
         }
         default:
           return errorResponse("invalid_action", `Unknown action: ${input.action}`);

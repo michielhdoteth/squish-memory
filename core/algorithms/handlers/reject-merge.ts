@@ -8,6 +8,7 @@ import { getDb } from '../../../db/index.js';
 import { getSchema } from '../../../db/schema.js';
 import { createDatabaseClient } from '../../../core/storage/database.js';
 import { eq } from 'drizzle-orm';
+import { assertMergeWorkflowAvailable } from './strict-trust-guard.js';
 
 interface RejectMergeInput {
   proposalId: string;
@@ -33,6 +34,7 @@ interface RejectMergeResponse {
  */
 export async function handleRejectMerge(input: RejectMergeInput): Promise<RejectMergeResponse> {
   try {
+    assertMergeWorkflowAvailable();
     const { proposalId, reviewNotes } = input;
 
     if (!proposalId) {

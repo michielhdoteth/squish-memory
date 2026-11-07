@@ -13,7 +13,12 @@
  */
 
 import { getDbClient } from '../lib/db-client.js';
+import {
+  sqlEpochSeconds,
+  sqlLifecycleBound
+} from '../lib/timestamps.js';
 import { logger } from '../logger.js';
+import { normalizeTimestampValue } from '../retrieval/temporal-validity.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +42,34 @@ export interface ReinforcementResult {
   blocked: boolean;
   reason?: string;
 }
+
+function epochSeconds(value: unknown): number | null {
+  if (value !== null && value !== undefined && typeof value !== 'string' && typeof value !== 'number' && !(value instanceof Date)) return null;
+  const timestampMs = normalizeTimestampValue(value as Date | string | number | null | undefined);
+  return timestampMs === null ? null : Math.floor(timestampMs / 1000);
+}
+
+function isActiveAt(memory: {
+  status: string | null;
+  is_active: number | null;
+  valid_from: unknown;
+  valid_to: unknown;
+  expires_at: unknown;
+}, nowSeconds: number): boolean {
+  const validFrom = epochSeconds(memory.valid_from);
+  const validTo = epochSeconds(memory.valid_to);
+  const expiresAt = epochSeconds(memory.expires_at);
+  return memory.status === 'active'
+    && memory.is_active === 1
+    && (validFrom === null || validFrom <= nowSeconds)
+    && (validTo === null || validTo > nowSeconds)
+    && (expiresAt === null || expiresAt > nowSeconds);
+}
+
+const ACTIVE_LIFECYCLE_SQL = `status = 'active' AND is_active = 1
+  AND ${sqlLifecycleBound('valid_from', '<=')}
+  AND ${sqlLifecycleBound('valid_to', '>')}
+  AND ${sqlLifecycleBound('expires_at', '>')}`;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -80,7 +113,9 @@ export async function reinforceMemory(event: ReinforcementEvent): Promise<Reinfo
 
   // Read current memory state (importance_score is 0-100 integer; we work in 0.0-1.0)
   const mem = sqlite.prepare(
-    'SELECT id, importance_score, stability, last_reinforced_at, usage_count FROM memories WHERE id = ?'
+    `SELECT id, importance_score, stability, last_reinforced_at, usage_count,
+      status, is_active, valid_from, valid_to, expires_at
+     FROM memories WHERE id = ?`
   ).get(event.memoryId) as any;
 
   if (!mem) {
@@ -93,6 +128,20 @@ export async function reinforceMemory(event: ReinforcementEvent): Promise<Reinfo
       resurrected: false,
       blocked: true,
       reason: 'memory_not_found',
+    };
+  }
+
+  const lifecycleNow = Math.floor(Date.now() / 1000);
+  if (!isActiveAt(mem, lifecycleNow)) {
+    return {
+      memoryId: event.memoryId,
+      previousConfidence: (mem.importance_score ?? 50) / 100,
+      newConfidence: (mem.importance_score ?? 50) / 100,
+      previousStability: mem.stability ?? 0,
+      newStability: mem.stability ?? 0,
+      resurrected: false,
+      blocked: true,
+      reason: 'memory_inactive_or_outside_validity',
     };
   }
 
@@ -123,8 +172,16 @@ export async function reinforceMemory(event: ReinforcementEvent): Promise<Reinfo
     const newConfidence = Math.max(0, previousConfidence - CONTRADICTION_PENALTY);
     const newScore = Math.round(newConfidence * 100);
     sqlite.prepare(
-      'UPDATE memories SET importance_score = ?, last_reinforced_at = ?, usage_count = usage_count + 1, updated_at = ? WHERE id = ?'
-    ).run(newScore, Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000), event.memoryId);
+      `UPDATE memories SET importance_score = ?, last_reinforced_at = ?, usage_count = usage_count + 1, updated_at = ?
+       WHERE id = ? AND ${ACTIVE_LIFECYCLE_SQL}`
+    ).run(newScore, lifecycleNow, lifecycleNow, event.memoryId, lifecycleNow, lifecycleNow, lifecycleNow);
+    if (Number(sqlite.prepare('SELECT changes() AS changed').get()?.changed) !== 1) {
+      return {
+        memoryId: event.memoryId, previousConfidence, newConfidence: previousConfidence,
+        previousStability, newStability: previousStability, resurrected: false, blocked: true,
+        reason: 'memory_lifecycle_changed',
+      };
+    }
 
     return {
       memoryId: event.memoryId,
@@ -155,11 +212,19 @@ export async function reinforceMemory(event: ReinforcementEvent): Promise<Reinfo
   const isResurrected = wasDormant && newConfidence > 0.5;
 
   // --- Apply ---
-  const nowSec = Math.floor(Date.now() / 1000);
+  const nowSec = lifecycleNow;
   const newScore = Math.round(newConfidence * 100);
   sqlite.prepare(
-    'UPDATE memories SET importance_score = ?, stability = ?, last_reinforced_at = ?, usage_count = usage_count + 1, updated_at = ? WHERE id = ?'
-  ).run(newScore, newStability, nowSec, nowSec, event.memoryId);
+    `UPDATE memories SET importance_score = ?, stability = ?, last_reinforced_at = ?, usage_count = usage_count + 1, updated_at = ?
+     WHERE id = ? AND ${ACTIVE_LIFECYCLE_SQL}`
+  ).run(newScore, newStability, nowSec, nowSec, event.memoryId, nowSec, nowSec, nowSec);
+  if (Number(sqlite.prepare('SELECT changes() AS changed').get()?.changed) !== 1) {
+    return {
+      memoryId: event.memoryId, previousConfidence, newConfidence: previousConfidence,
+      previousStability, newStability: previousStability, resurrected: false, blocked: true,
+      reason: 'memory_lifecycle_changed',
+    };
+  }
 
   logger.debug('Memory reinforced', {
     memoryId: event.memoryId,

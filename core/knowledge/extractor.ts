@@ -182,7 +182,7 @@ function extractBeliefsFromText(
   };
 
   // Decision patterns
-  if (memoryType === 'decision' || /\b(decision:|decided to|we chose|going with|final decision)\b/i.test(text)) {
+  if (memoryType === 'decision' || /\bdecision\s*:|\bdecided to\b|\bwe chose\b|\bgoing with\b|\bfinal decision\b/i.test(text)) {
     const { statement, reason } = splitReason(text);
     addBelief({
       type: 'decision',
@@ -218,7 +218,7 @@ function extractBeliefsFromText(
   }
 
   // Constraint patterns
-  if (/\b(constraint:|must not|cannot|can't|blocked by|required to|needs to)\b/i.test(text)) {
+  if (/\bconstraint\s*:|\bmust not\b|\bcannot\b|\bcan't\b|\bblocked by\b|\brequired to\b|\bneeds to\b/i.test(text)) {
     addBelief({
       type: 'constraint',
       statement: text,
@@ -519,8 +519,8 @@ export function extractBeliefStrats(
 }
 
 /**
- * Extract ALL knowledge (beliefs + strategies) from a memory in one call.
- * This is the main entry point for the unified extraction pipeline.
+ * Extract evidence-linked beliefs from a memory. Memory text alone does not
+ * create a procedural strategy; outcomes must be separately attributed.
  */
 export function knowledgeFromMemory(
   input: {
@@ -539,14 +539,6 @@ export function knowledgeFromMemory(
   for (const belief of beliefs) {
     if (belief.confidence >= minConf) {
       results.push({ kind: 'belief', data: belief });
-    }
-  }
-
-  // Extract strategies from same text
-  const strategies = extractStrategiesFromText(input.content, options);
-  for (const strategy of strategies) {
-    if (strategy.confidence >= minConf) {
-      results.push({ kind: 'strategy', data: strategy });
     }
   }
 

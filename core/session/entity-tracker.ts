@@ -5,10 +5,13 @@
  * reference resolution (e.g., resolving "she" to "Alice").
  */
 
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
+import { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } from '../acl/trust-policy.js';
+import { deserializeMetadata, serializeMetadata } from '../memory/serialization.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +37,18 @@ const MAX_SESSIONS = 100;
 const ENTITY_SALIENCE_DECAY = 0.85; // Per mention, older mentions decay
 const MAX_SESSION_ENTITIES = 50;
 
+function getSessionCachePrefix(): string {
+  if (!isStrictTrustPolicy()) return '';
+  const callerId = resolveTrustedCallerId();
+  if (!callerId) throw new TrustBoundaryError('Strict session entity access requires an authenticated caller');
+  const callerKey = createHash('sha256').update(callerId).digest('hex');
+  return `strict:${callerKey}:`;
+}
+
+function getSessionCacheKey(sessionId: string): string {
+  return `${getSessionCachePrefix()}${sessionId}`;
+}
+
 /**
  * Track an entity mention in a session.
  * Updates salience based on recency and frequency.
@@ -44,7 +59,8 @@ export function trackEntityInSession(
   entityName: string,
   entityType: string
 ): void {
-  let session = sessionCache.get(sessionId);
+  const cacheKey = getSessionCacheKey(sessionId);
+  let session = sessionCache.get(cacheKey);
   
   if (!session) {
     session = {
@@ -52,7 +68,7 @@ export function trackEntityInSession(
       entities: new Map(),
       updatedAt: new Date(),
     };
-    sessionCache.set(sessionId, session);
+    sessionCache.set(cacheKey, session);
   }
 
   // Evict old sessions if cache is full
@@ -109,7 +125,7 @@ export function getActiveSessionEntities(
 ): SessionEntity[] {
   const { limit = 10, minSalience = 0.1, entityTypes } = options || {};
 
-  const session = sessionCache.get(sessionId);
+  const session = sessionCache.get(getSessionCacheKey(sessionId));
   if (!session) return [];
 
   const now = Date.now();
@@ -130,6 +146,7 @@ export function getActiveSessionEntities(
 
     entities.push({
       ...entity,
+      lastMentionedAt: new Date(entity.lastMentionedAt.getTime()),
       salience: adjustedSalience,
     });
   }
@@ -148,7 +165,7 @@ export function resolveReference(
   sessionId: string,
   reference: string
 ): SessionEntity | null {
-  const session = sessionCache.get(sessionId);
+  const session = sessionCache.get(getSessionCacheKey(sessionId));
   if (!session) return null;
 
   const lowerRef = reference.toLowerCase();
@@ -211,21 +228,24 @@ export function resolveReference(
     .filter(e => e.entityName.toLowerCase().includes(lowerRef))
     .sort((a, b) => b.salience - a.salience)[0];
 
-  return nameMatch || null;
+  return nameMatch ? { ...nameMatch, lastMentionedAt: new Date(nameMatch.lastMentionedAt.getTime()) } : null;
 }
 
 /**
  * Clear session entities (e.g., when a session ends).
  */
 export function clearSessionEntities(sessionId: string): void {
-  sessionCache.delete(sessionId);
+  sessionCache.delete(getSessionCacheKey(sessionId));
 }
 
 /**
  * Get all active sessions.
  */
 export function getActiveSessions(): string[] {
-  return [...sessionCache.keys()];
+  const prefix = getSessionCachePrefix();
+  return [...sessionCache.entries()]
+    .filter(([key]) => key.startsWith(prefix))
+    .map(([, session]) => session.sessionId);
 }
 
 /**
@@ -234,8 +254,10 @@ export function getActiveSessions(): string[] {
  */
 export function decayAllSessionEntities(): void {
   const now = Date.now();
+  const prefix = getSessionCachePrefix();
 
-  for (const [sessionId, session] of sessionCache) {
+  for (const [cacheKey, session] of sessionCache) {
+    if (!cacheKey.startsWith(prefix)) continue;
     for (const [entityId, entity] of session.entities) {
       const timeSinceMention = now - entity.lastMentionedAt.getTime();
       const minutesSinceMention = timeSinceMention / (1000 * 60);
@@ -251,7 +273,7 @@ export function decayAllSessionEntities(): void {
 
     // Remove empty sessions
     if (session.entities.size === 0) {
-      sessionCache.delete(sessionId);
+      sessionCache.delete(cacheKey);
     }
   }
 }
@@ -261,7 +283,10 @@ export function decayAllSessionEntities(): void {
  * Called periodically or on session end.
  */
 export async function persistSessionEntities(sessionId: string): Promise<void> {
-  const session = sessionCache.get(sessionId);
+  const strict = isStrictTrustPolicy();
+  const callerId = strict ? resolveTrustedCallerId() : null;
+  const cacheKey = getSessionCacheKey(sessionId);
+  const session = sessionCache.get(cacheKey);
   if (!session || session.entities.size === 0) return;
 
   try {
@@ -282,17 +307,21 @@ export async function persistSessionEntities(sessionId: string): Promise<void> {
     const existing = await (db as any)
       .select()
       .from(schema.contextSessions)
-      .where(eq(schema.contextSessions.id, sessionId))
+      .where(strict && callerId
+        ? and(eq(schema.contextSessions.sessionId, sessionId), eq(schema.contextSessions.userId, callerId))
+        : eq(schema.contextSessions.sessionId, sessionId))
       .limit(1);
 
     if (existing.length > 0) {
       await (db as any)
         .update(schema.contextSessions)
         .set({
-          metadata: { entities: entityData } as any,
+          metadata: sql`${serializeMetadata({ entities: entityData })}`,
           updatedAt: new Date(),
         })
-        .where(eq(schema.contextSessions.id, sessionId));
+        .where(strict && callerId
+          ? and(eq(schema.contextSessions.sessionId, sessionId), eq(schema.contextSessions.userId, callerId))
+          : eq(schema.contextSessions.sessionId, sessionId));
     }
     // If session doesn't exist, we don't create it here
     // (it will be created by the normal session flow)
@@ -311,6 +340,8 @@ export async function persistSessionEntities(sessionId: string): Promise<void> {
  * Called when a session starts.
  */
 export async function loadSessionEntities(sessionId: string): Promise<void> {
+  const strict = isStrictTrustPolicy();
+  const callerId = strict ? resolveTrustedCallerId() : null;
   try {
     const db = await getDb();
     const schema = await getSchema();
@@ -318,12 +349,15 @@ export async function loadSessionEntities(sessionId: string): Promise<void> {
     const session = await (db as any)
       .select()
       .from(schema.contextSessions)
-      .where(eq(schema.contextSessions.id, sessionId))
+      .where(strict && callerId
+        ? and(eq(schema.contextSessions.sessionId, sessionId), eq(schema.contextSessions.userId, callerId))
+        : eq(schema.contextSessions.sessionId, sessionId))
       .limit(1);
 
     if (session.length === 0 || !session[0].metadata) return;
 
-    const metadata = session[0].metadata as Record<string, unknown>;
+    const metadata = deserializeMetadata(session[0].metadata);
+    if (!metadata) return;
     const entityData = metadata.entities as Array<{
       id: string;
       name: string;
@@ -351,7 +385,7 @@ export async function loadSessionEntities(sessionId: string): Promise<void> {
       });
     }
 
-    sessionCache.set(sessionId, sessionMap);
+    sessionCache.set(getSessionCacheKey(sessionId), sessionMap);
 
     logger.debug('Loaded session entities', {
       sessionId,

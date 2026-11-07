@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import type { Database } from 'better-sqlite3';
 import { getDataDir } from '../config.js';
 import { ensureSqliteSchema } from './bootstrap.js';
 import { maybeMergeLegacyClientDbs } from './merge-client-dbs.js';
+import { isBunRuntime } from './utils.js';
 import { logger } from '../core/logger.js';
 
 const SQL_JS_WASM_RELATIVE_PATH = '../vendor/sql.js/sql-wasm.wasm';
@@ -56,8 +58,44 @@ function enforceSqlJsFallbackPolicy(): void {
   );
 }
 
-function isBunRuntime(): boolean {
-  return typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined';
+export interface ReadOnlySqliteDatabase {
+  prepare(sql: string): {
+    all(...params: unknown[]): unknown[];
+    get(...params: unknown[]): unknown;
+  };
+  close(): void;
+}
+
+/** Open an existing SQLite file without running migrations or schema bootstrap. */
+export async function openReadOnlySqlite(dbPath: string): Promise<ReadOnlySqliteDatabase> {
+  if (isBunRuntime()) {
+    const { Database } = await import('bun:sqlite');
+    return new Database(dbPath, { readonly: true, create: false }) as unknown as ReadOnlySqliteDatabase;
+  }
+
+  const DatabaseModule = await import('better-sqlite3');
+  const Database = DatabaseModule.default;
+  return new Database(dbPath, { readonly: true, fileMustExist: true }) as unknown as ReadOnlySqliteDatabase;
+}
+
+function migrateAgentSessionCacheKeyScope(sqlite: {
+  exec(query: string): void;
+  prepare(query: string): { get(...params: unknown[]): unknown };
+}): void {
+  // Older databases enforced one cache row per host/session. Scoped cache keys
+  // need independent rows for distinct source files and strict principals.
+  const legacyIndex = sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?")
+    .get('agent_session_cache_agent_session_idx');
+  if (!legacyIndex) return;
+  sqlite.exec('BEGIN IMMEDIATE');
+  try {
+    sqlite.exec('DROP INDEX IF EXISTS agent_session_cache_agent_session_idx');
+    sqlite.exec('DELETE FROM agent_session_cache');
+    sqlite.exec('COMMIT');
+  } catch (error) {
+    sqlite.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 function formatInitializationError(label: string, error: unknown): string {
@@ -74,9 +112,28 @@ function persistSqlJsDatabase(sqlite: { export: () => Uint8Array }, dbPath: stri
   fs.writeFileSync(dbPath, Buffer.from(sqlite.export()));
 }
 
+function resolveSqlJsWasmFromPackage(): string | null {
+  // Resolve from this module's own location, never from cwd: the MCP/CLI
+  // wrappers now run with the agent host's workspace as cwd (ADR-002), so a
+  // cwd-relative node_modules lookup no longer finds the asset at all.
+  try {
+    const requireFromHere = createRequire(import.meta.url);
+    // sql.js has no "./package.json" export, so resolve the package entry
+    // (<pkg>/dist/sql-wasm.js) and take the wasm sibling from there.
+    const entryPath = requireFromHere.resolve('sql.js');
+    const wasmPath = path.join(path.dirname(entryPath), 'sql-wasm.wasm');
+    if (fs.existsSync(wasmPath)) return wasmPath;
+  } catch {
+    // sql.js is not resolvable from here; fall through to the path candidates.
+  }
+  return null;
+}
+
 function resolveSqlJsWasmPath(): string {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const fromPackage = resolveSqlJsWasmFromPackage();
   const candidates = [
+    ...(fromPackage ? [fromPackage] : []),
     path.resolve(currentDir, SQL_JS_WASM_RELATIVE_PATH),
     path.resolve(currentDir, '../../node_modules/sql.js/dist/sql-wasm.wasm'),
     path.resolve(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm'),
@@ -118,17 +175,19 @@ async function createBunSqliteDb(dbPath: string) {
   const sqlite = new (await import('bun:sqlite')).default(dbPath);
 
   // Enable foreign keys + concurrency pragmas
-  // WAL: readers do not block writers and vice versa (multi-process safe).
-  // busy_timeout: wait up to 5s for a lock instead of failing immediately.
+  // Install the lock handler before journal_mode can request a write lock.
+  // Only switch modes if needed; requesting WAL on every open takes a write lock.
   sqlite.exec('PRAGMA foreign_keys = ON');
-  sqlite.exec('PRAGMA journal_mode = WAL');
-  sqlite.exec('PRAGMA busy_timeout = 5000');
+  sqlite.exec('PRAGMA busy_timeout = 15000');
+  const journalMode = sqlite.query('PRAGMA journal_mode').get() as { journal_mode?: string };
+  if (journalMode.journal_mode?.toLowerCase() !== 'wal') sqlite.exec('PRAGMA journal_mode = WAL');
 
-  if (!fs.existsSync(dbPath) || sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().length === 0) {
-    // bun:sqlite and better-sqlite3 expose the same exec/prepare surface that
-    // ensureSqliteSchema uses; the adapter-level types just disagree.
-    await ensureSqliteSchema(sqlite as unknown as Database);
-  }
+  // The bootstrap fast path is revision-gated; call on every open so existing
+  // databases receive forward migrations before the ORM starts serving queries.
+  // bun:sqlite and better-sqlite3 expose the same exec/prepare surface that
+  // ensureSqliteSchema uses; the adapter-level types just disagree.
+  await ensureSqliteSchema(sqlite as unknown as Database);
+  migrateAgentSessionCacheKeyScope(sqlite);
 
   logger.info('SQLite initialized with bun:sqlite');
   return drizzle(sqlite, { schema: schemaModule });
@@ -211,7 +270,6 @@ async function createSqliteDb() {
 }
 
 async function createBetterSqliteDb(dbPath: string) {
-  const shouldBootstrapSchema = !fs.existsSync(dbPath);
   const DatabaseModule = await import('better-sqlite3');
   const Database = DatabaseModule.default;
   const { drizzle } = await import('drizzle-orm/better-sqlite3');
@@ -220,16 +278,15 @@ async function createBetterSqliteDb(dbPath: string) {
   const sqlite = new Database(dbPath);
 
   // Enable foreign keys + concurrency pragmas
-  // WAL: readers do not block writers and vice versa (multi-process safe).
-  // busy_timeout: wait up to 5s for a lock instead of failing immediately.
+  // Install the lock handler before journal_mode can request a write lock.
+  // Only switch modes if needed; requesting WAL on every open takes a write lock.
   sqlite.pragma('foreign_keys = ON');
-  sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('busy_timeout = 5000');
+  sqlite.pragma('busy_timeout = 15000');
+  const journalMode = sqlite.pragma('journal_mode', { simple: true });
+  if (String(journalMode).toLowerCase() !== 'wal') sqlite.pragma('journal_mode = WAL');
 
-  const tableCount = sqlite.prepare("SELECT COUNT(*) as count FROM sqlite_master WHERE type='table'").get() as { count?: number };
-  if (shouldBootstrapSchema || Number(tableCount?.count ?? 0) === 0) {
-    await ensureSqliteSchema(sqlite);
-  }
+  await ensureSqliteSchema(sqlite);
+  migrateAgentSessionCacheKeyScope(sqlite);
 
   logger.info('SQLite initialized with better-sqlite3');
   return drizzle(sqlite, { schema: schemaModule });
@@ -254,12 +311,8 @@ async function createSqlJsDb(dbPath: string) {
 
   const sqlite: any = new SQL.Database(data);
   sqlite.exec('PRAGMA foreign_keys = ON');
-  const tableCount = Array.isArray(sqlite.exec("SELECT COUNT(*) as count FROM sqlite_master WHERE type='table'"))
-    ? Number(sqlite.exec("SELECT COUNT(*) as count FROM sqlite_master WHERE type='table'")[0]?.values?.[0]?.[0] ?? 0)
-    : 0;
-  if (!hadFile || tableCount === 0) {
-    await ensureSqliteSchema(sqlite);
-  }
+  await ensureSqliteSchema(sqlite);
+  migrateAgentSessionCacheKeyScope(sqlite);
 
   persistSqlJsDatabase(sqlite, dbPath);
 

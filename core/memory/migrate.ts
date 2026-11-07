@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { logger } from '../logger.js';
+import { isStrictTrustPolicy, TrustBoundaryError } from '../acl/trust-policy.js';
 
 export interface MigrateOptions {
   dryRun?: boolean;
@@ -45,6 +46,10 @@ export async function migrateMemories(
   targetDir: string,
   options: MigrateOptions = {}
 ): Promise<MigrateResult> {
+  if (isStrictTrustPolicy()) {
+    throw new TrustBoundaryError('Memory migration is disabled under strict trust until imported rows can be owner-attested');
+  }
+
   const { dryRun = false, deleteSource = false } = options;
   
   const sourceDbPath = join(sourceDir, 'squish.db');
@@ -167,7 +172,10 @@ export async function migrateMemories(
       learningsCopied++;
     }
 
-    const sourceAssoc = sourceDb.prepare('SELECT * FROM memory_associations').all() as SqliteRow[];
+    const hasSourceAssociations = Boolean(sourceDb.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_associations'").get());
+    const sourceAssoc = hasSourceAssociations
+      ? sourceDb.prepare('SELECT * FROM memory_associations').all() as SqliteRow[]
+      : [];
     let associationsCopied = 0;
 
     if (!dryRun && sourceAssoc.length > 0) {

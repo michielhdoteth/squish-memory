@@ -2,34 +2,22 @@
 
 Squish integrates with OpenClaw as a memory backend plugin that provides persistent memory capabilities through the OpenClaw plugin system.
 
+> **Release status (2026-10-20): Squish 2.2.0 is an unpublished source candidate.** npm currently
+> resolves to 1.9.0, which has not been validated with this host guide. Do not install that package
+> or run setup commands from this page until a matching release and OpenClaw compatibility are
+> announced. The configuration notes below are target-version reference material only.
+
 ## Prerequisites
 
 - OpenClaw v2026.3.12 or later
-- Node.js 18.0.0 or later
-- Squish memory server (installed via npm)
+- Node.js 20.0.0 or later for the 2.2.0 source candidate
+- A published Squish release explicitly validated for OpenClaw
 
-## Installation Methods
+## Installation
 
-### Method 1: Universal Plugin Installer (Recommended)
-```bash
-# Install Squish if not already installed
-npm install -g squish-memory
-
-# Install the OpenClaw plugin
-npx squish-memory install-plugin --client=openclaw
-
-# Verify installation
-npx squish-memory install-plugin --client=openclaw --verify
-```
-
-### Method 2: Legacy Bootstrap Installation
-```bash
-# Install Squish if not already installed
-npm install -g squish-memory
-
-# Run the OpenClaw bootstrap script
-npx squish-memory openclaw-bootstrap
-```
+Install and plugin commands are intentionally withheld until the current package version and this
+host path are validated. This reference does not establish that the legacy bootstrap flow is
+supported by the current source candidate.
 
 ## What Gets Installed
 
@@ -88,7 +76,7 @@ Once installed, Squish works automatically with OpenClaw:
 ### Environment Variables
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SQUISH_DATA_DIR` | Data directory for Squish | `~/.squish/openclaw` |
+| `SQUISH_DATA_DIR` | Optional override for the shared Squish data directory | `~/.squish` |
 | `SQUISH_COMMAND` | Command to start Squish MCP | `squish-mcp` |
 
 ### OpenClaw Plugin Configuration
@@ -131,16 +119,15 @@ Configuration is stored in your OpenClaw agents file (typically `~/.openclaw/age
 ## Troubleshooting
 
 ### Plugin Not Loading
-1. Verify installation: `npx squish-memory install-plugin --client=openclaw --verify`
-2. Check OpenClaw plugins list: `openclaw plugins list | grep squish-memory`
-3. Verify Squish MCP server is running: `squish-mcp --status`
-4. Check OpenClaw logs for plugin errors
+1. Check OpenClaw plugins list for the Squish entry after a matching release is installed
+2. Verify Squish MCP server is running using the command supported by that release
+3. Check OpenClaw logs for plugin errors
 
 ### Memory Not Synchronizing
 1. Verify sync is enabled in configuration
 2. Check file permissions on workspace directories
 3. Look for sync errors in OpenClaw logs
-4. Test manual sync: `npx squish-memory openclaw-bootstrap --force-sync`
+4. Use only sync procedures documented for the matching published release
 
 ### Performance Issues
 - Initial sync may take time for large workspaces
@@ -150,17 +137,15 @@ Configuration is stored in your OpenClaw agents file (typically `~/.openclaw/age
 
 ## Uninstallation
 
-```bash
-npx squish-memory uninstall-plugin --client=openclaw
-```
+Use only the uninstall procedure documented for the matching published release.
 
 This removes the OpenClaw plugin configuration but preserves your Squish data and memories.
 
 ## Compatibility
 
 - OpenClaw: v2026.2.15+
-- Node.js: 18.0.0+
-- Squish: v1.0.0+
+- Node.js: 20.0.0+
+- Squish: 2.2.0 source candidate (unpublished; host compatibility pending)
 - Dependencies: mcporter@1.2.0, qmd@0.15.1
 - Operating System: Linux, macOS, Windows
 

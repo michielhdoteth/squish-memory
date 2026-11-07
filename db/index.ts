@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { createDb } from './adapter.js';
 import { config } from '../config.js';
 import { getDataDir } from '../config.js';
@@ -17,7 +18,10 @@ const dbInitPromises = new Map<string, Promise<any>>();
 
 function getDbCacheKey(): string {
   const mode = config.mode; // 'team' | 'local'
-  const dataDir = process.env.SQUISH_DATA_DIR || '';
+  // Key local clients by the effective path used by createDb(), not the raw
+  // environment spelling. Dot-segment aliases otherwise open duplicate
+  // handles to the same SQLite file and can race schema bootstrap.
+  const dataDir = resolve(getDataDir());
   return `${mode}:${dataDir}`;
 }
 
@@ -77,6 +81,8 @@ export async function closeAllDbs(): Promise<void> {
       const client = (database as any)?.$client ?? database;
       if (client && typeof client.close === 'function') {
         await client.close();
+      } else if (client && typeof client.end === 'function') {
+        await client.end();
       }
     } catch (error) {
       logger.error('Failed to close database connection', error);

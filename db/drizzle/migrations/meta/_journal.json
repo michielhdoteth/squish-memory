@@ -8,6 +8,111 @@
       "when": 1773640096881,
       "tag": "0000_needy_cerebro",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792108800000,
+      "tag": "0002_trust_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792203308439,
+      "tag": "0003_trust_audit_epoch_ms_bigint",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792204829000,
+      "tag": "0004_canonical_knowledge_graph",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792208430000,
+      "tag": "0005_strict_team_mutations",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792324800000,
+      "tag": "0006_knowledge_edge_temporal_intervals",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792411200000,
+      "tag": "0007_memory_analysis_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792411200001,
+      "tag": "0008_knowledge_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792411200002,
+      "tag": "0009_memory_source_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792411200003,
+      "tag": "0010_visibility_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792411200004,
+      "tag": "0011_memory_staleness_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792411200005,
+      "tag": "0012_entity_mention_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792411200006,
+      "tag": "0013_memory_capture_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792411200007,
+      "tag": "0014_memory_source_encryption",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792411200008,
+      "tag": "0015_memory_token_estimate",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792411200009,
+      "tag": "0016_memory_embedding_model",
+      "breakpoints": true
     }
   ]
 }

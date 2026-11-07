@@ -11,10 +11,8 @@
  * edges decay.
  */
 
-import { eq, and, or, sql, desc } from 'drizzle-orm';
-import { getDb } from '../../db/index.js';
-import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
+import { adjustAssociationsBetweenMemories, createAssociation, pruneMemoryAssociations } from '../associations.js';
 
 export interface PathStrengthResult {
   strengthened: number;
@@ -32,55 +30,15 @@ export async function strengthenPath(
 ): Promise<number> {
   if (memoryIds.length < 2) return 0;
 
-  const db = await getDb();
-  const schema = await getSchema();
   let strengthened = 0;
 
   // Generate all pairs
   for (let i = 0; i < memoryIds.length; i++) {
     for (let j = i + 1; j < memoryIds.length; j++) {
       try {
-        // Check if association exists
-        const existing = await (db as any)
-          .select()
-          .from(schema.memoryAssociations)
-          .where(
-            or(
-              and(
-                eq(schema.memoryAssociations.fromMemoryId, memoryIds[i]),
-                eq(schema.memoryAssociations.toMemoryId, memoryIds[j])
-              ),
-              and(
-                eq(schema.memoryAssociations.fromMemoryId, memoryIds[j]),
-                eq(schema.memoryAssociations.toMemoryId, memoryIds[i])
-              )
-            )
-          )
-          .limit(1);
-
-        if (existing.length > 0) {
-          // Strengthen existing association
-          await (db as any)
-            .update(schema.memoryAssociations)
-            .set({
-              weight: sql`${schema.memoryAssociations.weight} + ${boostAmount}`,
-              coactivationCount: sql`${schema.memoryAssociations.coactivationCount} + 1`,
-              lastCoactivatedAt: new Date(),
-            })
-            .where(eq(schema.memoryAssociations.id, existing[0].id));
-        } else {
-          // Create new association
-          await (db as any).insert(schema.memoryAssociations).values({
-            fromMemoryId: memoryIds[i],
-            toMemoryId: memoryIds[j],
-            associationType: 'co_occurred',
-            weight: boostAmount,
-            coactivationCount: 1,
-            lastCoactivatedAt: new Date(),
-          });
-        }
-
-        strengthened++;
+        const updated = await adjustAssociationsBetweenMemories(memoryIds[i], memoryIds[j], boostAmount, 1, true);
+        if (updated === 0) await createAssociation(memoryIds[i], memoryIds[j], 'co_occurred', boostAmount);
+        strengthened += updated || 1;
       } catch (error) {
         logger.debug('Error strengthening path', {
           from: memoryIds[i],
@@ -103,40 +61,12 @@ export async function weakenPath(
 ): Promise<number> {
   if (memoryIds.length < 2) return 0;
 
-  const db = await getDb();
-  const schema = await getSchema();
   let weakened = 0;
 
   for (let i = 0; i < memoryIds.length; i++) {
     for (let j = i + 1; j < memoryIds.length; j++) {
       try {
-        const existing = await (db as any)
-          .select()
-          .from(schema.memoryAssociations)
-          .where(
-            or(
-              and(
-                eq(schema.memoryAssociations.fromMemoryId, memoryIds[i]),
-                eq(schema.memoryAssociations.toMemoryId, memoryIds[j])
-              ),
-              and(
-                eq(schema.memoryAssociations.fromMemoryId, memoryIds[j]),
-                eq(schema.memoryAssociations.toMemoryId, memoryIds[i])
-              )
-            )
-          )
-          .limit(1);
-
-        if (existing.length > 0) {
-          // Weaken but don't remove (minimum weight of 1)
-          await (db as any)
-            .update(schema.memoryAssociations)
-            .set({
-              weight: sql`GREATEST(${schema.memoryAssociations.weight} - ${decayAmount}, 1)`,
-            })
-            .where(eq(schema.memoryAssociations.id, existing[0].id));
-          weakened++;
-        }
+        weakened += await adjustAssociationsBetweenMemories(memoryIds[i], memoryIds[j], -decayAmount, 1);
       } catch (error) {
         logger.debug('Error weakening path', {
           from: memoryIds[i],
@@ -157,24 +87,13 @@ export async function pruneWeakAssociations(
   minWeight: number = 2,
   maxAge: number = 90 // days
 ): Promise<number> {
-  const db = await getDb();
-  const schema = await getSchema();
-
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - maxAge);
 
   try {
-    // Delete associations that are weak AND old
-    const result = await (db as any)
-      .delete(schema.memoryAssociations)
-      .where(
-        and(
-          sql`${schema.memoryAssociations.weight} < ${minWeight}`,
-          sql`${schema.memoryAssociations.lastCoactivatedAt} < ${cutoffDate}`
-        )
-      );
-
-    const pruned = result?.rowCount ?? 0;
+    const pruned = await pruneMemoryAssociations((association) =>
+      association.weight < minWeight && (association.lastCoactivatedAt ?? association.createdAt) < cutoffDate
+    );
     logger.info('Pruned weak associations', { pruned, minWeight, maxAge });
     return pruned;
   } catch (error) {

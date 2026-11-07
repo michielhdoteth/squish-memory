@@ -35,6 +35,7 @@ export async function updateCache(memoryId: string): Promise<boolean> {
 
     const simhash = simhashFilter.generateHash(memory.content);
     const minhash = minhashFilter.generateSignature(memory.content);
+    const serializedMinhash = JSON.stringify(minhash);
     const contentHash = hashContent(memory.content);
 
     // Upsert cache entry
@@ -52,7 +53,7 @@ export async function updateCache(memoryId: string): Promise<boolean> {
         .update(schema.memoryHashCache)
         .set({
           simhash,
-          minhash: minhash,
+          minhash: serializedMinhash,
           contentHash,
           lastUpdated: now,
         })
@@ -63,10 +64,10 @@ export async function updateCache(memoryId: string): Promise<boolean> {
         memoryId,
         projectId: memory.projectId,
         simhash,
-        minhash: minhash,
+        minhash: serializedMinhash,
         contentHash,
         lastUpdated: now,
-      } as any);
+      });
     }
 
     return true;

@@ -68,6 +68,7 @@ describe('schema-health fix functionality', () => {
     sqlite.exec('DROP TABLE IF EXISTS learnings');
     sqlite.exec('DROP TABLE IF EXISTS session_summaries');
     sqlite.exec('DROP TABLE IF EXISTS beliefs');
+    sqlite.exec('DROP TABLE IF EXISTS trust_audit_log');
     sqlite.close();
     await ensureFreshDb(dataDir);
 
@@ -85,6 +86,10 @@ describe('schema-health fix functionality', () => {
     await ensureFreshDb(dataDir);
     const recheck = await probeSchemaHealth();
     expect(recheck.status).toBe('ok');
+    const repairedDb = new Database(dbPath, { readonly: true });
+    const trustAuditTable = repairedDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='trust_audit_log'").get();
+    expect(trustAuditTable).toBeDefined();
+    repairedDb.close();
   });
 
   test('fixSchemaIssues creates missing indexes', async () => {
@@ -108,6 +113,104 @@ describe('schema-health fix functionality', () => {
     expect(names).toContain('memories_project_idx');
     expect(names).toContain('memories_type_idx');
     sqlite2.close();
+  });
+
+  test('temporal candidate index is created on fresh, upgraded, and repaired databases and used by the scoped plan', async () => {
+    const { dataDir, dbPath } = await bootstrapFullDb();
+    const indexName = 'memories_valid_from_idx';
+    const hasTemporalIndex = (sqlite: Database) => Boolean(sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='index' AND name = ?",
+    ).get(indexName));
+
+    const freshDb = new Database(dbPath);
+    expect(hasTemporalIndex(freshDb)).toBe(true);
+    freshDb.exec(`DROP INDEX ${indexName}`);
+    freshDb.close();
+
+    // The normal SQLite migration chain repairs an existing database that
+    // predates this index, independently of the fresh-schema DDL.
+    const migrationDb = new Database(dbPath);
+    const { runAllMigrations } = await import('../../db/migrations/index.js');
+    await runAllMigrations(migrationDb as never);
+    expect(hasTemporalIndex(migrationDb)).toBe(true);
+    migrationDb.exec(`DROP INDEX ${indexName}`);
+    migrationDb.prepare('DELETE FROM _schema_versions WHERE version LIKE ?').run('sqlite-schema-%');
+    migrationDb.prepare('INSERT INTO _schema_versions (version, description) VALUES (?, ?)')
+      .run('sqlite-schema-2026-10-20-revision-3', 'pre-temporal-candidate-index fixture');
+    migrationDb.close();
+
+    // Opening a revision-3 database must apply the SQLite migration even
+    // though all tables already exist and the old revision marker is present.
+    const upgradeDb = new Database(dbPath);
+    upgradeDb.exec('PRAGMA foreign_keys = OFF');
+    await ensureSqliteSchema(upgradeDb);
+    expect(hasTemporalIndex(upgradeDb)).toBe(true);
+
+    const replacementStart = Date.UTC(2026, 5, 3) / 1000;
+    const replacementEnd = Date.UTC(2026, 5, 8) / 1000;
+    const insert = upgradeDb.prepare(`INSERT INTO memories
+      (id, type, content, status, created_at, valid_from)
+      VALUES (?, 'fact', 'synthetic temporal candidate', 'active', strftime('%s','now'), ?)`);
+    const insertRows = upgradeDb.transaction(() => {
+      for (let index = 0; index < 5000; index++) {
+        insert.run(`index-plan-future-${index}`, replacementEnd + index + 1);
+      }
+    });
+    insertRows();
+    upgradeDb.exec('ANALYZE');
+    const queryPlan = upgradeDb.prepare(`EXPLAIN QUERY PLAN
+      SELECT id, content, valid_from, valid_to FROM memories
+      WHERE status = ?
+        AND (valid_to IS NULL OR valid_to > ?)
+        AND (valid_from IS NULL OR valid_from < ?)`)
+      .all('active', replacementStart, replacementEnd) as Array<{ detail: string }>;
+    expect(queryPlan.some((step) => step.detail.includes(indexName) && step.detail.includes('SEARCH'))).toBe(true);
+    upgradeDb.close();
+
+    const driftDb = new Database(dbPath);
+    driftDb.exec(`DROP INDEX ${indexName}`);
+    driftDb.close();
+
+    await ensureFreshDb(dataDir);
+    const drift = await probeSchemaHealth();
+    expect(drift.indexIssues).toContainEqual({ name: indexName, reason: 'missing' });
+    const repairActions = await fixSchemaIssues({ fixMissingIndexes: true, verbose: false });
+    expect(repairActions).toContainEqual(expect.objectContaining({
+      type: 'create_index',
+      detail: `Created index ${indexName} on memories`,
+      target: 'memories',
+    }));
+    const repairedDb = new Database(dbPath, { readonly: true });
+    expect(hasTemporalIndex(repairedDb)).toBe(true);
+    repairedDb.close();
+  });
+
+  test('fixSchemaIssues repairs a required index that exists with the wrong definition', async () => {
+    const { dataDir, dbPath } = await bootstrapFullDb();
+
+    const sqlite = new Database(dbPath);
+    sqlite.exec('DROP INDEX memories_project_idx');
+    sqlite.exec('CREATE INDEX memories_project_idx ON memories(type)');
+    sqlite.close();
+    await ensureFreshDb(dataDir);
+
+    const drift = await probeSchemaHealth();
+    expect(drift.status).toBe('drifted');
+    expect(drift.indexIssues).toContainEqual({ name: 'memories_project_idx', reason: 'definition_mismatch' });
+    expect(drift.detail).toContain('memories_project_idx (definition mismatch)');
+
+    const actions = await fixSchemaIssues({ fixMissingIndexes: true, verbose: false });
+    expect(actions).toContainEqual(expect.objectContaining({
+      type: 'create_index',
+      detail: 'Repaired index memories_project_idx on memories',
+      target: 'memories',
+    }));
+
+    const verify = new Database(dbPath, { readonly: true });
+    const columns = verify.prepare('PRAGMA index_info(memories_project_idx)').all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).toEqual(['project_id']);
+    verify.close();
+    expect((await probeSchemaHealth()).status).toBe('ok');
   });
 
   test('fixSchemaIssues repairs FTS schema', async () => {
@@ -139,6 +242,126 @@ describe('schema-health fix functionality', () => {
     sqlite2.close();
   });
 
+  test('fixSchemaIssues rebuilds stale FTS postings from canonical memory rows', async () => {
+    const { dataDir, dbPath } = await bootstrapFullDb();
+    const sqlite = new Database(dbPath);
+    sqlite.prepare(`INSERT INTO memories (id, content, type, project_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run('fts-repair-row', 'qzxv rebuildingunique memory posting', 'note', 'fts-repair-project', Date.now(), Date.now());
+    sqlite.exec("INSERT INTO memories_fts(memories_fts) VALUES('delete-all')");
+    sqlite.close();
+    await ensureFreshDb(dataDir);
+
+    const actions = await fixSchemaIssues({ fixFts: true, verbose: false });
+    expect(actions.some((action) => action.detail.includes('Rebuilt memories_fts postings'))).toBe(true);
+
+    const verify = new Database(dbPath);
+    const indexed = verify.prepare(`
+      SELECT m.id FROM memories_fts JOIN memories m ON memories_fts.rowid = m.rowid
+      WHERE memories_fts MATCH ?
+    `).all('qzxv') as Array<{ id: string }>;
+    expect(indexed.map((row) => row.id)).toContain('fts-repair-row');
+    verify.close();
+  });
+
+  test('fixSchemaIssues rebuilds stale message FTS postings from canonical message rows', async () => {
+    const { dataDir, dbPath } = await bootstrapFullDb();
+    const sqlite = new Database(dbPath);
+    sqlite.prepare('INSERT INTO conversations (id, session_id) VALUES (?, ?)')
+      .run('fts-repair-conversation', 'fts-repair-session');
+    sqlite.prepare('INSERT INTO messages (id, conversation_id, role, content) VALUES (?, ?, ?, ?)')
+      .run('fts-repair-message', 'fts-repair-conversation', 'user', 'qzxv rebuildingunique message posting');
+    sqlite.exec("INSERT INTO messages_fts(messages_fts) VALUES('delete-all')");
+    sqlite.close();
+    await ensureFreshDb(dataDir);
+
+    const actions = await fixSchemaIssues({ fixFts: true, verbose: false });
+    expect(actions.some((action) => action.detail.includes('Rebuilt messages_fts postings'))).toBe(true);
+
+    const verify = new Database(dbPath);
+    const indexed = verify.prepare(`SELECT m.id FROM messages_fts JOIN messages m ON messages_fts.rowid = m.rowid
+      WHERE messages_fts MATCH ?`).all('qzxv') as Array<{ id: string }>;
+    expect(indexed.map((row) => row.id)).toContain('fts-repair-message');
+    verify.close();
+  });
+
+  test('fixSchemaIssues restores missing FTS update triggers when postings are otherwise healthy', async () => {
+    const { dataDir, dbPath } = await bootstrapFullDb();
+    const sqlite = new Database(dbPath);
+    sqlite.prepare(`INSERT INTO memories (id, content, type, project_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)`)
+      .run('fts-trigger-repair-row', 'ftsrecoveroldtoken original text', 'note', null, Date.now(), Date.now());
+    sqlite.prepare(`INSERT INTO conversations (id, session_id) VALUES (?, ?)`)
+      .run('fts-trigger-repair-conversation', 'fts-trigger-repair-session');
+    sqlite.prepare(`INSERT INTO messages (id, conversation_id, role, content)
+      VALUES (?, ?, ?, ?)`)
+      .run('fts-trigger-repair-message', 'fts-trigger-repair-conversation', 'user', 'msgrecoveroldtoken original text');
+    sqlite.exec('DROP TRIGGER memories_au');
+    sqlite.exec('DROP TRIGGER messages_au');
+    sqlite.close();
+    await ensureFreshDb(dataDir);
+
+    const actions = await fixSchemaIssues({ fixFts: true, verbose: false });
+    expect(actions.some((action) => action.type === 'repair_fts')).toBe(true);
+
+    const verify = new Database(dbPath);
+    const trigger = verify.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND name='memories_au'")
+      .get() as { name: string } | undefined;
+    expect(trigger?.name).toBe('memories_au');
+    const messageTrigger = verify.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND name='messages_au'")
+      .get() as { name: string } | undefined;
+    expect(messageTrigger?.name).toBe('messages_au');
+    verify.prepare('UPDATE memories SET content = ? WHERE id = ?')
+      .run('ftsrecovernewtoken corrected text', 'fts-trigger-repair-row');
+    const oldMatches = verify.prepare(`SELECT count(*) AS count FROM memories_fts
+      WHERE memories_fts MATCH 'ftsrecoveroldtoken'`).get() as { count: number };
+    const newMatches = verify.prepare(`SELECT count(*) AS count FROM memories_fts
+      WHERE memories_fts MATCH 'ftsrecovernewtoken'`).get() as { count: number };
+    expect(oldMatches.count).toBe(0);
+    expect(newMatches.count).toBe(1);
+    verify.prepare('UPDATE messages SET content = ? WHERE id = ?')
+      .run('msgrecovernewtoken corrected text', 'fts-trigger-repair-message');
+    const oldMessageMatches = verify.prepare(`SELECT count(*) AS count FROM messages_fts
+      WHERE messages_fts MATCH 'msgrecoveroldtoken'`).get() as { count: number };
+    const newMessageMatches = verify.prepare(`SELECT count(*) AS count FROM messages_fts
+      WHERE messages_fts MATCH 'msgrecovernewtoken'`).get() as { count: number };
+    expect(oldMessageMatches.count).toBe(0);
+    expect(newMessageMatches.count).toBe(1);
+    verify.close();
+  });
+
+  test('fixSchemaIssues replaces a same-name FTS trigger with an incorrect body', async () => {
+    const { dataDir, dbPath } = await bootstrapFullDb();
+    const sqlite = new Database(dbPath);
+    sqlite.prepare(`INSERT INTO memories (id, content, type, project_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)`)
+      .run('fts-trigger-body-row', 'ftsbodyoldtoken original text', 'note', null, Date.now(), Date.now());
+    sqlite.exec(`DROP TRIGGER memories_au;
+      CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN SELECT 1; END;`);
+    sqlite.close();
+    await ensureFreshDb(dataDir);
+
+    const actions = await fixSchemaIssues({ fixFts: true, verbose: false });
+    expect(actions.some((action) => action.detail.includes('memories_au'))).toBe(true);
+
+    const verify = new Database(dbPath);
+    verify.prepare('UPDATE memories SET content = ? WHERE id = ?')
+      .run('ftsbodynewtoken corrected text', 'fts-trigger-body-row');
+    const oldMatches = verify.prepare(`SELECT count(*) AS count FROM memories_fts
+      WHERE memories_fts MATCH 'ftsbodyoldtoken'`).get() as { count: number };
+    const newMatches = verify.prepare(`SELECT count(*) AS count FROM memories_fts
+      WHERE memories_fts MATCH 'ftsbodynewtoken'`).get() as { count: number };
+    expect(oldMatches.count).toBe(0);
+    expect(newMatches.count).toBe(1);
+    verify.close();
+  });
+
+  test('fixSchemaIssues leaves healthy FTS postings untouched', async () => {
+    const { dataDir } = await bootstrapFullDb();
+    await ensureFreshDb(dataDir);
+    const actions = await fixSchemaIssues({ fixFts: true, verbose: false });
+    expect(actions.some((action) => action.detail.includes('Rebuilt memories_fts postings'))).toBe(false);
+  });
+
   test('fixSchemaIssues initializes default places', async () => {
     const { dataDir, dbPath } = await bootstrapFullDb();
 
@@ -159,36 +382,34 @@ describe('schema-health fix functionality', () => {
     sqlite2.close();
   });
 
-  test('fixSchemaIssues initializes graph entities table', async () => {
+  test('graph health and repair do not require or recreate legacy entity relations', async () => {
     const { dataDir, dbPath } = await bootstrapFullDb();
-
-    // Drop entity_relations
-    const sqlite = new Database(dbPath);
-    sqlite.exec('DROP TABLE IF EXISTS entity_relations');
-    sqlite.close();
     await ensureFreshDb(dataDir);
 
-    const actions = await fixSchemaIssues({ fixGraphEntities: true, verbose: false });
-    expect(actions.some(a => a.type === 'create_entities_table')).toBe(true);
+    const result = await checkGraphEntitiesTable();
+    expect(result.status).toBe('ok');
+    expect(result.message).toContain('knowledge_edges');
 
-    // Verify table exists
+    const actions = await fixSchemaIssues({ fixAll: true, verbose: false });
     const sqlite2 = new Database(dbPath);
-    const table = sqlite2.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entity_relations'").get() as { name: string } | undefined;
-    expect(table).toBeDefined();
+    const table = sqlite2.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entity_relations'").get() as { name: string } | null;
+    expect(table).toBeNull();
+    expect(actions.some(a => a.type === 'create_table' && a.detail.includes('entity_relations'))).toBe(false);
+    expect((await probeSchemaHealth()).status).toBe('ok');
     sqlite2.close();
   });
 
-  test('checkGraphEntitiesTable detects missing table', async () => {
+  test('checkGraphEntitiesTable detects a missing canonical edge store', async () => {
     const { dataDir, dbPath } = await bootstrapFullDb();
 
     const sqlite = new Database(dbPath);
-    sqlite.exec('DROP TABLE IF EXISTS entity_relations');
+    sqlite.exec('DROP TABLE IF EXISTS knowledge_edges');
     sqlite.close();
     await ensureFreshDb(dataDir);
 
     const result = await checkGraphEntitiesTable();
     expect(result.status).toBe('degraded');
-    expect(result.message).toContain('entity_relations');
+    expect(result.message).toContain('knowledge_edges');
   });
 
   test('checkPlacesInitialization detects missing places', async () => {

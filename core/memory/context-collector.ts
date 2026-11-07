@@ -4,6 +4,8 @@ import { logger } from '../logger.js';
 import { getDb } from '../../db/index.js';
 import { messages, conversations } from '../../db/drizzle/schema-sqlite.js';
 import { eq, desc } from 'drizzle-orm';
+import { isStrictTrustPolicy } from '../../core/acl/trust-policy.js';
+import { denyStrictSurface } from '../../core/acl/trust-audit.js';
 
 export interface ContextMessage {
   role: 'user' | 'assistant';
@@ -15,6 +17,14 @@ export async function collectRecentContext(
   sessionId: string,
   count: number = 5
 ): Promise<ContextMessage[]> {
+  if (isStrictTrustPolicy()) {
+    return denyStrictSurface(
+      sessionId || 'unscoped_context',
+      'conversation_context',
+      'Unscoped conversation context is disabled under strict trust until caller and project authorization are available',
+    );
+  }
+
   const db = await getDb();
   if (!db) {
     logger.warn('[ContextCollector] Database not available');

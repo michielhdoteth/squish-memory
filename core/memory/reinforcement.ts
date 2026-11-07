@@ -34,6 +34,7 @@
  */
 
 import { logger } from '../logger.js';
+import { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } from '../acl/trust-policy.js';
 
 export type FeedbackTargetType = 'memory' | 'belief' | 'strategy';
 export type FeedbackSignal = 'confirm' | 'contradict' | 'used';
@@ -124,6 +125,23 @@ export async function applyFeedback(input: FeedbackInput): Promise<FeedbackResul
   };
 
   if (!input.id) return { ...base, detail: 'id required' };
+  if (isStrictTrustPolicy()) {
+    const callerId = resolveTrustedCallerId();
+    if (!callerId) throw new TrustBoundaryError('Strict feedback requires a bound caller');
+    const { writeTrustAudit } = await import('../acl/trust-audit.js');
+    try {
+      await writeTrustAudit({
+        actorId: callerId,
+        resourceId: input.id,
+        assetType: input.targetType === 'memory' ? 'memory' : 'knowledge',
+        decision: 'deny',
+        reason: 'strict_surface',
+      });
+    } catch {
+      throw new TrustBoundaryError('Strict feedback is denied and its audit record could not be persisted');
+    }
+    throw new TrustBoundaryError('Direct feedback application is disabled under strict trust; use caller-scoped runtime feedback');
+  }
 
   try {
     // Resolve project scope once up front; every branch validates against it.

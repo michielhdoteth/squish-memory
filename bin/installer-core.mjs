@@ -13,12 +13,14 @@
  * Architecture:
  *   installer-core.mjs  -->  install-config.mjs (MCP config builders)
  *                        -->  plugin/{client}/    (plugin source files)
- *                        -->  plugin/templates/   (hook templates)
+ *                        -->  plugin/templates/   (hook templates, incl. the
+ *                            UserPromptSubmit gate hook: plugin/scripts/new-hook.js)
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -66,6 +68,12 @@ const PLUGIN_CLIENTS = new Set(['claude-code', 'opencode', 'openclaw', 'codex'])
 // Only Claude Code uses a settings.json `hooks` key. OpenCode's v1.x config
 // schema has NO `hooks` top-level key (verified at https://opencode.ai/config.json);
 // OpenCode hooks are registered through the plugin SDK (`Hooks` export) only.
+// Codex: merging the JSON template into its `config.toml` hook settings path
+// would corrupt TOML, so codex hooks ship through the plugin bundle
+// (plugin/codex/hooks.json, copied by installPlugin). The UserPromptSubmit
+// gate is registered there; the codex template mirrors it for harnesses that
+// merge JSON hook files. Do NOT add 'codex' here without also preventing the
+// bundle/template double-registration.
 const HOOK_CLIENTS = new Set(['claude-code']);
 
 export function getClientName(client) {
@@ -190,14 +198,13 @@ function recordUninstall(client, type) {
 // ---------------------------------------------------------------------------
 
 function readJson(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const contents = fs.readFileSync(filePath, 'utf-8');
   try {
-    if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    }
-  } catch {
-    // corrupt file
+    return JSON.parse(contents);
+  } catch (error) {
+    throw new Error(`Invalid JSON in existing client configuration: ${filePath}`, { cause: error });
   }
-  return null;
 }
 
 function writeJson(filePath, data) {
@@ -235,6 +242,52 @@ function removeDir(dirPath) {
   } catch {
     // permission error
   }
+}
+
+function pluginConfigPath(client) {
+  if (client === 'claude-code') return path.join(homeDir, '.claude', 'settings.json');
+  if (client === 'openclaw') return path.join(homeDir, '.openclaw', 'config.json');
+  if (client === 'codex') return path.join(homeDir, '.codex', 'config.toml');
+  return null;
+}
+
+function installPluginTree(sourceDir, targetDir) {
+  const parentDir = path.dirname(targetDir);
+  const stagingDir = path.join(parentDir, `.squish-plugin-staging-${randomUUID()}`);
+  const backupDir = path.join(parentDir, `.squish-plugin-backup-${randomUUID()}`);
+  let targetBackedUp = false;
+  let targetInstalled = false;
+  fs.mkdirSync(parentDir, { recursive: true });
+
+  try {
+    if (fs.existsSync(targetDir)) copyDir(targetDir, stagingDir);
+    else ensureDir(stagingDir);
+    copyDir(sourceDir, stagingDir);
+    if (fs.existsSync(targetDir)) {
+      fs.renameSync(targetDir, backupDir);
+      targetBackedUp = true;
+    }
+    fs.renameSync(stagingDir, targetDir);
+    targetInstalled = true;
+    return {
+      commit() { removeDir(backupDir); },
+      rollback() {
+        if (targetInstalled) removeDir(targetDir);
+        if (targetBackedUp) fs.renameSync(backupDir, targetDir);
+        removeDir(stagingDir);
+      },
+    };
+  } catch (error) {
+    removeDir(stagingDir);
+    if (targetBackedUp && !fs.existsSync(targetDir)) fs.renameSync(backupDir, targetDir);
+    throw error;
+  }
+}
+
+function restoreConfigSnapshot(filePath, existed, content) {
+  if (!filePath) return;
+  if (existed) fs.writeFileSync(filePath, content);
+  else if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
 // ---------------------------------------------------------------------------
@@ -295,11 +348,27 @@ export function installPlugin(client, { dryRun = false } = {}) {
       return { ok: true, path: targetDir };
     }
 
-    // Copy plugin files
-    copyDir(sourcePluginDir, targetDir);
+    // Validate JSON-backed host config before touching the installed plugin
+    // tree. Otherwise malformed settings leave a partial install behind.
+    if (client === 'claude-code') readJson(path.join(homeDir, '.claude', 'settings.json'));
+    if (client === 'openclaw') readJson(path.join(homeDir, '.openclaw', 'config.json'));
 
-    // Enable plugin in client config
-    enablePluginInConfig(client);
+    const configPath = pluginConfigPath(client);
+    const configExisted = Boolean(configPath && fs.existsSync(configPath));
+    const configSnapshot = configExisted ? fs.readFileSync(configPath) : null;
+    const treeInstall = installPluginTree(sourcePluginDir, targetDir);
+    try {
+      // Enable only after the complete plugin tree is staged and swapped in.
+      enablePluginInConfig(client);
+    } catch (error) {
+      try {
+        restoreConfigSnapshot(configPath, configExisted, configSnapshot);
+        treeInstall.rollback();
+      } catch (rollbackError) {
+        throw new Error(`${error.message || String(error)}; plugin install rollback failed: ${rollbackError.message || String(rollbackError)}`, { cause: error });
+      }
+      throw error;
+    }
 
     // Mirror slash command file to the client's commands folder, if applicable.
     // This is a best-effort step: the plugin itself still works without it.
@@ -320,6 +389,7 @@ export function installPlugin(client, { dryRun = false } = {}) {
     }
 
     recordInstall(client, 'plugin');
+    treeInstall.commit();
     return { ok: true, path: targetDir };
   } catch (error) {
     return { ok: false, error: error.message || String(error) };
@@ -337,11 +407,24 @@ export function uninstallPlugin(client, { dryRun = false } = {}) {
       return { ok: true, path: targetDir };
     }
 
-    // Remove plugin files
-    removeDir(targetDir);
-
-    // Disable plugin in client config
-    disablePluginInConfig(client);
+    const configPath = pluginConfigPath(client);
+    const configExisted = Boolean(configPath && fs.existsSync(configPath));
+    const configSnapshot = configExisted ? fs.readFileSync(configPath) : null;
+    const backupDir = path.join(path.dirname(targetDir), `.squish-plugin-uninstall-${randomUUID()}`);
+    const hadPluginTree = fs.existsSync(targetDir);
+    if (hadPluginTree) fs.renameSync(targetDir, backupDir);
+    try {
+      // Disable only after the installed tree is safely recoverable.
+      disablePluginInConfig(client);
+    } catch (error) {
+      try {
+        restoreConfigSnapshot(configPath, configExisted, configSnapshot);
+        if (hadPluginTree) fs.renameSync(backupDir, targetDir);
+      } catch (rollbackError) {
+        throw new Error(`${error.message || String(error)}; plugin uninstall rollback failed: ${rollbackError.message || String(rollbackError)}`, { cause: error });
+      }
+      throw error;
+    }
 
     // Remove mirrored slash command file, if it was installed. Best-effort.
     try {
@@ -359,6 +442,7 @@ export function uninstallPlugin(client, { dryRun = false } = {}) {
     }
 
     recordUninstall(client, 'plugin');
+    if (hadPluginTree) removeDir(backupDir);
     return { ok: true, path: targetDir };
   } catch (error) {
     return { ok: false, error: error.message || String(error) };
@@ -464,7 +548,7 @@ function disablePluginInConfig(client) {
       const configPath = path.join(homeDir, '.codex', 'config.toml');
       if (fs.existsSync(configPath)) {
         let content = fs.readFileSync(configPath, 'utf-8');
-        const pattern = /\n?\[plugins\."squish-memory@local"\][\s\S]*?(?=\n\[|$)/m;
+        const pattern = /\n?\[plugins\."squish-memory@local"\][\s\S]*?(?=\n\[|$)/;
         content = content.replace(pattern, '');
         fs.writeFileSync(configPath, content, 'utf-8');
       }
@@ -543,6 +627,19 @@ export function installHooks(client, { dryRun = false } = {}) {
     const hooksConfig = JSON.parse(
       JSON.stringify(template).replace(/\{\{HOOK_DIR\}\}/g, hookDir.replace(/\\/g, '/'))
     );
+
+    // The UserPromptSubmit gate hook script must ship alongside the other
+    // hook scripts, or the rendered template would install a dead command.
+    // Warn but never block the install (fail-open: a gate that is simply not
+    // wired is better than a refused installation, and the hook itself also
+    // fails open at runtime when the gate binary is unavailable).
+    const renderedStr = JSON.stringify(hooksConfig);
+    if (renderedStr.includes('new-hook.js') && !fs.existsSync(path.join(hookDir, 'new-hook.js'))) {
+      process.stderr.write(
+        `[squish] warning: gate hook script missing at ${path.join(hookDir, 'new-hook.js')}; ` +
+        'the installed UserPromptSubmit hook will fail open\n'
+      );
+    }
 
     const settings = readJson(settingsPath) || {};
     // Per-event merge: preserves any user-defined hook events (e.g. the user's

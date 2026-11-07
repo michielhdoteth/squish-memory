@@ -5,11 +5,19 @@
 
 import { eq, inArray } from 'drizzle-orm';
 import { getDbClient } from '../lib/db-client.js';
-import { decrypt } from '../security/encrypt.js';
+import { readMemoryContent } from '../security/encrypted-read.js';
 import { normalizeMemory, type MemoryRecord } from './normalization.js';
 import { requireUuid } from '../lib/validation.js';
 import { withDatabaseErrorHandling } from '../lib/utils.js';
 import { logger } from '../logger.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
+
+async function assertUnscopedLoaderAvailable(operation: string, resourceId = 'unscoped'): Promise<void> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(resourceId, 'memory', `Direct ${operation} is disabled under strict trust until caller-scoped provenance authorization is implemented`);
+  }
+}
 
 export interface LoadMemoryOptions {
   incrementAccess?: boolean;
@@ -29,6 +37,7 @@ export async function loadMemory(
   
   // Validate UUID
   requireUuid(id);
+  await assertUnscopedLoaderAvailable('memory load', id);
   
   const { db, schema } = await getDbClient();
   
@@ -49,16 +58,12 @@ export async function loadMemory(
   
   // Determine content: decrypt if needed
   let content = row.content;
-  let encryptedContent = row.encrypted_content;
-  let encryptionNonce = row.encryption_nonce;
+  let encryptedContent = row.encryptedContent ?? row.encrypted_content;
+  let encryptionNonce = row.encryptionNonce ?? row.encryption_nonce;
+  const isEncrypted = Boolean(row.isEncrypted ?? row.is_encrypted);
   
-  if (shouldDecrypt && row.is_encrypted) {
-    try {
-      content = decrypt(encryptedContent, encryptionNonce);
-    } catch (e: any) {
-      logger.warn('Failed to decrypt memory', e);
-      content = row.content; // fallback to stored content (encrypted)
-    }
+  if (shouldDecrypt) {
+    content = readMemoryContent(row, { shouldDecrypt: true });
   }
   
   // Build result object
@@ -92,6 +97,7 @@ export async function loadMemories(
   if (ids.length === 0) {
     return new Map();
   }
+  await assertUnscopedLoaderAvailable('batch memory load', 'memory_batch_load');
   
   // Validate all UUIDs
   for (const id of ids) {
@@ -133,12 +139,7 @@ export async function loadMemories(
     let encryptionNonce = row.encryption_nonce;
     
     if (shouldDecrypt && row.is_encrypted) {
-      try {
-        content = decrypt(encryptedContent, encryptionNonce);
-      } catch (e: any) {
-        logger.warn('Failed to decrypt memory', e);
-        content = row.content;
-      }
+      content = readMemoryContent(row, { shouldDecrypt: true });
     }
     
     let result: any = { ...row, content };
@@ -170,6 +171,7 @@ export async function loadMemories(
 export async function loadMemoryRaw(id: string): Promise<any | null> {
   // Validate UUID
   requireUuid(id);
+  await assertUnscopedLoaderAvailable('raw memory load', id);
   
   const { db, schema } = await getDbClient();
   

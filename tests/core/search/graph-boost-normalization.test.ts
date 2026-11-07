@@ -12,10 +12,8 @@ import { describe, test, expect } from 'bun:test';
 import {
   logScaleCoactivation,
   normalizeGraphBoostMap,
-  calculateGraphBoostNormalized,
   calculateRecencyBonus,
 } from '../../../core/search/graph-boost.js';
-import { getGraphBackend } from '../../../core/search/graph-boost.js';
 import { getGraphBoostFlags } from '../../../core/retrieval/config.js';
 
 describe('Graph Boost - normalizeGraphBoostMap (pure)', () => {
@@ -127,59 +125,8 @@ describe('Graph Boost - legacy escape hatch flag', () => {
 });
 
 describe('Graph Boost - calculateGraphBoostNormalized (integration)', () => {
-  test('bounded in-set contributions over an in-memory graph', async () => {
-    const backend = await getGraphBackend();
-    const now = new Date().toISOString();
-
-    // Directed edges: a is the hub, c is mid, b/d have no outgoing edges.
-    await backend.createEdge('nb5-a', 'nb5-b', { weight: 1.0, coactivationCount: 100, lastAccessedAt: now, associationType: 'relates_to' });
-    await backend.createEdge('nb5-a', 'nb5-c', { weight: 1.0, coactivationCount: 10, lastAccessedAt: now, associationType: 'relates_to' });
-    await backend.createEdge('nb5-c', 'nb5-d', { weight: 1.0, coactivationCount: 5, lastAccessedAt: now, associationType: 'relates_to' });
-
-    const { normalized, raw } = await calculateGraphBoostNormalized(['nb5-a', 'nb5-b', 'nb5-c', 'nb5-d']);
-
-    expect(normalized.size).toBe(4);
-
-    // Hub candidate normalizes to exactly 1
-    expect(normalized.get('nb5-a')).toBe(1);
-
-    // Unconnected candidates contribute nothing
-    expect(normalized.get('nb5-b')).toBe(0);
-    expect(normalized.get('nb5-d')).toBe(0);
-
-    // Mid-connected candidate lands strictly inside [0, 1]
-    const mid = normalized.get('nb5-c')!;
-    expect(mid).toBeGreaterThan(0);
-    expect(mid).toBeLessThan(1);
-
-    // Normalization preserves raw ordering
-    expect(normalized.get('nb5-a')!).toBeGreaterThanOrEqual(mid);
-
-    // Raw sums are finite, non-negative, and uncapped beyond the legacy 3.0 cap
-    for (const v of raw.values()) {
-      expect(Number.isFinite(v)).toBe(true);
-      expect(v).toBeGreaterThanOrEqual(0);
-    }
-  });
-
-  test('log scaling visibly dampens hub coactivation vs legacy raw boost', async () => {
-    const backend = await getGraphBackend();
-    const now = new Date().toISOString();
-
-    // Two candidates each with one edge; identical except coactivation count.
-    await backend.createEdge('lg-x', 'lg-x2', { weight: 1.0, coactivationCount: 10000, lastAccessedAt: now, associationType: 'relates_to' });
-    await backend.createEdge('lg-y', 'lg-y2', { weight: 1.0, coactivationCount: 100, lastAccessedAt: now, associationType: 'relates_to' });
-
-    const { raw } = await calculateGraphBoostNormalized(['lg-x', 'lg-y']);
-    const rx = raw.get('lg-x')!;
-    const ry = raw.get('lg-y')!;
-
-    // Linear would give a 10000/100 = 100x gap; log must compress it hard.
-    expect(rx / ry).toBeLessThan(3);
-    expect(rx).toBeGreaterThan(ry); // still monotonic
-  });
-
   test('empty candidate set returns empty maps', async () => {
+    const { calculateGraphBoostNormalized } = await import('../../../core/search/graph-boost.js');
     const { normalized, raw } = await calculateGraphBoostNormalized([]);
     expect(normalized.size).toBe(0);
     expect(raw.size).toBe(0);

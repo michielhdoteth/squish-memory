@@ -10,6 +10,8 @@ import { eq } from 'drizzle-orm';
 import { estimateMergeSavingsPreview } from '../analytics/token-estimator.js';
 import { mergeMemories } from '../strategies/merge-strategies.js';
 import { asArray, toIsoString } from '../utils/json-fields.js';
+import { deserializeTags, deserializeMetadata } from '../../../core/memory/serialization.js';
+import { assertMergeWorkflowAvailable } from './strict-trust-guard.js';
 
 interface PreviewMergeInput {
   proposalId: string;
@@ -48,6 +50,7 @@ interface PreviewMergeResponse {
 
 export async function handlePreviewMerge(input: PreviewMergeInput): Promise<PreviewMergeResponse> {
   try {
+    assertMergeWorkflowAvailable();
     const { proposalId } = input;
 
     if (!proposalId) {
@@ -82,7 +85,14 @@ export async function handlePreviewMerge(input: PreviewMergeInput): Promise<Prev
     for (const id of sourceIds) {
       const [memory] = await db.select().from(schema.memories).where(eq(schema.memories.id, id));
       if (memory) {
-        sourceMemories.push(memory);
+        // Boundary normalization (DEFECT 1): tags/metadata arrive as TEXT
+        // JSON strings; the preview's tags contract is string[] and
+        // mergeMemories must not iterate a raw string into characters.
+        sourceMemories.push({
+          ...memory,
+          tags: deserializeTags(memory.tags),
+          metadata: deserializeMetadata(memory.metadata),
+        });
       }
     }
 

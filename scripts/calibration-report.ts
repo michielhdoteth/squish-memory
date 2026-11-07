@@ -80,7 +80,9 @@ async function main() {
   const benchPath = join(tmp, 'bench.json');
 
   console.log('[calibration-report] running golden eval...');
-  runScript('tests/golden/run-eval.ts', goldenPath);
+  // The harness moved to benchmark/runners/retrieval.ts; tests/golden/run-eval.ts
+  // is a deprecated re-export shim that writes no report when invoked.
+  runScript('benchmark/runners/retrieval.ts', goldenPath);
   const golden: GoldenReport = JSON.parse(readFileSync(goldenPath, 'utf-8'));
 
   console.log('[calibration-report] running memory bench...');
@@ -157,7 +159,7 @@ async function main() {
     lines.push('## Memory bench (contradiction / temporal / abstention)');
     lines.push('');
     if (o) {
-      lines.push(`Macro penalty score ${o.macroPenaltyScore.toFixed(3)} (range -1..+1), micro ${o.microPenaltyScore.toFixed(3)}, confident-wrong ${o.confidentWrong}.`);
+      lines.push(`Macro penalty score ${o.macroPenaltyScore.toFixed(3)} (range -1..+1), micro ${o.microPenaltyScore.toFixed(4)}, confident-wrong ${o.confidentWrong}.`);
       lines.push('');
     }
     lines.push(mdTable(

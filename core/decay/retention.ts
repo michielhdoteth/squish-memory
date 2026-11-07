@@ -26,6 +26,7 @@
  */
 
 import { betaForMemoryType, DEFAULT_TAU_DAYS } from './ebbinghaus.js';
+import { toEpochMillisFromMixed } from '../lib/timestamps.js';
 import { logger } from '../logger.js';
 
 export interface RetentionRow {
@@ -62,18 +63,15 @@ const FALLBACK_TAU_DAYS = DEFAULT_TAU_DAYS;
  * epoch SECONDS (<1e11), epoch milliseconds, and ISO-8601 text. Returns null
  * for anything unparseable so callers can fall back explicitly instead of
  * silently computing NaN -> falsy -> "fully retained".
+ *
+ * Now the shared `toEpochMillisFromMixed` (the twin of contradiction-resolver's
+ * `toMs` and temporal-validity's `normalizeTimestampValue`). Its numeric-string
+ * rule is integer-only; the old local copy also accepted decimals
+ * (`/^\d+(\.\d+)?$/`), which only mattered for fractional epoch strings that
+ * SQLite integer columns never produce.
  */
 function toMs(value: string | number | Date | null | undefined): number | null {
-  if (value == null) return null;
-  if (value instanceof Date) return isNaN(value.getTime()) ? null : value.getTime();
-  const raw = String(value).trim();
-  if (raw === '') return null;
-  const num = typeof value === 'number' ? value : Number(raw);
-  if (Number.isFinite(num) && /^\d+(\.\d+)?$/.test(raw)) {
-    return num < 1e11 ? num * 1000 : num; // seconds -> ms
-  }
-  const parsed = new Date(raw).getTime();
-  return Number.isFinite(parsed) ? parsed : null;
+  return toEpochMillisFromMixed(value);
 }
 
 /**

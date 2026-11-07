@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, blob, index, primaryKey, unique } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, blob, index, primaryKey, unique, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 
@@ -14,8 +14,8 @@ export const users = sqliteTable('users', {
   name: text('name'),
   email: text('email'),
   preferences: text('preferences').$type<Record<string, unknown>>(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 });
 
 export const memoryAnalysisJobs = sqliteTable('memory_analysis_jobs', {
@@ -45,8 +45,8 @@ export const projects = sqliteTable('projects', {
   path: text('path').notNull(),
   description: text('description'),
   metadata: text('metadata').$type<Record<string, unknown>>(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('projects_path_idx').on(table.path),
 ]);
@@ -157,7 +157,7 @@ export const memories = sqliteTable(
   // Per-memory decay rate (integer percentage, e.g., 30 = 30% decay per cycle)
   decayRate: integer('decay_rate').default(30),
     coactivationScore: integer('coactivation_score').default(0),
-    lastDecayAt: integer('last_decay_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    lastDecayAt: integer('last_decay_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`),
 
     // v0.3.0: Agent-Aware Memory
     agentId: text('agent_id'),
@@ -180,12 +180,12 @@ export const memories = sqliteTable(
     // v0.3.0: Temporal Facts
     validFrom: integer('valid_from', { mode: 'timestamp' }),
     validTo: integer('valid_to', { mode: 'timestamp' }),
-    recordedAt: integer('recorded_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(), // When agent learned/stored the fact
+    recordedAt: integer('recorded_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(), // When agent learned/stored the fact
     supersededBy: text('superseded_by').references((): any => (memories as any).id),
     version: integer('version').default(1),
 
-    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
   },
   (table): any => [
     index('memories_project_idx').on(table.projectId),
@@ -275,12 +275,12 @@ export const conversations = sqliteTable('conversations', {
   messageCount: integer('message_count').default(0),
   tokenCount: integer('token_count').default(0),
 
-  startedAt: integer('started_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  startedAt: integer('started_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
   endedAt: integer('ended_at', { mode: 'timestamp' }),
 
   metadata: text('metadata').$type<Record<string, unknown>>(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('conversations_project_idx').on(table.projectId),
   index('conversations_session_idx').on(table.sessionId),
@@ -302,7 +302,7 @@ export const messages = sqliteTable('messages', {
   toolCalls: text('tool_calls').$type<unknown[]>(),
   metadata: text('metadata').$type<Record<string, unknown>>(),
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('messages_conversation_idx').on(table.conversationId),
   index('messages_role_idx').on(table.role),
@@ -347,7 +347,7 @@ export const learnings = sqliteTable('learnings', {
   // Migration tracking
   isImported: integer('is_imported', { mode: 'boolean' }).default(false),
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('learnings_project_idx').on(table.projectId),
   index('learnings_type_idx').on(table.type),
@@ -374,8 +374,8 @@ export const agentPreferences = sqliteTable('agent_preferences', {
   confidence: text('confidence').default('0.5'),  // 0.00 to 1.00
   usageCount: integer('usage_count').default(1),
   
-  lastUpdated: integer('last_updated', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  lastUpdated: integer('last_updated', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('agent_preferences_project_idx').on(table.projectId),
   index('agent_preferences_key_idx').on(table.key),
@@ -398,8 +398,8 @@ export const entities = sqliteTable('entities', {
   lastMentionedAt: integer('last_mentioned_at'),
   aliases: text('aliases').$type<string[]>(),
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('entities_project_idx').on(table.projectId),
   index('entities_type_idx').on(table.type),
@@ -409,19 +409,18 @@ export const entities = sqliteTable('entities', {
 /**
  * Namespaces - Hierarchical folder-like namespaces for memory organization
  */
-export const namespaces: any = sqliteTable('namespaces', {
+export const namespaces = sqliteTable('namespaces', {
   id: text('id').primaryKey().$default(() => crypto.randomUUID()),
   projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
 
   name: text('name').notNull(),
-  parentId: text('parent_id').references(() => namespaces.id, { onDelete: 'set null' }),
-  type: text('type'),
+  parentId: text('parent_id').references((): AnySQLiteColumn => namespaces.id, { onDelete: 'set null' }),
   description: text('description'),
 
   path: text('path'),
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('namespaces_project_idx').on(table.projectId),
   index('namespaces_parent_idx').on(table.parentId),
@@ -445,34 +444,13 @@ export const places: any = sqliteTable('places', {
   purpose: text('purpose'),
   memoryCount: integer('memory_count').default(0),
   
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('places_project_idx').on(table.projectId),
   index('places_type_idx').on(table.placeType),
   index('places_parent_idx').on(table.parentId),
   index('places_sort_order_idx').on(table.projectId, table.sortOrder),
-]);
-
-/**
- * @deprecated Table no longer created on new installs. Kept as Drizzle schema
- * for migration/backfill scripts (backfill-v1.5.0.ts, migrations/knowledge.ts).
- */
-export const memoryPlaces: any = sqliteTable('memory_places', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  memoryId: text('memory_id').references(() => memories.id, { onDelete: 'cascade' }).notNull(),
-  placeType: text('place_type').notNull(),
-  weight: real('weight').default(1.0).notNull(),
-  reason: text('reason'),
-  source: text('source').default('heuristic').notNull(),
-  isPrimary: integer('is_primary', { mode: 'boolean' }).default(false),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-  index('memory_places_memory_idx').on(table.memoryId),
-  index('memory_places_place_type_idx').on(table.placeType),
-  index('memory_places_place_weight_idx').on(table.placeType, table.weight),
-  index('memory_places_memory_primary_idx').on(table.memoryId, table.isPrimary),
-  unique('memory_places_unique').on(table.memoryId, table.placeType, table.source),
 ]);
 
 /**
@@ -484,7 +462,7 @@ export const memoryTags = sqliteTable('memory_tags', {
   tag: text('tag').notNull(),
   source: text('source').default('heuristic').notNull(),  // 'heuristic' | 'llm' | 'manual' | 'dream'
   confidence: real('confidence'),  // nullable, 0.0-1.0
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('memory_tags_tag_idx').on(table.tag),
   index('memory_tags_memory_idx').on(table.memoryId),
@@ -510,88 +488,30 @@ export const placeRules: any = sqliteTable('place_rules', {
   priority: integer('priority').default(0),
   enabled: integer('enabled').default(1),
   
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('place_rules_project_idx').on(table.projectId),
   index('place_rules_type_idx').on(table.placeType),
 ]);
 
-/**
- * Memory Layers - Tiered L0/L1/L2 summaries for token-efficient retrieval
- */
-export const memoryLayers = sqliteTable('memory_layers', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  memoryId: text('memory_id').references(() => memories.id, { onDelete: 'cascade' }),
-
-  layerType: text('layer_type').notNull().$type<'l0_abstract' | 'l1_overview' | 'l2_full'>(),
-  content: text('content').notNull(),
-  tokenCount: integer('token_count').default(0),
-
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-  index('memory_layers_memory_idx').on(table.memoryId),
-  index('memory_layers_type_idx').on(table.layerType),
-]);
-
 // Progressive Disclosure & Context Paging Tables
 // ============================================================================
-
-/**
- * Lightweight memory indices for progressive disclosure - previews and metadata
- * used for quick filtering before loading full memories
- */
-export const lightweightMemoryIndices = sqliteTable('lightweight_memory_indices', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  memoryId: text('memory_id').references(() => memories.id, { onDelete: 'cascade' }),
-  
-  // Hash for quick comparison
-  contentHash: text('content_hash').notNull(),
-  contentPreview: text('content_preview').notNull(),
-  keyTerms: text('key_terms').$type<string[]>(),
-  
-  // Categorization
-  category: text('category').notNull(),
-  importanceScore: integer('importance_score').notNull(),
-  
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-  index('lightweight_indices_memory_idx').on(table.memoryId),
-  index('lightweight_indices_category_idx').on(table.category),
-  index('lightweight_indices_importance_idx').on(table.importanceScore),
-]);
-
-/**
- * Context paging sessions for tracking loaded/preloaded memories
- * Agent-controlled memory loading system
- */
-export const contextPagingSessions = sqliteTable('context_paging_sessions', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  sessionId: text('session_id').notNull().unique(),
-  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
-  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
-  
-  // Loaded memories (actively in context)
-  loadedMemoryIds: text('loaded_memory_ids').$type<string[]>().default([]),
-  
-  // Preload candidates (ready to load if needed)
-  preloadCandidateIds: text('preload_candidate_ids').$type<string[]>().default([]),
-  
-  // Token tracking
-  tokenBudget: integer('token_budget').default(8000).notNull(),
-  tokensUsed: integer('tokens_used').default(0).notNull(),
-  loadedMemoriesTokens: integer('loaded_memories_tokens').default(0).notNull(),
-  
-  // Session metadata
-  metadata: text('metadata').$type<Record<string, unknown>>(),
-  
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-  index('context_paging_session_idx').on(table.sessionId),
-  index('context_paging_project_idx').on(table.projectId),
-  index('context_paging_created_idx').on(table.createdAt),
-]);
+//
+// REMOVED: `lightweight_memory_indices` and `context_paging_sessions`.
+//
+// No bootstrap, migration, or backfill DDL ever created either table, so they do
+// not exist on any database. Their only reader,
+// `core/memory/progressive-disclosure.ts`, has zero importers anywhere in the
+// package (verified by static reference sweep across core/, mcp/, cli/, db/,
+// scripts/, bin/ and tests/), and none of its nine exports is called. Every code
+// path through it already fails with `no such table`.
+//
+// The declarations were not inert: drizzle-orm emits every declared column in an
+// INSERT column list, so the moment that module is wired back up it would fail
+// at the driver rather than at the missing schema. Removing them makes the
+// absence honest. If progressive disclosure is revived, it needs DDL in
+// db/bootstrap.ts plus these declarations in the same change.
 
 // Memory Merging Tables
 // ============================================================================
@@ -621,7 +541,7 @@ export const memoryMergeProposals = sqliteTable('memory_merge_proposals', {
   reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
   reviewNotes: text('review_notes'),
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
   expiresAt: integer('expires_at', { mode: 'timestamp' }),
 }, (table) => [
   index('memory_merge_proposals_project_status_idx').on(table.projectId, table.status),
@@ -649,7 +569,7 @@ export const memoryMergeHistory = sqliteTable('memory_merge_history', {
   reversedAt: integer('reversed_at', { mode: 'timestamp' }),
   reversedBy: text('reversed_by'),
 
-  mergedAt: integer('merged_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  mergedAt: integer('merged_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 });
 
 /**
@@ -660,63 +580,18 @@ export const memoryHashCache = sqliteTable('memory_hash_cache', {
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
 
   simhash: text('simhash'),
-  minhash: text('minhash').$type<number[]>(),
+  // Signatures are persisted as JSON text; consumers must parse before comparison.
+  minhash: text('minhash'),
 
   contentHash: text('content_hash').notNull(),
-  lastUpdated: integer('last_updated', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  lastUpdated: integer('last_updated', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('memory_hash_cache_project_id_idx').on(table.projectId),
   index('memory_hash_cache_simhash_idx').on(table.simhash),
 ]);
 
-/**
- * Entity Relations - relationships between entities
- */
-export const entityRelations = sqliteTable('entity_relations', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  fromEntityId: text('from_entity_id').notNull().references(() => entities.id, { onDelete: 'cascade' }),
-  toEntityId: text('to_entity_id').notNull().references(() => entities.id, { onDelete: 'cascade' }),
-
-  type: text('type').notNull(),
-  weight: integer('weight').default(1),
-  properties: text('properties').$type<Record<string, unknown>>(),
-
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-  index('relations_from_idx').on(table.fromEntityId),
-  index('relations_to_idx').on(table.toEntityId),
-  index('relations_type_idx').on(table.type),
-]);
-
 // v0.3.0: Lifecycle Features - Associations, Summarization, Snapshots
 // ============================================================================
-
-/**
- * Memory Associations - waypoint graph for co-activation tracking
- */
-export const memoryAssociations = sqliteTable('memory_associations', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  fromMemoryId: text('from_memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
-  toMemoryId: text('to_memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
-  associationType: text('association_type').notNull().$type<'co_occurred' | 'supersedes' | 'contradicts' | 'supports' | 'relates_to'>(),
-  weight: integer('weight').default(1),
-  coactivationCount: integer('coactivation_count').default(0),
-  metadata: text('metadata').$type<Record<string, unknown>>(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  lastCoactivatedAt: integer('last_coactivated_at', { mode: 'timestamp' }),
-}, (table) => [
-  index('memory_associations_from_idx').on(table.fromMemoryId),
-  index('memory_associations_to_idx').on(table.toMemoryId),
-  index('memory_associations_type_idx').on(table.associationType),
-  index('memory_associations_weight_idx').on(table.weight),
-  // v0.4.2: Composite index for graph traversal optimization
-  index('memory_associations_graph_traversal_idx').on(
-    table.fromMemoryId,
-    table.toMemoryId,
-    table.weight,
-    table.associationType
-  ),
-]);
 
 /**
  * Session Summaries - incremental and rolling session summaries
@@ -730,7 +605,7 @@ export const sessionSummaries = sqliteTable('session_summaries', {
   compressedFrom: integer('compressed_from'),
   tokensSaved: integer('tokens_saved'),
   embedding: blob('embedding'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('session_summaries_conversation_idx').on(table.conversationId),
   index('session_summaries_project_idx').on(table.projectId),
@@ -744,11 +619,14 @@ export const sessionSummaries = sqliteTable('session_summaries', {
 export const memorySnapshots = sqliteTable('memory_snapshots', {
   id: text('id').primaryKey().$default(() => crypto.randomUUID()),
   memoryId: text('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
-  snapshotType: text('snapshot_type').notNull().$type<'before_update' | 'after_update' | 'periodic' | 'correction'>(),
+  snapshotType: text('snapshot_type').notNull().$type<'before_update' | 'after_update' | 'periodic' | 'correction' | 'archive'>(),
   content: text('content').notNull(),
   metadata: text('metadata').$type<Record<string, unknown>>(),
   diff: text('diff').$type<Record<string, unknown>>(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  encryptedPayload: text('encrypted_payload'),
+  encryptedNonce: text('encrypted_nonce'),
+  encryptionFormat: text('encryption_format'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('memory_snapshots_memory_idx').on(table.memoryId),
   index('memory_snapshots_type_idx').on(table.snapshotType),
@@ -773,8 +651,8 @@ export const coreMemory = sqliteTable('core_memory', {
    // Version tracking
    version: integer('version').default(1).notNull(),
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('core_memory_project_idx').on(table.projectId),
   index('core_memory_user_idx').on(table.userId),
@@ -802,8 +680,8 @@ export const contextSessions = sqliteTable('context_sessions', {
   // Session metadata
   metadata: text('metadata').$type<Record<string, unknown>>(),
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('context_sessions_session_idx').on(table.sessionId),
   index('context_sessions_project_idx').on(table.projectId),
@@ -913,7 +791,7 @@ export const knowledge: any = sqliteTable(
     // Temporal facts
     validFrom: integer('valid_from', { mode: 'timestamp' }),
     validTo: integer('valid_to', { mode: 'timestamp' }),
-    recordedAt: integer('recorded_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+    recordedAt: integer('recorded_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 
     // Access tracking
     accessCount: integer('access_count').default(0),
@@ -942,7 +820,7 @@ export const knowledge: any = sqliteTable(
     // Decay system
     decayRate: integer('decay_rate').default(30),
     coactivationScore: integer('coactivation_score').default(0),
-    lastDecayAt: integer('last_decay_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    lastDecayAt: integer('last_decay_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`),
 
     // Layer tracking
     hasL0Abstract: integer('has_l0_abstract', { mode: 'boolean' }).default(false),
@@ -961,8 +839,8 @@ export const knowledge: any = sqliteTable(
     // Cloud-specific
     employeeId: text('employee_id'),
 
-    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
   },
   (table): any => [
     index('knowledge_project_idx').on(table.projectId),
@@ -1026,7 +904,11 @@ export const knowledgeEdges = sqliteTable(
     edgeType: text('edge_type').notNull(),
     weight: real('weight').default(1.0),
     metadata: text('metadata').$type<Record<string, unknown>>(),
-    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+    validFrom: integer('valid_from', { mode: 'timestamp_ms' }),
+    validTo: integer('valid_to', { mode: 'timestamp_ms' }),
+    recordedAt: integer('recorded_at', { mode: 'timestamp_ms' }),
+    recordedTo: integer('recorded_to', { mode: 'timestamp_ms' }),
   },
   (table) => [
     index('knowledge_edges_from_idx').on(table.fromId, table.fromKind),
@@ -1034,7 +916,8 @@ export const knowledgeEdges = sqliteTable(
     index('knowledge_edges_type_idx').on(table.edgeType),
     index('knowledge_edges_from_kind_idx').on(table.fromKind),
     index('knowledge_edges_to_kind_idx').on(table.toKind),
-    unique('knowledge_edges_unique').on(table.fromId, table.fromKind, table.toId, table.toKind, table.edgeType),
+    unique('knowledge_edges_unique').on(table.fromId, table.fromKind, table.toId, table.toKind, table.edgeType, table.validFrom, table.recordedAt),
+    index('knowledge_edges_valid_time_idx').on(table.validFrom, table.validTo, table.recordedAt, table.recordedTo),
   ],
 );
 
@@ -1051,7 +934,7 @@ export const agentSessionCache = sqliteTable('agent_session_cache', {
   mtimeMs: integer('mtime_ms').notNull(),
   sizeBytes: integer('size_bytes').notNull(),
   payload: text('payload').notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('agent_session_cache_agent_idx').on(table.agent),
 ]);
@@ -1083,9 +966,6 @@ export type NewAgentPreference = typeof agentPreferences.$inferInsert;
 export type Entity = typeof entities.$inferSelect;
 export type NewEntity = typeof entities.$inferInsert;
 
-export type EntityRelation = typeof entityRelations.$inferSelect;
-export type NewEntityRelation = typeof entityRelations.$inferInsert;
-
 export type MemoryMergeProposal = typeof memoryMergeProposals.$inferSelect;
 export type NewMemoryMergeProposal = typeof memoryMergeProposals.$inferInsert;
 
@@ -1094,9 +974,6 @@ export type NewMemoryMergeHistory = typeof memoryMergeHistory.$inferInsert;
 
 export type MemoryHashCache = typeof memoryHashCache.$inferSelect;
 export type NewMemoryHashCache = typeof memoryHashCache.$inferInsert;
-
-export type MemoryAssociation = typeof memoryAssociations.$inferSelect;
-export type NewMemoryAssociation = typeof memoryAssociations.$inferInsert;
 
 export type SessionSummary = typeof sessionSummaries.$inferSelect;
 export type NewSessionSummary = typeof sessionSummaries.$inferInsert;
@@ -1124,7 +1001,7 @@ export const memoryFeedback = sqliteTable('memory_feedback', {
   retrievalPriorityDelta: integer('retrieval_priority_delta').default(0),
   injectedAt: integer('injected_at', { mode: 'timestamp' }),
   referencedAt: integer('referenced_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('memory_feedback_memory_idx').on(table.memoryId),
   index('memory_feedback_session_idx').on(table.sessionId),
@@ -1147,8 +1024,8 @@ export const maintenanceJobs = sqliteTable('maintenance_jobs', {
   successCount: integer('success_count').default(0),
   failureCount: integer('failure_count').default(0),
   jobConfig: text('job_config').$type<Record<string, unknown>>(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('maintenance_jobs_name_idx').on(table.jobName),
   index('maintenance_jobs_next_run_idx').on(table.nextRunAt),
@@ -1166,7 +1043,6 @@ export const maintenanceJobHistory = sqliteTable('maintenance_job_history', {
   error: text('error'),
   recordsProcessed: integer('records_processed').default(0),
   resultSummary: text('result_summary').$type<Record<string, unknown>>(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => [
   index('maintenance_job_history_job_idx').on(table.jobId),
   index('maintenance_job_history_started_idx').on(table.startedAt),
@@ -1182,11 +1058,8 @@ export type NewMaintenanceJob = typeof maintenanceJobs.$inferInsert;
 export type MaintenanceJobHistory = typeof maintenanceJobHistory.$inferSelect;
 export type NewMaintenanceJobHistory = typeof maintenanceJobHistory.$inferInsert;
 
-export type LightweightMemoryIndex = typeof lightweightMemoryIndices.$inferSelect;
-export type NewLightweightMemoryIndex = typeof lightweightMemoryIndices.$inferInsert;
-
-export type ContextPagingSession = typeof contextPagingSessions.$inferSelect;
-export type NewContextPagingSession = typeof contextPagingSessions.$inferInsert;
+// LightweightMemoryIndex / ContextPagingSession and their Insert types were
+// removed with their declarations (see the Progressive Disclosure section).
 
 // Knowledge System type exports
 export type Knowledge = typeof knowledge.$inferSelect;
@@ -1212,7 +1085,7 @@ export const memoryEditProposals = sqliteTable('memory_edit_proposals', {
   status: text('status').$type<'pending' | 'approved' | 'rejected' | 'expired'>().default('pending').notNull(),
   
   version: integer('version').default(1).notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
   reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
   reviewNotes: text('review_notes'),
 }, (table) => [
@@ -1224,38 +1097,8 @@ export const memoryEditProposals = sqliteTable('memory_edit_proposals', {
 export type MemoryEditProposal = typeof memoryEditProposals.$inferSelect;
 export type NewMemoryEditProposal = typeof memoryEditProposals.$inferInsert;
 
-export type SearchTrace = typeof searchTraces.$inferSelect;
-
-// Phase 3: Retrieval Tracing - Search Traces table
-// ============================================================================
-
-/**
- * Search Traces - Stores retrieval logs for debugging and performance analysis
- */
-export const searchTraces = sqliteTable('search_traces', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  sessionId: text('session_id').notNull(),
-  query: text('query').notNull(),
-  timestamp: integer('timestamp', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-
-  // Search pipeline stages (JSONB stored as text for SQLite)
-  queryRewrite: text('query_rewrite').$type<string | null>(),
-  candidateRetrieval: text('candidate_retrieval').$type<string | null>(),
-  entityFiltering: text('entity_filtering').$type<string | null>(),
-  hybridScoring: text('hybrid_scoring').$type<string | null>(),
-  reranking: text('reranking').$type<string | null>(),
-
-  // Final results
-  resultCount: integer('result_count').default(0),
-  topResults: text('top_results').$type<string | null>(),
-
-  // Performance metrics
-  totalDurationMs: integer('total_duration_ms').default(0),
-  metadata: text('metadata').$type<string | null>(),
-}, (table) => [
-  index('search_traces_session_idx').on(table.sessionId),
-  index('search_traces_timestamp_idx').on(table.timestamp),
-]);
+// Retrieval tracing writes to structured logs (core/logger.ts), not to a table.
+// The `search_traces` declaration had no DDL and no reader, so it was removed.
 
 // Belief Systems - Derived Beliefs from Memory
 // ============================================================================
@@ -1290,8 +1133,8 @@ export const beliefs = sqliteTable('beliefs', {
   // Metadata (stores edges, derivation info)
   metadata: text('metadata').$type<Record<string, unknown>>(),
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('beliefs_project_idx').on(table.projectId),
   index('beliefs_type_idx').on(table.beliefType),
@@ -1308,114 +1151,26 @@ export const beliefMemorySources = sqliteTable('belief_memory_sources', {
   beliefId: text('belief_id').references(() => beliefs.id, { onDelete: 'cascade' }).notNull(),
   memoryId: text('memory_id').references(() => memories.id, { onDelete: 'cascade' }).notNull(),
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('belief_sources_belief_idx').on(table.beliefId),
   index('belief_sources_memory_idx').on(table.memoryId),
 ]);
 
-/**
- * Belief Edges - Relationships between beliefs
- */
-export const beliefEdges = sqliteTable('belief_edges', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  fromBeliefId: text('from_belief_id').references(() => beliefs.id, { onDelete: 'cascade' }).notNull(),
-  toBeliefId: text('to_belief_id').references(() => beliefs.id, { onDelete: 'cascade' }).notNull(),
-
-  edgeType: text('edge_type').notNull().$type<BeliefEdgeType>(),
-  metadata: text('metadata').$type<Record<string, unknown>>(),
-
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-  index('belief_edges_from_idx').on(table.fromBeliefId),
-  index('belief_edges_to_idx').on(table.toBeliefId),
-]);
-
-// Strategy Systems (v1.7.0+)
+// Strategy Systems
 // ============================================================================
-
-/**
- * Strategies - executable strategies for agents
- */
-export const strategies = sqliteTable('strategies', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
-  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
-  agentId: text('agent_id'),
-
-  strategyType: text('strategy_type').notNull(),
-  title: text('title').notNull(),
-  description: text('description').notNull(),
-  context: text('context'),
-  steps: text('steps'),
-  successCriteria: text('success_criteria'),
-  failureIndicators: text('failure_indicators'),
-
-  confidence: real('confidence').default(0.5),
-  usageCount: integer('usage_count').default(0),
-  successCount: integer('success_count').default(0),
-  failureCount: integer('failure_count').default(0),
-  lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
-  lastSuccessAt: integer('last_success_at', { mode: 'timestamp' }),
-  lastFailureAt: integer('last_failure_at', { mode: 'timestamp' }),
-
-  status: text('status').default('active'),
-  supersededBy: text('superseded_by'),
-  tags: text('tags'),
-  metadata: text('metadata').$type<Record<string, unknown>>(),
-  visibilityScope: text('visibility_scope').default('private'),
-
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-  index('strategies_project_idx').on(table.projectId),
-  index('strategies_type_idx').on(table.strategyType),
-  index('strategies_status_idx').on(table.status),
-  index('strategies_confidence_idx').on(table.confidence),
-  index('strategies_user_idx').on(table.userId),
-]);
-
-/**
- * Strategy Edges - relationships between strategies
- */
-export const strategyEdges = sqliteTable('strategy_edges', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  fromStrategyId: text('from_strategy_id').references(() => strategies.id, { onDelete: 'cascade' }).notNull(),
-  toStrategyId: text('to_strategy_id').references(() => strategies.id, { onDelete: 'cascade' }).notNull(),
-
-  edgeType: text('edge_type').notNull(),
-  metadata: text('metadata').$type<Record<string, unknown>>(),
-
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-  index('strategy_edges_from_idx').on(table.fromStrategyId),
-  index('strategy_edges_to_idx').on(table.toStrategyId),
-]);
-
-/**
- * Strategy Belief Edges - links strategies to beliefs
- */
-export const strategyBeliefEdges = sqliteTable('strategy_belief_edges', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  strategyId: text('strategy_id').references(() => strategies.id, { onDelete: 'cascade' }).notNull(),
-  beliefId: text('belief_id').references(() => beliefs.id, { onDelete: 'cascade' }).notNull(),
-
-  edgeType: text('edge_type').notNull(),
-  metadata: text('metadata').$type<Record<string, unknown>>(),
-
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-  index('strategy_belief_edges_strategy_idx').on(table.strategyId),
-  index('strategy_belief_edges_belief_idx').on(table.beliefId),
-]);
+//
+// v2.0.0 absorbed `strategies`, `strategy_edges` and `strategy_belief_edges`
+// into `knowledge` / `knowledge_edges`, where `knowledge_kind = 'strategy'`
+// carries the strategy fields and `knowledge_edges` carries the links.
+// db/migrations/knowledge.ts still names the old tables because it reads them
+// as raw SQL during that one-time migration. The drizzle declarations had no DDL
+// and no reader and were removed.
 
 // Belief Types (re-exported for schema)
 export type BeliefType = 'decision' | 'preference' | 'failure_cause' | 'constraint' | 'state_change' | 'dispute';
 export type BeliefStatus = 'active' | 'superseded' | 'disputed';
 export type BeliefEdgeType = 'causes' | 'supports' | 'rejects' | 'supersedes' | 'depends_on';
-
-export type MemoryPlace = typeof memoryPlaces.$inferSelect;
-export type NewMemoryPlace = typeof memoryPlaces.$inferInsert;
 
 export type MemoryTag = typeof memoryTags.$inferSelect;
 export type NewMemoryTag = typeof memoryTags.$inferInsert;
@@ -1424,15 +1179,6 @@ export type Belief = typeof beliefs.$inferSelect;
 export type NewBelief = typeof beliefs.$inferInsert;
 export type BeliefMemorySource = typeof beliefMemorySources.$inferSelect;
 export type NewBeliefMemorySource = typeof beliefMemorySources.$inferInsert;
-export type BeliefEdge = typeof beliefEdges.$inferSelect;
-export type NewBeliefEdge = typeof beliefEdges.$inferInsert;
-
-export type Strategy = typeof strategies.$inferSelect;
-export type NewStrategy = typeof strategies.$inferInsert;
-export type StrategyEdge = typeof strategyEdges.$inferSelect;
-export type NewStrategyEdge = typeof strategyEdges.$inferInsert;
-export type StrategyBeliefEdge = typeof strategyBeliefEdges.$inferSelect;
-export type NewStrategyBeliefEdge = typeof strategyBeliefEdges.$inferInsert;
 
 // Skills System (v2.1.0)
 // ============================================================================
@@ -1466,8 +1212,8 @@ export const skills = sqliteTable('skills', {
   version: integer('version').default(1),
   supersedes: text('supersedes').references((): any => skills.id, { onDelete: 'set null' }),
   agentId: text('agent_id'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('skills_project_idx').on(table.projectId),
   index('skills_type_idx').on(table.skillType),
@@ -1492,7 +1238,7 @@ export const skillVersions = sqliteTable('skill_versions', {
   resources: text('resources').$type<string[]>(),
   validationRules: text('validation_rules').$type<Record<string, unknown>>(),
   changeSummary: text('change_summary'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('skill_versions_skill_idx').on(table.skillId),
   unique('skill_versions_unique').on(table.skillId, table.version),
@@ -1509,7 +1255,7 @@ export const skillAssignments = sqliteTable('skill_assignments', {
   enabled: integer('enabled', { mode: 'boolean' }).default(true),
   contextFilter: text('context_filter').$type<Record<string, unknown>>(),
   assignedBy: text('assigned_by').references(() => users.id, { onDelete: 'set null' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('skill_assignments_skill_idx').on(table.skillId),
   index('skill_assignments_agent_idx').on(table.agentId),
@@ -1525,7 +1271,7 @@ export const skillMemoryLinks = sqliteTable('skill_memory_links', {
   memoryId: text('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
   linkType: text('link_type').notNull().default('derived_from'),
   confidence: real('confidence').default(1.0),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('skill_memory_links_skill_idx').on(table.skillId),
   index('skill_memory_links_memory_idx').on(table.memoryId),
@@ -1547,7 +1293,7 @@ export const agentLoadouts = sqliteTable('agent_loadouts', {
   enabled: integer('enabled', { mode: 'boolean' }).default(true),
   injectionMode: text('injection_mode').default('append'),
   metadata: text('metadata').$type<Record<string, unknown>>(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('agent_loadouts_agent_idx').on(table.agentId),
   index('agent_loadouts_asset_idx').on(table.assetType, table.assetId),
@@ -1565,7 +1311,7 @@ export const visibilityRules = sqliteTable('visibility_rules', {
   granteeType: text('grantee_type').notNull(),
   granteeId: text('grantee_id').notNull(),
   permission: text('permission').notNull().default('read'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('visibility_rules_asset_idx').on(table.assetType, table.assetId),
   index('visibility_rules_grantee_idx').on(table.granteeType, table.granteeId),
@@ -1583,8 +1329,8 @@ export const teams = sqliteTable('teams', {
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
   description: text('description'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('teams_slug_idx').on(table.slug),
 ]);
@@ -1597,7 +1343,7 @@ export const team_members = sqliteTable('team_members', {
   teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   role: text('role').notNull().default('member'), // 'owner' | 'admin' | 'member'
-  joinedAt: integer('joined_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  joinedAt: integer('joined_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   unique('team_members_team_user_unique').on(table.teamId, table.userId),
   index('team_members_team_idx').on(table.teamId),
@@ -1614,7 +1360,7 @@ export const team_invitations = sqliteTable('team_invitations', {
   role: text('role').notNull().default('member'),
   code: text('code').notNull().unique(),
   expiresAt: integer('expires_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   index('team_invitations_team_idx').on(table.teamId),
   index('team_invitations_code_idx').on(table.code),
@@ -1629,7 +1375,7 @@ export const team_shares = sqliteTable('team_shares', {
   teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
   sharedBy: text('shared_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
   permission: text('permission').notNull().default('read'), // 'read' | 'write'
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s','now'))`).notNull(),
 }, (table) => [
   unique('team_shares_memory_team_unique').on(table.memoryId, table.teamId),
   index('team_shares_memory_idx').on(table.memoryId),
@@ -1640,41 +1386,32 @@ export const team_shares = sqliteTable('team_shares', {
 // Audit Tables
 // ============================================================================
 
-/**
- * Audit Logs - tracks all actions in the system
- */
-export const audit_logs = sqliteTable('audit_logs', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
-  action: text('action').notNull(),
-  entityType: text('entity_type').notNull(),
-  entityId: text('entity_id').notNull(),
-  teamId: text('team_id').references(() => teams.id, { onDelete: 'set null' }),
-  metadata: text('metadata', { mode: 'json' }),
-  ipAddress: text('ip_address'),
-  userAgent: text('user_agent'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+export const trustAuditLog = sqliteTable('trust_audit_log', {
+  id: text('id').primaryKey(),
+  actorHash: text('actor_hash').notNull(),
+  resourceHash: text('resource_hash').notNull(),
+  assetType: text('asset_type').notNull(),
+  decision: text('decision').notNull(),
+  reason: text('reason').notNull(),
+  createdAt: integer('created_at').notNull(),
 }, (table) => [
-  index('audit_logs_user_idx').on(table.userId),
-  index('audit_logs_action_idx').on(table.action),
-  index('audit_logs_entity_idx').on(table.entityType, table.entityId),
-  index('audit_logs_team_idx').on(table.teamId),
-  index('audit_logs_created_idx').on(table.createdAt),
+  index('trust_audit_created_idx').on(table.createdAt),
+  index('trust_audit_resource_idx').on(table.resourceHash, table.createdAt),
 ]);
 
-/**
- * Audit Log Changes - detailed change tracking
- */
-export const audit_log_changes = sqliteTable('audit_log_changes', {
-  id: text('id').primaryKey().$default(() => crypto.randomUUID()),
-  auditLogId: text('audit_log_id').notNull().references(() => audit_logs.id, { onDelete: 'cascade' }),
-  field: text('field').notNull(),
-  oldValue: text('old_value'),
-  newValue: text('new_value'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-  index('audit_log_changes_audit_idx').on(table.auditLogId),
-]);
+// ============================================================================
+// Audit
+// ============================================================================
+//
+// The SQLite runtime audit trail is the `audit_log` table owned by
+// core/knowledge/audit.ts (knowledge_id / action / agent_id / project_id /
+// session_id / details / created_at). There is no plural `audit_logs` table:
+// the declaration that used to exist here had no DDL anywhere, and
+// db/team-adapter.ts selected from it, so every getTeamActivity call threw
+// `no such table: audit_logs`. That adapter now reads the real table through
+// raw SQL. The declaration is not re-added here because a drizzle table with
+// no DDL is exactly the drift tests/db/drizzle-ddl-consistency.test.ts and
+// tests/db/dormant-drizzle-tables.test.ts exist to prevent.
 
 // Team type exports
 export type Team = typeof teams.$inferSelect;

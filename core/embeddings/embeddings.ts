@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
 import { config } from '../../config.js';
 import { getGoogleMultimodalEmbedding, isMultimodalInput, MultimodalInput } from './google-multimodal.js';
 import { logger } from '../logger.js';
 import { validateOutboundUrl } from '../lib/url-validator.js';
+import { isStrictTrustPolicy, resolveTrustedCallerId } from '../acl/trust-policy.js';
+import { getRequestPrincipal } from '../acl/request-principal.js';
 
 // Lazy-import transformers to avoid loading unless requested
 let transformersLocal: Promise<typeof import('./transformers-local.js')> | null = null;
@@ -44,20 +47,40 @@ function bundledModelId(): string {
   return `transformers:${model}:${config.localBundledDtype}`;
 }
 
+function routedModelId(model: string, routing: unknown[]): string {
+  const routingDigest = createHash('sha256').update(JSON.stringify(routing), 'utf8').digest('hex').slice(0, 16);
+  return `${model}:route-${routingDigest}`;
+}
+
 /**
- * Identifier of the embedding model that getEmbedding() resolves to RIGHT NOW.
- * Stamped into memories.embedding_model on writes so the reembed worker can
- * target rows produced by an older model.
+ * Identifier of the configured primary embedding model. Auto mode prefers the
+ * first configured backend; runtime fallback may still select another model.
+ * Stamped IDs include a digest of non-secret routing settings so deployments
+ * sharing a public model name do not silently share a vector-space identity.
  */
 export function activeEmbeddingModel(): string {
   const provider = config.embeddingsProvider;
   if (provider === 'none') return 'none';
-  if (provider === 'openai') return `openai:${config.openAiEmbeddingModel || 'text-embedding-3-small'}`;
-  if (provider === 'ollama') return `ollama:${config.ollamaEmbeddingModel}`;
-  if (provider === 'lmstudio') return `lmstudio:${config.lmStudioEmbeddingModel}`;
-  if (provider === 'google') return `google:${config.googleEmbeddingModel}`;
+  if (provider === 'openai') return routedModelId(`openai:${config.openAiEmbeddingModel || 'text-embedding-3-small'}`, [config.openAiApiUrl]);
+  if (provider === 'ollama') return routedModelId(`ollama:${config.ollamaEmbeddingModel}`, [config.ollamaUrl]);
+  if (provider === 'lmstudio') return routedModelId(`lmstudio:${config.lmStudioEmbeddingModel}`, [config.lmStudioUrl]);
+  if (provider === 'google') return routedModelId(`google:${config.googleEmbeddingModel}`, [config.googleCloudProject, config.googleCloudLocation]);
   if (provider === 'transformers' && config.transformersLocalModel) {
     return `transformers:${config.transformersLocalModel}:${config.localBundledDtype}`;
+  }
+  if (provider === 'auto') {
+    if (config.openAiApiKey && config.openAiEmbeddingModel) {
+      return routedModelId(`openai:${config.openAiEmbeddingModel}`, [config.openAiApiUrl]);
+    }
+    if (config.ollamaUrl && config.ollamaEmbeddingModel) {
+      return routedModelId(`ollama:${config.ollamaEmbeddingModel}`, [config.ollamaUrl]);
+    }
+    if (config.lmStudioUrl && config.lmStudioEmbeddingModel) {
+      return routedModelId(`lmstudio:${config.lmStudioEmbeddingModel}`, [config.lmStudioUrl]);
+    }
+    if (config.transformersLocalModel) {
+      return `transformers:${config.transformersLocalModel}:${config.localBundledDtype}`;
+    }
   }
   // local / auto / fallback resolution
   const bundled = bundledModelId();
@@ -84,6 +107,21 @@ export function embeddingDim(): number {
   return 768;
 }
 
+/** Release an initialized local transformer and its provider sessions. */
+export async function closeEmbeddingProvider(): Promise<void> {
+  let mod = cachedTransformersModule;
+  const pendingModule = transformersLocal;
+  cachedTransformersModule = null;
+  if (!mod && pendingModule) {
+    try { mod = await pendingModule; } catch { /* an unavailable adapter has nothing to unload */ }
+  }
+  try {
+    if (mod) await mod.unload();
+  } finally {
+    bundledModelState = 'idle';
+  }
+}
+
 function startBundledModelLoad(): void {
   if (bundledModelState === 'ready' || bundledModelState === 'loading') return;
   const model = effectiveBundledModel();
@@ -97,22 +135,30 @@ function startBundledModelLoad(): void {
 
   bundledModelState = 'loading';
   bundledModelAttemptAt = Date.now();
-  logger.info(`[embeddings] loading bundled model ${model} (${config.localBundledDtype}) in background - searches continue on TF-IDF until ready`);
+  const device = config.localEmbeddingDevice;
+  logger.info(device === 'webgpu'
+    ? `[embeddings] loading bundled model ${model} (${config.localBundledDtype}) on WebGPU; explicit GPU mode disables TF-IDF fallback`
+    : `[embeddings] loading bundled model ${model} (${config.localBundledDtype}) in background - searches continue on TF-IDF until ready`);
 
   void (async () => {
     try {
       const mod = await getTransformersLocal();
       cachedTransformersModule = mod ?? null;
-      mod!.setActiveModel(model);
+      await mod!.setActiveModel(model);
       // Force pipeline construction now (downloads weights on first use).
-      await mod!.getEmbedding('bundled model warmup');
+      const warmup = await mod!.getEmbedding('bundled model warmup');
+      if (!warmup?.length) throw new Error(`Bundled transformer model returned no embedding on ${device}`);
       bundledModelState = 'ready';
       const dim = mod!.getEmbeddingDimension();
-      logger.info(`[embeddings] bundled model ready (model=${model}, dim=${dim}) - new memories use real embeddings; run scripts/reembed.ts to migrate older rows`);
+      logger.info(`[embeddings] bundled model ready (model=${model}, device=${device}, dim=${dim}) - new memories use real embeddings; run scripts/reembed.ts to migrate older rows`);
     } catch (error) {
       bundledModelState = 'failed';
       bundledModelAttemptAt = Date.now();
-      logger.debug(`[embeddings] bundled model unavailable, staying on TF-IDF: ${(error as Error).message}`);
+      if (device === 'webgpu') {
+        logger.warn(`[embeddings] WebGPU model load failed; CPU fallback is disabled: ${(error as Error).message}`);
+      } else {
+        logger.debug(`[embeddings] bundled model unavailable, staying on TF-IDF: ${(error as Error).message}`);
+      }
     }
   })();
 }
@@ -226,26 +272,72 @@ async function fetchWithRetryAndTimeout(
 }
 
 // Simple in-memory cache for embeddings (LRU with 1000 entries)
-const embeddingCache = new Map<string, number[]>();
-const MAX_CACHE_SIZE = 1000;
+interface CachedEmbedding {
+  vector: number[];
+  model: string;
+}
 
-function getCacheKey(input: string, provider: string): string {
-  // Simple hash of input + provider
-  let hash = 0;
-  const str = input + provider;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+const embeddingCache = new Map<string, CachedEmbedding>();
+const embeddingModels = new WeakMap<number[], string>();
+const MAX_CACHE_SIZE = 1000;
+let embeddingCacheGeneration = 0;
+
+function getEmbeddingCacheContext(): { scope: string; cacheable: boolean } {
+  if (!isStrictTrustPolicy()) return { scope: '', cacheable: true };
+  if (!getRequestPrincipal() && !process.env.SQUISH_TRUSTED_CALLER_ID?.trim()) {
+    // Startup/model warmup may embed public probe text without a request
+    // principal. Compute it, but never share strict-mode cache entries.
+    return { scope: '', cacheable: false };
   }
-  return hash.toString();
+  const callerId = resolveTrustedCallerId();
+  if (!callerId) return { scope: '', cacheable: false };
+  return { scope: createHash('sha256').update(callerId).digest('hex'), cacheable: true };
+}
+
+function getCacheKey(input: string, provider: string, callerScope: string): string {
+  // Cache identity must not allow unrelated prompts to collide and reuse a
+  // private or semantically unrelated vector. Include the configured model as
+  // providers can be reconfigured in a long-lived host process. Length-prefix
+  // framing avoids ambiguous concatenations between fields.
+  // Include configured candidates as well as the current resolved identity:
+  // auto can use a remote model while its fallback identity remains TF-IDF.
+  const model = [
+    activeEmbeddingModel(),
+    config.openAiEmbeddingModel,
+    config.ollamaEmbeddingModel,
+    config.lmStudioEmbeddingModel,
+    config.googleEmbeddingModel,
+    config.transformersLocalModel,
+    config.localBundledModel,
+    config.localBundledDtype,
+  ].join(':');
+  // Endpoint identity matters when a long-lived host changes providers or
+  // reroutes a compatible model name to another deployment. Do not include
+  // credentials: they authorize requests but do not define vector semantics.
+  const endpoint = [
+    config.openAiApiUrl,
+    config.ollamaUrl,
+    config.lmStudioUrl,
+    config.googleCloudProject,
+    config.googleCloudLocation,
+  ].join(':');
+  return createHash('sha256')
+    .update(`${callerScope.length}:${callerScope}${provider.length}:${provider}${model.length}:${model}${endpoint.length}:${endpoint}${input.length}:${input}`, 'utf8')
+    .digest('hex');
+}
+
+function taggedEmbedding(vector: number[], model: string): number[] {
+  const copy = vector.slice();
+  embeddingModels.set(copy, model);
+  return copy;
 }
 
 function getCachedEmbedding(key: string): number[] | undefined {
-  return embeddingCache.get(key);
+  const cached = embeddingCache.get(key);
+  return cached ? taggedEmbedding(cached.vector, cached.model) : undefined;
 }
 
-function setCachedEmbedding(key: string, embedding: number[]): void {
+function setCachedEmbedding(key: string, embedding: number[], model: string): void {
   if (embeddingCache.size >= MAX_CACHE_SIZE) {
     // Remove oldest entry (first one)
     const firstKey = embeddingCache.keys().next().value;
@@ -253,7 +345,12 @@ function setCachedEmbedding(key: string, embedding: number[]): void {
       embeddingCache.delete(firstKey);
     }
   }
-  embeddingCache.set(key, embedding);
+  embeddingCache.set(key, { vector: embedding.slice(), model });
+}
+
+/** Return the vector-space identity attached to a getEmbedding result. */
+export function embeddingModelFor(vector: number[] | null | undefined): string | null {
+  return vector ? embeddingModels.get(vector) ?? null : null;
 }
 
 export async function getEmbedding(input: string | MultimodalInput): Promise<number[] | null> {
@@ -262,17 +359,20 @@ export async function getEmbedding(input: string | MultimodalInput): Promise<num
   }
 
   const provider = config.embeddingsProvider;
+  const cacheGeneration = embeddingCacheGeneration;
+  const cacheContext = getEmbeddingCacheContext();
   const cacheKey = typeof input === 'string' 
-    ? getCacheKey(input, provider)
-    : getCacheKey(JSON.stringify(input), provider);
+    ? getCacheKey(input, provider, cacheContext.scope)
+    : getCacheKey(JSON.stringify(input), provider, cacheContext.scope);
   
   // Check cache first
-  const cached = getCachedEmbedding(cacheKey);
+  const cached = cacheContext.cacheable ? getCachedEmbedding(cacheKey) : undefined;
   if (cached) {
     return cached;
   }
 
   let result: number[] | null = null;
+  let resultModel = '';
 
    // Handle multimodal input
    if (isMultimodalInput(input) && provider === 'google') {
@@ -280,6 +380,7 @@ export async function getEmbedding(input: string | MultimodalInput): Promise<num
      const multimodalResult = await getGoogleMultimodalEmbedding(input);
      if (multimodalResult) {
        result = multimodalResult.embedding;
+       resultModel = activeEmbeddingModel();
      }
    }
 
@@ -293,57 +394,87 @@ export async function getEmbedding(input: string | MultimodalInput): Promise<num
          requireModel('google', 'SQUISH_GOOGLE_EMBEDDING_MODEL', config.googleEmbeddingModel);
          const multimodalResult = await getGoogleMultimodalEmbedding({ text: textInput });
          result = multimodalResult?.embedding || null;
+         if (result) resultModel = activeEmbeddingModel();
        } else if (provider === 'openai') {
          requireModel('openai', 'SQUISH_OPENAI_EMBEDDING_MODEL', config.openAiEmbeddingModel);
          result = await getOpenAiEmbedding(textInput);
+         if (result) resultModel = activeEmbeddingModel();
        } else if (provider === 'ollama') {
          requireModel('ollama', 'SQUISH_OLLAMA_EMBEDDING_MODEL', config.ollamaEmbeddingModel);
          result = await getOllamaEmbedding(textInput);
+         if (result) resultModel = activeEmbeddingModel();
        } else if (provider === 'lmstudio') {
          requireModel('lmstudio', 'SQUISH_LM_STUDIO_EMBEDDING_MODEL', config.lmStudioEmbeddingModel);
          result = await getLmStudioEmbedding(textInput);
+         if (result) resultModel = activeEmbeddingModel();
        } else if (provider === 'transformers') {
          requireModel('transformers', 'SQUISH_LOCAL_MODEL', config.transformersLocalModel);
           try {
             const mod = await getTransformersLocal();
             if (mod) {
               result = await mod.getEmbedding(textInput);
+              if (result) resultModel = `transformers:${config.transformersLocalModel}:${config.localBundledDtype}`;
             }
           } catch (error) {
-            logger.debug(`Transformers not available, falling back to TF-IDF: ${error}`);
+            logger.debug(`Transformers embedding failed on ${config.localEmbeddingDevice}: ${error}`);
           }
-         // If transformers failed, use TF-IDF
+         // An explicit WebGPU selection is a strict execution request. Return
+         // no vector if the GPU backend is unavailable instead of masking it
+         // with a CPU TF-IDF vector.
+         if (!result && config.localEmbeddingDevice === 'webgpu') {
+           logger.warn('[embeddings] WebGPU transformer unavailable; refusing CPU fallback');
+         }
+         // CPU mode retains the existing TF-IDF fallback.
          if (!result) {
-           result = getLocalEmbedding(textInput);
+           if (config.localEmbeddingDevice !== 'webgpu') {
+             result = getLocalEmbedding(textInput);
+             if (result) resultModel = TFIDF_MODEL_ID;
+           }
          }
        } else if (provider === 'local') {
          // Local provider (Batch 4): TF-IDF answers instantly while the
          // bundled real model loads in the background; once ready, real
          // embeddings take over. Never blocks on download.
-         startBundledModelLoad();
-         if (bundledModelState === 'ready' && cachedTransformersModule) {
+         if (config.localEmbeddingDevice === 'webgpu') {
+           const ready = await ensureLocalModelReady();
+           if (!ready || !cachedTransformersModule) {
+             logger.warn('[embeddings] WebGPU transformer unavailable; refusing CPU fallback');
+             return null;
+           }
+           result = await cachedTransformersModule.getEmbedding(textInput);
+           if (result) resultModel = bundledModelId();
+           if (!result) return null;
+         } else {
+           startBundledModelLoad();
+         }
+         if (config.localEmbeddingDevice !== 'webgpu' && bundledModelState === 'ready' && cachedTransformersModule) {
            try {
              result = await cachedTransformersModule.getEmbedding(textInput);
+             if (result) resultModel = bundledModelId();
            } catch (error) {
              logger.debug(`Transformers local embed failed, using TF-IDF: ${error}`);
            }
          }
-         if (!result) {
+         if (!result && config.localEmbeddingDevice !== 'webgpu') {
            result = getLocalEmbedding(textInput);
+           if (result) resultModel = TFIDF_MODEL_ID;
          }
        } else {
          // Auto mode: cloud -> transformers -> TF-IDF (smart fallback)
          // Step 1: Try cloud providers
          if (config.openAiApiKey && config.openAiEmbeddingModel) {
            result = await getOpenAiEmbedding(textInput);
+           if (result) resultModel = routedModelId(`openai:${config.openAiEmbeddingModel}`, [config.openAiApiUrl]);
          }
          // Step 2: Try Ollama
          if (!result && config.ollamaUrl && config.ollamaEmbeddingModel) {
            result = await getOllamaEmbedding(textInput);
+           if (result) resultModel = routedModelId(`ollama:${config.ollamaEmbeddingModel}`, [config.ollamaUrl]);
          }
          // Step 3: Try LM Studio
          if (!result && config.lmStudioUrl && config.lmStudioEmbeddingModel) {
            result = await getLmStudioEmbedding(textInput);
+           if (result) resultModel = routedModelId(`lmstudio:${config.lmStudioEmbeddingModel}`, [config.lmStudioUrl]);
          }
          // Step 4: Try Transformers.js local
           if (!result && config.transformersLocalModel) {
@@ -351,21 +482,32 @@ export async function getEmbedding(input: string | MultimodalInput): Promise<num
               const mod = await getTransformersLocal();
               if (mod) {
                 result = await mod.getEmbedding(textInput);
+               if (result) resultModel = `transformers:${config.transformersLocalModel}:${config.localBundledDtype}`;
               }
             } catch {
               // Transformers not available, continue to fallback
             }
           }
          // Step 5: Fall back to TF-IDF (always works)
-         if (!result) {
+         if (!result && config.localEmbeddingDevice !== 'webgpu') {
            result = getLocalEmbedding(textInput);
+           if (result) resultModel = TFIDF_MODEL_ID;
+         } else if (!result && config.localEmbeddingDevice === 'webgpu') {
+           logger.warn('[embeddings] WebGPU transformer unavailable; refusing CPU fallback');
          }
        }
      }
 
   // Cache the result if valid
   if (result) {
-    setCachedEmbedding(cacheKey, result);
+    resultModel ||= activeEmbeddingModel();
+    embeddingModels.set(result, resultModel);
+    // A fallback vector must not pin auto mode to a transiently unavailable
+    // backend. Retry the preferred route on later calls instead.
+    if (cacheContext.cacheable && cacheGeneration === embeddingCacheGeneration &&
+      (provider !== 'auto' || resultModel === activeEmbeddingModel())) {
+      setCachedEmbedding(cacheKey, result, resultModel);
+    }
   }
 
   return result;
@@ -379,18 +521,23 @@ export async function getBatchEmbeddings(
   inputs: string[],
   batchSize: number = 20
 ): Promise<Array<number[] | null>> {
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
+    throw new RangeError('Embedding batchSize must be a positive safe integer');
+  }
+  batchSize = Math.min(batchSize, 32);
   if (inputs.length === 0) return [];
 
   const results: Array<number[] | null> = new Array(inputs.length).fill(null);
   const provider = config.embeddingsProvider;
+  const cacheContext = getEmbeddingCacheContext();
 
   // Check cache for all inputs first
   const uncachedIndices: number[] = [];
   const uncachedInputs: string[] = [];
 
   for (let i = 0; i < inputs.length; i++) {
-    const cacheKey = getCacheKey(inputs[i], provider);
-    const cached = getCachedEmbedding(cacheKey);
+    const cacheKey = getCacheKey(inputs[i], provider, cacheContext.scope);
+    const cached = cacheContext.cacheable ? getCachedEmbedding(cacheKey) : undefined;
     if (cached) {
       results[i] = cached;
     } else {
@@ -423,6 +570,7 @@ export async function getBatchEmbeddings(
  * Clear the embedding cache
  */
 export function clearEmbeddingCache(): void {
+  embeddingCacheGeneration++;
   embeddingCache.clear();
 }
 

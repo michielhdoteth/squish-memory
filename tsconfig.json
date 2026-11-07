@@ -23,7 +23,12 @@
     "config.ts",
     "core/**/*.ts",
     "db/**/*.ts",
-    "types/**/*.d.ts"
+    "types/**/*.d.ts",
+    "cli/**/*.ts",
+    "mcp/**/*.ts",
+    "bin/**/*.ts",
+    "scripts/**/*.ts",
+    "plugins/**/*.ts"
   ],
-  "exclude": ["node_modules", "dist", "tests", "benchmark", "docs"]
+  "exclude": ["node_modules", "dist", "tests", "bench", "benchmark", "docs", "squish-desktop"]
 }

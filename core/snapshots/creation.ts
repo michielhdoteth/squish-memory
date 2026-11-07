@@ -9,6 +9,14 @@ import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
 import { MemoryDiff, calculateDiff } from './comparison.js';
+import { toSqliteJson } from '../memory/serialization.js';
+
+function snapshotJson(db: unknown, value: unknown): unknown {
+  if (typeof db !== 'object' || db === null) return value;
+  const database = db as { $client?: { prepare?: unknown }; prepare?: unknown };
+  const client = database.$client ?? database;
+  return typeof client.prepare === 'function' ? toSqliteJson(value) : value;
+}
 
 // Re-export for convenience
 export { MemoryDiff, calculateDiff };
@@ -35,7 +43,7 @@ export async function createBeforeSnapshot(memoryId: string): Promise<string> {
       memoryId,
       snapshotType: 'before_update',
       content: memory[0].content,
-      metadata: extractMetadata(memory[0]),
+      metadata: snapshotJson(db, extractMetadata(memory[0])),
       createdAt: new Date(),
     });
 
@@ -73,7 +81,9 @@ export async function createAfterSnapshot(
     if (before.length === 0) {
       throw new Error('Before snapshot not found');
     }
-
+    if (before[0].memoryId !== memoryId || before[0].snapshotType !== 'before_update') {
+      throw new Error('Before snapshot belongs to a different memory or is not a before-update snapshot');
+    }
     const diff = calculateDiff(before[0].content, memory[0].content);
     const snapshotId = randomUUID();
 
@@ -82,8 +92,8 @@ export async function createAfterSnapshot(
       memoryId,
       snapshotType: 'after_update',
       content: memory[0].content,
-      metadata: extractMetadata(memory[0]),
-      diff,
+      metadata: snapshotJson(db, extractMetadata(memory[0])),
+      diff: snapshotJson(db, diff),
       createdAt: new Date(),
     });
 
@@ -116,7 +126,7 @@ export async function createPeriodicSnapshot(memoryId: string): Promise<string> 
       memoryId,
       snapshotType: 'periodic',
       content: memory[0].content,
-      metadata: extractMetadata(memory[0]),
+      metadata: snapshotJson(db, extractMetadata(memory[0])),
       createdAt: new Date(),
     });
 

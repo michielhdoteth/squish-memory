@@ -6,19 +6,20 @@
  * and post-capture geometry checks.
  */
 
-import { randomUUID } from 'crypto';
-import { eq, and, inArray } from 'drizzle-orm';
+import { createHash, randomUUID } from 'crypto';
+import { withSqliteTransaction } from '../storage/sqlite-transaction.js';
+import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { config } from '../../config.js';
 import { logger } from '../logger.js';
 import { getOrCreateProject } from '../../core/projects.js';
-import { getEmbedding, activeEmbeddingModel } from '../../core/embeddings.js';
+import { getEmbedding, embeddingModelFor, activeEmbeddingModel } from '../../core/embeddings.js';
 import { enrichContent } from '../retrieval/contextual-enrichment.js';
 import { normalizeTags, serializeTags, serializeMetadata } from '../../core/memory/serialization.js';
 import { prepareEmbedding } from '../lib/utils.js';
 import { validateUuid } from '../lib/validation.js';
 import { detectMemorySignals } from './trigger-detector.js';
 import { applySupersession, resolveContradictions } from './contradiction-resolver.js';
-import { encrypt } from '../security/encrypt.js';
+import { decrypt, encryptWithPrivateIndex } from '../security/encrypt.js';
 import { estimateTokens } from '../context/context-window.js';
 import { getDbClient } from '../lib/db-client.js';
 import { createKnowledge, createKnowledgeEdge } from '../knowledge/store.js';
@@ -33,42 +34,542 @@ import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { withBusyRetry } from '../../db/busy-retry.js';
 import { computeInitialImportance } from './importance.js';
-import { normalizeMemoryRecord, getOrCreateUser } from './memory-crud.js';
+import { normalizeMemoryRecord, getMemory, getOrCreateUser } from './memory-crud.js';
+import { isGeneratedContextEcho } from './context-echo.js';
+// WS2a: write-time near-duplicate detection + linking (SQUISH_WRITE_DEDUP).
+import { runWriteDedupStage } from './write-dedup.js';
+import { signMemoryProvenance, verifyMemoryProvenance } from '../acl/provenance.js';
+import { resolveTrustedCallerId, isStrictTrustPolicy, TrustBoundaryError } from '../acl/trust-policy.js';
+import { listUserTeamIds } from '../../db/team-adapter.js';
+import { writeTrustAudit } from '../acl/trust-audit.js';
+import { preauthorizeStrictMemoryReadBeforeDecrypt } from '../acl/read-gate.js';
+import { writeTeamAuditEvent } from '../acl/team-authorization.js';
+import { assertStrictMemoryWriteAtomicity } from '../acl/strict-memory-write.js';
 import { emit } from '../event-bus.js';
+import type { DrizzleExecutor } from '../storage/database.js';
 // Batch 7: every durable write feeds the session working set so wake-up
 // summaries reflect real project activity.
 import { recordSessionSignal } from '../session/working-set.js';
+import { readCodexTranscript } from '../sessions/agent-stores/codex.js';
+import { readClaudeTranscript } from '../sessions/agent-stores/claude-code.js';
+import { readOpenCodeTranscript } from '../sessions/agent-stores/opencode.js';
+import { readGeminiTranscript } from '../sessions/agent-stores/gemini.js';
 // Batch 6b: signals-based sector classification (episodic|semantic|procedural|reflective).
 import { routeSector } from './sector-router.js';
 import type { RememberInput, MemoryRecord, VisibilityScope } from './memory-types.js';
+import { normalizeIanaTimeZone } from './temporal-parser.js';
+import { normalizeTimestampValue } from '../retrieval/temporal-validity.js';
 
 // ---------------------------------------------------------------------------
 // rememberMemory — the main write path
 // ---------------------------------------------------------------------------
 
 export async function rememberMemory(input: RememberInput): Promise<MemoryRecord> {
+  return rememberMemoryInternal(input);
+}
+
+/**
+ * Persist a reviewed compaction and link its source within the same storage
+ * transaction. The expected source fields fence drafts against edits made
+ * after the user reviewed them.
+ */
+export async function rememberMemoryWithConsolidatedSource(
+  input: RememberInput,
+  source: ReviewedCompactionSourceGuard,
+): Promise<MemoryRecord> {
+  return rememberMemoryInternal(input, { reviewedCompactionSource: source });
+}
+
+export interface ReviewedCompactionSourceGuard {
+  id: string;
+  content: string;
+  projectId: string | null;
+  userId: string | null;
+  type: string;
+}
+
+interface HostTranscriptAttestation {
+  version: 1;
+  agent: 'codex' | 'claude-code' | 'opencode' | 'gemini';
+  sessionId: string;
+  role: 'user' | 'assistant' | 'system';
+  messageIndex: number;
+  sourceFingerprint: string;
+}
+
+/** Internal-only writer used after a host adapter rereads a transcript. */
+export async function rememberHostTranscriptMessage(
+  agent: HostTranscriptAttestation['agent'],
+  sessionId: string,
+  messageIndex: number,
+  sourceFingerprint: string,
+  user?: string,
+): Promise<MemoryRecord> {
+  if (!sessionId || !Number.isInteger(messageIndex) || !/^[a-f0-9]{64}$/.test(sourceFingerprint)) {
+    throw new TrustBoundaryError('Transcript capture requires a host session message identity');
+  }
+  const snapshot = readHostTranscript(agent, sessionId);
+  const message = snapshot?.messages.find((candidate) => candidate.messageIndex === messageIndex);
+  if (!snapshot || !message || message.sourceFingerprint !== sourceFingerprint || !snapshot.projectPath.trim()) {
+    throw new TrustBoundaryError('Host transcript changed before the message could be captured');
+  }
+  if (message.role !== 'user' && message.role !== 'assistant' && message.role !== 'system') {
+    throw new TrustBoundaryError('Host transcript message has an unsupported role');
+  }
+  const attestation: HostTranscriptAttestation = {
+    version: 1,
+    agent,
+    sessionId,
+    role: message.role,
+    messageIndex,
+    sourceFingerprint,
+  };
+  const captureKey = `host-transcript-v1:${createHash('sha256').update(JSON.stringify([
+    agent, sessionId, messageIndex, sourceFingerprint,
+  ])).digest('hex')}`;
+  return rememberMemoryInternal({
+    content: message.content,
+    type: 'note',
+    tags: [`squish_session:${sessionId}`, `host-transcript:${agent}`],
+    project: snapshot.projectPath,
+    user,
+    source: `session_chunk:${sessionId}`,
+    sessionId,
+    captureKey,
+    metadata: { session_id: sessionId, agent_session_id: sessionId, host_source: agent },
+  }, { hostTranscript: attestation });
+}
+
+function readHostTranscript(agent: HostTranscriptAttestation['agent'], sessionId: string) {
+  switch (agent) {
+    case 'codex': return readCodexTranscript(sessionId);
+    case 'claude-code': return readClaudeTranscript(sessionId);
+    case 'opencode': return readOpenCodeTranscript(sessionId);
+    case 'gemini': return readGeminiTranscript(sessionId);
+  }
+}
+
+export const rememberCodexTranscriptMessage = (
+  sessionId: string, messageIndex: number, sourceFingerprint: string, user?: string,
+) => rememberHostTranscriptMessage('codex', sessionId, messageIndex, sourceFingerprint, user);
+
+/**
+ * Persist a strict memory and its audit event in the same source/projection
+ * transaction. This deliberately accepts only a team audit event, not an
+ * arbitrary callback on RememberInput.
+ */
+export async function rememberMemoryWithAudit(
+  input: RememberInput,
+  auditEvent: Parameters<typeof writeTeamAuditEvent>[0],
+  source: StrictPromotionSource,
+  requiredTeamRole?: StrictPromotionAuthorization,
+): Promise<MemoryRecord> {
+  if (!isStrictTrustPolicy()) {
+    throw new TrustBoundaryError('Transactional memory audit writes require strict trust');
+  }
+  return rememberMemoryInternal(input, { auditEvent, source, requiredTeamRole });
+}
+
+interface StrictPromotionAuthorization {
+  persistedUserId: string;
+  teamId: string;
+  roles: readonly ('owner' | 'admin')[];
+}
+
+interface StrictPromotionSource {
+  id: string;
+  content: string;
+  projectId: string | null;
+  type: string;
+  ownerId: string;
+  expiresAt?: Date | null;
+}
+
+interface StrictPromotionCommit {
+  auditEvent: Parameters<typeof writeTeamAuditEvent>[0];
+  source: StrictPromotionSource;
+}
+
+interface MemoryWriteOptions {
+  auditEvent?: Parameters<typeof writeTeamAuditEvent>[0];
+  source?: StrictPromotionSource;
+  requiredTeamRole?: StrictPromotionAuthorization;
+  hostTranscript?: HostTranscriptAttestation;
+  reviewedCompactionSource?: ReviewedCompactionSourceGuard;
+}
+
+class ExistingCaptureReceipt extends Error {
+  constructor(readonly memoryId: string) {
+    super('Capture event already stored');
+    this.name = 'ExistingCaptureReceipt';
+  }
+}
+
+interface CaptureReceiptMemory {
+  memoryId: string;
+  contentHash: string;
+  projectId: string | null;
+  userId: string | null;
+  teamId: string | null;
+}
+
+async function findCaptureReceipt(
+  db: any,
+  schema: Record<string, any>,
+  raw: any,
+  postgresSchema: boolean,
+  captureKeyHash: string,
+): Promise<CaptureReceiptMemory | null> {
+  if (postgresSchema) {
+    const receipts = schema.memoryCaptureReceipts;
+    if (!receipts) throw new Error('PostgreSQL capture idempotency requires migration 0013_memory_capture_receipts');
+    const rows = await db.select({
+      memoryId: receipts.memoryId,
+      contentHash: receipts.contentHash,
+      projectId: schema.memories.projectId,
+      userId: schema.memories.userId,
+      teamId: schema.memories.teamId,
+    }).from(receipts)
+      .innerJoin(schema.memories, eq(receipts.memoryId, schema.memories.id))
+      .where(eq(receipts.captureKeyHash, captureKeyHash))
+      .limit(1);
+    const row = rows[0];
+    return row ? {
+      memoryId: String(row.memoryId),
+      contentHash: row.contentHash,
+      projectId: row.projectId == null ? null : String(row.projectId),
+      userId: row.userId == null ? null : String(row.userId),
+      teamId: row.teamId == null ? null : String(row.teamId),
+    } : null;
+  }
+
+  const row = raw.prepare(`SELECT r.memory_id, r.content_hash, m.project_id, m.user_id, m.team_id
+    FROM memory_capture_receipts r JOIN memories m ON m.id = r.memory_id WHERE r.capture_key_hash = ?`)
+    .get(captureKeyHash) as { memory_id: string; content_hash: string; project_id: string | null; user_id: string | null; team_id: string | null } | undefined;
+  return row ? {
+    memoryId: row.memory_id,
+    contentHash: row.content_hash,
+    projectId: row.project_id,
+    userId: row.user_id,
+    teamId: row.team_id,
+  } : null;
+}
+
+function captureReceiptMatches(
+  receipt: CaptureReceiptMemory | null,
+  contentHash: string,
+  projectId: string | null,
+  userId: string | null,
+  teamId: string | null,
+): receipt is CaptureReceiptMemory {
+  return receipt !== null && receipt.contentHash === contentHash
+    && receipt.projectId === projectId && receipt.userId === userId && receipt.teamId === teamId;
+}
+
+async function loadCaptureReplayMemory(memoryId: string, callerId?: string): Promise<MemoryRecord> {
   const { db, schema } = await getDbClient();
+  const [row] = await db.select().from(schema.memories).where(eq(schema.memories.id, memoryId)).limit(1);
+  if (!row) throw new Error('Capture receipt points to a missing memory');
+  let content = row.content;
+  const encrypted = (row as any).isEncrypted ?? row.is_encrypted;
+  const encryptedContent = (row as any).encryptedContent ?? row.encrypted_content;
+  const encryptionNonce = (row as any).encryptionNonce ?? row.encryption_nonce;
+  if (encrypted) {
+    if (!encryptedContent || !encryptionNonce) throw new Error('Encrypted capture replay is missing ciphertext metadata');
+    if (isStrictTrustPolicy()) {
+      const { preauthorizeStrictMemoryReadBeforeDecrypt } = await import('../acl/read-gate.js');
+      if (!callerId || !await preauthorizeStrictMemoryReadBeforeDecrypt(memoryId, callerId)) {
+        throw new TrustBoundaryError('Capture replay memory is not readable by the authenticated principal');
+      }
+    }
+    content = decrypt(encryptedContent, encryptionNonce);
+  }
+  const candidate = normalizeMemoryRecord({ ...row, content });
+  if (isStrictTrustPolicy()) {
+    const { applyAclReadGate, buildAutoAclContext } = await import('../acl/read-gate.js');
+    const authorized = await applyAclReadGate([candidate], await buildAutoAclContext(callerId));
+    if (authorized.length !== 1) {
+      throw new TrustBoundaryError('Capture replay memory is not readable by the authenticated principal');
+    }
+  }
+  return candidate;
+}
+
+function normalizeExpiry(value: Date | number | null | undefined): Date | null {
+  if (value === null || value === undefined) return null;
+  const milliseconds = value instanceof Date
+    ? value.getTime()
+    : Math.abs(value) < 1_000_000_000_000 ? value * 1000 : value;
+  if (!Number.isFinite(milliseconds)) throw new Error('Memory expiry must be a valid date or epoch timestamp');
+  const date = new Date(milliseconds);
+  if (!Number.isFinite(date.getTime())) throw new Error('Memory expiry must be a valid date or epoch timestamp');
+  return date;
+}
+
+function isSessionEpisodeCapture(input: RememberInput, tags: string[]): boolean {
+  const metadata = input.metadata;
+  return tags.some((tag) => tag.startsWith('squish_chunk:'))
+    && tags.some((tag) => tag.startsWith('squish_session:'))
+    && typeof metadata?.chunk_type === 'string'
+    && typeof metadata.agent_session_id === 'string'
+    && typeof metadata.session_id === 'string';
+}
+
+function isEncryptedSessionChunkCapture(input: RememberInput): boolean {
+  const sessionId = input.sessionId?.trim();
+  const metadata = input.metadata;
   const tags = normalizeTags(input.tags);
+  if (!sessionId || sessionId.length > 256 || input.source !== `session_chunk:${sessionId}`
+    || typeof input.captureKey !== 'string' || !input.captureKey.startsWith('session-chunk-v1:')
+    || metadata?.session_id !== sessionId || typeof metadata.agent_session_id !== 'string'
+    || typeof metadata.chunk_type !== 'string') return false;
+  return tags.includes(`squish_chunk:${metadata.chunk_type}`) && tags.includes(`squish_session:${sessionId}`);
+}
+
+async function rememberMemoryInternal(
+  input: RememberInput,
+  options: MemoryWriteOptions = {},
+): Promise<MemoryRecord> {
+  const sourceTimeZone = input.timeZone ? normalizeIanaTimeZone(input.timeZone) : undefined;
+  const strictPromotion = options.auditEvent && options.source
+    ? { auditEvent: options.auditEvent, source: options.source, requiredTeamRole: options.requiredTeamRole }
+    : undefined;
+  let accessUser: string | undefined;
+  try {
+    accessUser = resolveTrustedCallerId(input.user) ?? undefined;
+  } catch (error) {
+    if (isStrictTrustPolicy()) {
+      await writeTrustAudit({
+        actorId: input.user?.trim() || 'unbound',
+        resourceId: 'memory-write',
+        assetType: 'memory',
+        decision: 'deny',
+        reason: 'caller_mismatch',
+      });
+    }
+    throw error;
+  }
+  if (isGeneratedContextEcho(input.content)) {
+    throw new Error('Generated context cannot be stored as a new memory');
+  }
+  const promotionRoleIsCheckedAtomically = Boolean(options.requiredTeamRole && options.auditEvent && options.source);
+  if (isStrictTrustPolicy() && input.teamId && !promotionRoleIsCheckedAtomically) {
+    const memberTeamIds = await listUserTeamIds(accessUser!);
+    if (!memberTeamIds.includes(input.teamId)) {
+      await writeTrustAudit({
+        actorId: accessUser!,
+        resourceId: input.teamId,
+        assetType: 'team_memory_write',
+        decision: 'deny',
+        reason: 'team_membership',
+      });
+      throw new TrustBoundaryError('Strict trust policy requires persisted team membership before writing team-scoped memory');
+    }
+  }
+
+  const { db, schema } = await getDbClient();
+  const raw = (db as any).$client;
+  const postgresSchema = Boolean(schema.knowledgeAuditLog);
+  const nativeDb = postgresSchema ? await getDb() : null;
+  const reviewedCompactionSource = options.reviewedCompactionSource;
+  if (reviewedCompactionSource && postgresSchema
+    && typeof (nativeDb as { transaction?: unknown } | null)?.transaction !== 'function') {
+    throw new Error('Reviewed compaction requires a transaction-capable database');
+  }
+  if (reviewedCompactionSource && !postgresSchema && (!raw?.prepare || typeof raw.exec !== 'function')) {
+    throw new Error('Reviewed compaction requires an atomic SQLite database');
+  }
+  const markReviewedCompactionSource = async (executor: DrizzleExecutor, targetId: string): Promise<void> => {
+    if (!reviewedCompactionSource) return;
+    const source = reviewedCompactionSource;
+    const scopeConditions = [
+      eq(schema.memories.id, source.id),
+      eq(schema.memories.content, source.content),
+      source.projectId === null ? isNull(schema.memories.projectId) : eq(schema.memories.projectId, source.projectId),
+      source.userId === null ? isNull(schema.memories.userId) : eq(schema.memories.userId, source.userId),
+      eq(schema.memories.type, source.type),
+      eq(schema.memories.status, 'active'),
+      eq(schema.memories.isActive, true),
+      eq(schema.memories.isConsolidated, false),
+      eq(schema.memories.isProtected, false),
+      eq(schema.memories.isPinned, false),
+      eq(schema.memories.hasSecrets, false),
+      isNull(schema.memories.teamId),
+    ];
+    const updated = await executor.update(schema.memories).set({
+      isConsolidated: true,
+      consolidatedInto: targetId,
+      consolidatedAt: new Date(),
+    }).where(and(...scopeConditions)).returning({ id: schema.memories.id });
+    if (updated.length === 1) return;
+
+    const [existing] = await executor.select({
+      id: schema.memories.id,
+      content: schema.memories.content,
+      projectId: schema.memories.projectId,
+      userId: schema.memories.userId,
+      type: schema.memories.type,
+      teamId: schema.memories.teamId,
+      isConsolidated: schema.memories.isConsolidated,
+      consolidatedInto: schema.memories.consolidatedInto,
+    }).from(schema.memories).where(eq(schema.memories.id, source.id)).limit(1);
+    if (existing?.content === source.content
+      && (existing.projectId ?? null) === source.projectId
+      && (existing.userId ?? null) === source.userId
+      && existing.type === source.type
+      && existing.teamId == null
+      && existing.isConsolidated === true
+      && existing.consolidatedInto === targetId) return;
+
+    throw new Error('The reviewed compaction source changed or became ineligible; no new memory was committed.');
+  };
+  const repairExistingReviewedCompactionLink = async (targetId: string): Promise<void> => {
+    if (!reviewedCompactionSource) return;
+    if (postgresSchema) {
+      const transactionDb = nativeDb as { transaction: (callback: (tx: DrizzleExecutor) => Promise<void>) => Promise<void> };
+      await transactionDb.transaction(async (tx) => markReviewedCompactionSource(tx, targetId));
+      return;
+    }
+    raw.exec('BEGIN IMMEDIATE');
+    try {
+      await markReviewedCompactionSource(db, targetId);
+      raw.exec('COMMIT');
+    } catch (error) {
+      try { raw.exec('ROLLBACK'); } catch {}
+      throw error;
+    }
+  };
+  try {
+    assertStrictMemoryWriteAtomicity(postgresSchema ? nativeDb : raw);
+  } catch (error) {
+    if (isStrictTrustPolicy()) {
+      await writeTrustAudit({
+        actorId: accessUser ?? 'unbound',
+        resourceId: 'memory-write',
+        assetType: 'memory',
+        decision: 'deny',
+        reason: 'strict_surface',
+      });
+    }
+    throw error;
+  }
+  if (postgresSchema && strictPromotion && (!strictPromotion.source.ownerId || strictPromotion.source.id !== strictPromotion.auditEvent.targetId)) {
+    throw new TrustBoundaryError('Strict PostgreSQL promotion requires an owner-bound source and matching audit target');
+  }
+  const clientEncryptionEnabled = config.clientEncryptionEnabled;
+  if (clientEncryptionEnabled && isStrictTrustPolicy() && postgresSchema) {
+    try {
+      await writeTrustAudit({
+        actorId: accessUser ?? 'unbound',
+        resourceId: 'memory-write',
+        assetType: 'memory',
+        decision: 'deny',
+        reason: 'strict_surface',
+      });
+    } catch {
+      throw new TrustBoundaryError('Strict PostgreSQL encrypted capture is denied and its denial audit could not be persisted');
+    }
+    throw new TrustBoundaryError('Strict client-encrypted capture is supported only by SQLite');
+  }
+  const encryptedSessionCapture = clientEncryptionEnabled && isEncryptedSessionChunkCapture(input);
+  if (encryptedSessionCapture && postgresSchema) {
+    throw new TrustBoundaryError('Encrypted host-session capture currently requires SQLite');
+  }
+  const tags = clientEncryptionEnabled ? [] : normalizeTags(input.tags);
+  const sessionEpisodeCapture = encryptedSessionCapture || (!clientEncryptionEnabled && isSessionEpisodeCapture(input, tags));
+  const enqueueAnalysis = !sessionEpisodeCapture && (!options.hostTranscript || options.hostTranscript.role === 'user');
   const project = input.project ? await getOrCreateProject(input.project) : null;
-  const accessUser = input.user;
-  // Enrich content for embedding when contextual retrieval is enabled
-  // The database stores original content; enriched version is only for embedding
-  const enriched = enrichContent(input.content, {
-    type: input.type,
-    project: input.project,
-    tags: tags,
-  });
-  const embedding = await getEmbedding(enriched.enriched);
+  if (input.captureKey !== undefined) {
+    if (clientEncryptionEnabled && !encryptedSessionCapture) {
+      throw new Error('Encrypted idempotency keys are supported only for validated host-session chunks');
+    }
+    if (!postgresSchema && (!raw?.prepare || typeof raw.exec !== 'function')) {
+      throw new Error('Idempotent host capture requires a transactional database backend');
+    }
+    if (typeof input.captureKey !== 'string' || input.captureKey.trim().length === 0 || input.captureKey.length > 1024) {
+      throw new Error('Capture key must be a non-empty string of at most 1024 characters');
+    }
+  }
+  let persistedOwnerId: string | null = null;
+  if (accessUser && schema.users) {
+    try {
+      persistedOwnerId = (await getOrCreateUser(accessUser, db, schema))?.id ?? null;
+    } catch (error) {
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Strict trust could not resolve the persisted memory owner');
+      logger.warn('[User] Failed to resolve memory owner:', { error: String(error) });
+    }
+  }
+  if (isStrictTrustPolicy() && !persistedOwnerId) {
+    throw new TrustBoundaryError('Strict trust requires a persisted memory owner before signing');
+  }
   const id = randomUUID();
-  const signals = detectMemorySignals(input.content);
+  const privateIndexRequests: Array<{ key: string; namespace: string; value: string }> = [];
+  if (clientEncryptionEnabled && input.captureKey !== undefined) {
+    privateIndexRequests.push(
+      { key: 'captureKeyHash', namespace: 'capture-key', value: input.captureKey.trim() },
+      { key: 'captureContentHash', namespace: 'capture-content', value: input.content },
+    );
+  }
+  if (encryptedSessionCapture) {
+    const scope = JSON.stringify([input.sessionId, id, project?.id ?? null, persistedOwnerId, input.teamId ?? null]);
+    privateIndexRequests.push(
+      { key: 'privateSessionToken', namespace: 'session-id', value: input.sessionId! },
+      { key: 'privateSessionRecordMac', namespace: 'session-row', value: scope },
+    );
+  }
+  const privatePayload = clientEncryptionEnabled ? encryptWithPrivateIndex(input.content, privateIndexRequests) : null;
+  const encryptedPayload = privatePayload ? { ciphertext: privatePayload.ciphertext, nonce: privatePayload.nonce } : null;
+  const captureKeyHash = input.captureKey === undefined
+    ? null
+    : clientEncryptionEnabled
+      ? privatePayload?.tokens.captureKeyHash ?? null
+      : createHash('sha256').update(input.captureKey.trim()).digest('hex');
+  const captureContentHash = captureKeyHash === null
+    ? null
+    : clientEncryptionEnabled
+      ? privatePayload?.tokens.captureContentHash ?? null
+      : createHash('sha256').update(input.content).digest('hex');
+  const privateSessionIndex = encryptedSessionCapture
+    ? {
+      sessionToken: privatePayload?.tokens.privateSessionToken,
+      recordMac: privatePayload?.tokens.privateSessionRecordMac,
+    }
+    : null;
+  if (privateSessionIndex && (!privateSessionIndex.sessionToken || !privateSessionIndex.recordMac)) {
+    throw new TrustBoundaryError('Encrypted session capture could not derive its private identity index');
+  }
+  if (captureKeyHash && captureContentHash) {
+    const existing = await findCaptureReceipt(db, schema, raw, postgresSchema, captureKeyHash);
+    if (existing) {
+      if (!captureReceiptMatches(existing, captureContentHash, project?.id ?? null, persistedOwnerId, input.teamId ?? null)) {
+        throw new Error('Capture key was already used for different content or memory scope');
+      }
+      await repairExistingReviewedCompactionLink(existing.memoryId);
+      return await loadCaptureReplayMemory(existing.memoryId, accessUser);
+    }
+  }
+  // Encrypted content must not be sent to an embedding provider or indexed
+  // through a plaintext-derived representation.
+  const enriched = clientEncryptionEnabled
+    ? { enriched: '' }
+    : enrichContent(input.content, { type: input.type, project: input.project, tags });
+  const embedding = clientEncryptionEnabled ? null : await getEmbedding(enriched.enriched);
+  const signals = clientEncryptionEnabled
+    ? {
+      explicitTriggers: [],
+      implicit: { decision: false, correction: false, preference: false, workflowRule: false, lesson: false,
+        note: false, important: false, hack: false, why: false, todo: false, fixme: false },
+      suggestedType: input.type ?? 'note', priority: 'normal', confidence: 'certain',
+    } as ReturnType<typeof detectMemorySignals>
+    : detectMemorySignals(input.content);
   const type = input.type ?? signals.suggestedType;
   // Batch 6b: route sector once from signals (type + tags + content + provenance).
   // An explicit input.sector override wins; default episodic.
   const now = new Date();
-  const sector = routeSector(
+  const sector = clientEncryptionEnabled ? 'episodic' : routeSector(
     {
       type,
-      tags,
+      tags: clientEncryptionEnabled ? [] : tags,
       content: input.content,
       knowledgeKind: 'memory',
       source: (input.metadata?.source as string | undefined) ?? input.source ?? null,
@@ -77,10 +578,15 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   );
   // Batch 6b: bi-temporal fields - validFrom defaults to write time unless
   // explicitly provided; recordedAt is always the write time.
-  const validFromDate = input.validFrom ? new Date(input.validFrom) : now;
+  const sourceValidFrom = input.occurredAt ?? input.validFrom;
+  const validFromDate = sourceValidFrom ? new Date(sourceValidFrom) : now;
+  if (Number.isNaN(validFromDate.getTime())) {
+    throw new Error('occurredAt/validFrom must be a valid date');
+  }
+  const expiresAtDate = normalizeExpiry(input.expiresAt);
   // Team-scoped memories use 'team' scope; everything else defaults to 'project'
   const visibilityScope: VisibilityScope = input.teamId ? 'team' : 'project';
-  const policyRecommendation = recommendMemoryScope({
+  const policyRecommendation = clientEncryptionEnabled ? null : recommendMemoryScope({
     content: input.content,
     type,
     tags,
@@ -92,7 +598,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     signals,
     teamId: input.teamId,
   });
-  const memoryPolicy = buildMemoryPolicy({
+  const memoryPolicy = clientEncryptionEnabled ? null : buildMemoryPolicy({
     content: input.content,
     type,
     tags,
@@ -104,7 +610,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     signals,
     teamId: input.teamId,
   });
-  memoryPolicy.recommendation = policyRecommendation;
+  if (memoryPolicy && policyRecommendation) memoryPolicy.recommendation = policyRecommendation;
   const readWriteScopes = buildVisibilityScopes(visibilityScope, 'user', accessUser, input.teamId);
   const serializedReadScope = serializeVisibilityScopes(readWriteScopes.readScope);
   const serializedWriteScope = serializeVisibilityScopes(readWriteScopes.writeScope);
@@ -113,13 +619,14 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     id,
     projectId: project?.id ?? null,
     type,
-    content: input.content,
-    source: input.source ?? 'mcp',
+    content: clientEncryptionEnabled ? '' : input.content,
+    source: clientEncryptionEnabled ? 'client-encrypted' : input.source ?? 'mcp',
     visibilityScope,
+    expiresAt: expiresAtDate,
   };
 
   // Calculate initial importance score (3-factor pipeline)
-  const importance = computeInitialImportance({
+  const importance = clientEncryptionEnabled ? { score: 50 } : computeInitialImportance({
     content: input.content,
     type,
     createdAt: new Date().toISOString(),
@@ -131,18 +638,47 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   });
 
   // Batch 4: L2-normalized float32 blob (primary) + JSON compat + model stamp
-  const embeddingValues = prepareEmbedding(embedding, { model: activeEmbeddingModel() });
+  const embeddingValues = clientEncryptionEnabled
+    ? { embedding: null, embeddingBlob: null, embeddingJson: null, embeddingModel: null, embeddingDim: null }
+    : prepareEmbedding(embedding, { model: embeddingModelFor(embedding) ?? activeEmbeddingModel() });
 
   const tokensEstimate = estimateTokens(input.content);
 
   let tagsValue = serializeTags(tags);
-  const enrichedMetadata: Record<string, unknown> = {
-    ...(input.metadata ?? {}),
+  // Classification reasons for this write, derived from the signals already
+  // computed above: explicit trigger labels plus the implicit flags that fired.
+  const signalReasons: string[] = [
+    ...signals.explicitTriggers,
+    ...Object.entries(signals.implicit)
+      .filter(([, value]) => value === true)
+      .map(([key]) => `implicit:${key}`),
+  ];
+  const enrichedMetadata: Record<string, unknown> = clientEncryptionEnabled ? {
+    sourceMemoryId: id,
+    encrypted: true,
+  } : {
+    ...Object.fromEntries(Object.entries(input.metadata ?? {}).filter(([key]) => key !== 'hostTranscript' && key !== 'sourceTimeZone')),
+    ...(sourceTimeZone ? { sourceTimeZone } : {}),
+    ...(options.hostTranscript ? { hostTranscript: options.hostTranscript } : {}),
+    // The unified knowledge row has its own ID, so retain the source memory ID
+    // for idempotent migration/backfill and cross-corpus provenance.
+    sourceMemoryId: id,
     // Rich context fields (Agent 4 feedback)
     reasoning: input.reasoning,
     memoryContext: input.memoryContext,
     examples: input.examples,
     exceptions: input.exceptions,
+    // Signal-era classification block read by core/memory/explain.ts. Must use
+    // the same key ('signal') and classification value ('durable-distilled')
+    // the working-set recorder below uses, otherwise every fresh write is
+    // misclassified as 'legacy-durable' (DEFECT 3). Declared after the
+    // input.metadata spread, so it intentionally overwrites a caller-supplied
+    // metadata.signal block (the backfill script merges instead).
+    signal: {
+      classification: 'durable-distilled',
+      reasons: signalReasons,
+      capturedAt: now.getTime(),
+    },
     memorySignals: {
       explicitTriggers: signals.explicitTriggers,
       implicit: signals.implicit,
@@ -156,7 +692,31 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
       toolName: input.toolName,
     },
   };
-  enrichedMetadata.memoryPolicy = memoryPolicy;
+  if (!clientEncryptionEnabled) enrichedMetadata.memoryPolicy = memoryPolicy;
+  const provenance = signMemoryProvenance({
+    content: input.content,
+    projectId: project?.id ?? null,
+    type: type ?? 'note',
+    ownerId: persistedOwnerId,
+    teamId: input.teamId ?? null,
+    sourceMemoryId: id,
+    metadata: enrichedMetadata,
+  });
+  if (isStrictTrustPolicy() && !provenance) {
+    try {
+      await writeTrustAudit({
+        actorId: accessUser ?? 'unbound',
+        resourceId: 'memory-write',
+        assetType: 'memory',
+        decision: 'deny',
+        reason: 'strict_surface',
+      });
+    } catch {
+      throw new TrustBoundaryError('Strict trust rejected an unsigned write and its denial audit could not be persisted');
+    }
+    throw new TrustBoundaryError('Strict trust policy requires SQUISH_PROVENANCE_PRIVATE_KEY and SQUISH_PROVENANCE_KEY_ID for writes');
+  }
+  if (provenance) enrichedMetadata.__squishProvenance = provenance;
   let metadataValue = serializeMetadata(enrichedMetadata);
 
   // Prepare fields for insertion, handling optional encryption
@@ -181,47 +741,342 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     // made fresh rows permanently decay-exempt until the first tier
     // maintenance pass. Young memories are working-tier by definition;
     // recalculateTiers promotes/demotes from there.
-    tier: 'working',
+    tier: clientEncryptionEnabled ? 'cold' : 'working',
     // Team memory: link to team if provided
     ...(input.teamId ? { teamId: input.teamId } : {}),
   };
 
+  if (postgresSchema) {
+    let normalizedEmbedding: number[] | null = null;
+    if (typeof embeddingValues.embeddingJson === 'string') {
+      try {
+        const parsed: unknown = JSON.parse(embeddingValues.embeddingJson);
+        if (Array.isArray(parsed) && parsed.every((value) => typeof value === 'number' && Number.isFinite(value))) {
+          normalizedEmbedding = parsed;
+        }
+      } catch {
+        normalizedEmbedding = null;
+      }
+    }
+    const vector = normalizedEmbedding?.length === 1536
+      ? `[${normalizedEmbedding.join(',')}]`
+      : null;
+    insertValues = {
+      ...baseValues,
+      userId: persistedOwnerId ?? null,
+      teamId: input.teamId ?? null,
+      summary: null,
+      embedding: vector,
+      embeddingModel: clientEncryptionEnabled ? null : embeddingValues.embeddingModel,
+      tokensEstimate: clientEncryptionEnabled ? 0 : tokensEstimate,
+      confidence: importance.score,
+      tags: clientEncryptionEnabled ? [] : tags,
+      metadata: enrichedMetadata,
+      isPrivate: false,
+      relevanceScore: importance.score,
+      visibilityScope,
+      readScope: readWriteScopes.readScope,
+      writeScope: readWriteScopes.writeScope,
+      triggeredBy: input.toolName ?? null,
+      captureReason: clientEncryptionEnabled ? null : input.reasoning ?? null,
+      usageCount: 0,
+      isActive: true,
+      sector,
+      tier: clientEncryptionEnabled ? 'cold' : 'hot',
+      validFrom: validFromDate,
+      recordedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
   // Add namespace if specified
-  if (input.namespaceId) {
+  if (input.namespaceId && !postgresSchema) {
     insertValues.namespaceId = input.namespaceId;
   }
 
-  // Add user if specified
-  if (accessUser && schema.users) {
-    try {
-      const userRecord = await getOrCreateUser(accessUser, db, schema);
-      if (userRecord) {
-        insertValues.userId = userRecord.id;
-      }
-    } catch (e: any) {
-      logger.warn('[User] Failed to attach user:', e);
+  if (persistedOwnerId) insertValues.userId = persistedOwnerId;
+  if (clientEncryptionEnabled) {
+    if (!encryptedPayload) throw new Error('Encrypted memory payload was not prepared');
+    if (postgresSchema) {
+      insertValues.encryptedContent = encryptedPayload.ciphertext;
+      insertValues.encryptionNonce = encryptedPayload.nonce;
+      insertValues.isEncrypted = true;
+      insertValues.tags = [];
+    } else {
+      insertValues.encrypted_content = encryptedPayload.ciphertext;
+      insertValues.encryption_nonce = encryptedPayload.nonce;
+      insertValues.is_encrypted = true;
+      insertValues.tags = serializeTags([]);
     }
-  }
-
-  if (config.clientEncryptionEnabled) {
-    const { ciphertext, nonce } = encrypt(input.content);
-    insertValues.encrypted_content = ciphertext;
-    insertValues.encryption_nonce = nonce;
-    insertValues.is_encrypted = true;
-    // Store empty placeholder for plain content
     insertValues.content = '';
+    insertValues.summary = null;
+    insertValues.tokensEstimate = 0;
   } else {
     insertValues.content = input.content;
-    insertValues.is_encrypted = false;
+    if (!postgresSchema) insertValues.is_encrypted = false;
   }
 
+  let knowledgeRecordId: string | null = null;
+
+  // Every durable memory gets a knowledge projection, including globally
+  // scoped memories. Project isolation is represented by projectId; NULL is
+  // the shared global scope used by cross-agent recall.
+  const knowledgeInput: CreateKnowledgeInput = {
+    sourceMemoryId: id,
+    ownerId: persistedOwnerId ?? undefined,
+    teamId: input.teamId ?? undefined,
+    projectId: project?.id,
+    userId: insertValues.userId ?? undefined,
+    sessionId: clientEncryptionEnabled ? undefined : input.sessionId ?? undefined,
+    knowledgeKind: 'memory',
+    knowledgeType: type,
+    content: input.content,
+    summary: undefined,
+    confidence: importance.score / 100,
+    tags,
+    metadata: { ...enrichedMetadata },
+    sector,
+    tier: importance.score >= 70 ? 'hot' : 'cold',
+    validFrom: validFromDate,
+    recordedAt: now,
+  };
+
+  try {
+  let promotionAclDenyReason: 'acl_rule' | 'private_default' | null = null;
   await withBusyRetry(async () => {
-    const raw = (await getDb() as any).$client;
-    if (project?.id && raw && typeof raw.exec === 'function') {
-      // Keep both writes on the same native SQLite connection and transaction.
+    if (postgresSchema) {
+      const transactionDb = nativeDb as { transaction?: (callback: (tx: DrizzleExecutor) => Promise<void>) => Promise<void> } | null;
+      if (!transactionDb || typeof transactionDb.transaction !== 'function') {
+        throw new Error('PostgreSQL memory capture requires a Drizzle transaction-capable database');
+      }
+      await transactionDb.transaction(async (tx) => {
+        let inheritedPromotionExpiry: Date | null = null;
+        if (strictPromotion) {
+          const authorization = strictPromotion.requiredTeamRole;
+          if (authorization) {
+            const [membership] = await tx.select({ role: schema.team_members.role })
+              .from(schema.team_members)
+              .where(and(
+                eq(schema.team_members.teamId, authorization.teamId),
+                eq(schema.team_members.userId, authorization.persistedUserId),
+              ))
+              .limit(1);
+            if (!membership || !authorization.roles.includes(membership.role as 'owner' | 'admin')) {
+              throw new TrustBoundaryError('Team role was revoked before promotion could commit');
+            }
+          }
+          const { memories: memoryTable } = schema;
+          const [source] = await tx.select().from(memoryTable).where(eq(memoryTable.id, strictPromotion.source.id)).for('update');
+          const sourceMetadata = source?.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+            ? source.metadata as Record<string, unknown>
+            : {};
+          const persistedExpiry = source?.expiresAt == null ? null : source.expiresAt.getTime();
+          const expectedExpiry = strictPromotion.source.expiresAt == null ? null : strictPromotion.source.expiresAt.getTime();
+          const sourceValid = Boolean(source) && source!.content === strictPromotion.source.content &&
+            source!.projectId === strictPromotion.source.projectId && source!.type === strictPromotion.source.type &&
+            source!.userId === strictPromotion.source.ownerId && source!.teamId === null &&
+            source!.status === 'active' && source!.isActive === true &&
+            (strictPromotion.source.expiresAt === undefined || persistedExpiry === expectedExpiry) &&
+            (!source!.expiresAt || source!.expiresAt.getTime() > Date.now()) &&
+            verifyMemoryProvenance({
+              content: source!.content,
+              projectId: source!.projectId,
+              type: source!.type,
+              ownerId: source!.userId,
+              teamId: source!.teamId,
+              sourceMemoryId: typeof sourceMetadata.sourceMemoryId === 'string' ? sourceMetadata.sourceMemoryId : source!.id,
+              metadata: sourceMetadata,
+            });
+          if (!sourceValid) throw new TrustBoundaryError('Promotion source changed or became ineligible before commit');
+          if (input.expiresAt === undefined) inheritedPromotionExpiry = source!.expiresAt ?? null;
+        }
+        await tx.insert(schema.memories).values(insertValues);
+        if (captureKeyHash && captureContentHash) {
+          const [insertedReceipt] = await tx.insert(schema.memoryCaptureReceipts).values({
+            captureKeyHash,
+            contentHash: captureContentHash,
+            memoryId: id,
+          }).onConflictDoNothing({ target: schema.memoryCaptureReceipts.captureKeyHash })
+            .returning({ captureKeyHash: schema.memoryCaptureReceipts.captureKeyHash });
+          if (!insertedReceipt) {
+            const existing = await findCaptureReceipt(tx, schema, raw, true, captureKeyHash);
+            if (captureReceiptMatches(existing, captureContentHash, project?.id ?? null, persistedOwnerId, input.teamId ?? null)) {
+              throw new ExistingCaptureReceipt(existing.memoryId);
+            }
+            throw new Error('Capture key was already used for different content or memory scope');
+          }
+        }
+        if (inheritedPromotionExpiry) {
+          await tx.update(schema.memories).set({ expiresAt: inheritedPromotionExpiry }).where(eq(schema.memories.id, id));
+        }
+        if (project?.id && !clientEncryptionEnabled && enqueueAnalysis) {
+          await tx.insert(schema.memoryAnalysisJobs).values({
+            id: randomUUID(),
+            sourceMemoryId: id,
+            projectId: project.id,
+            jobKind: 'analyze_memory',
+            status: 'pending',
+          });
+        }
+        const projection = await createKnowledge(knowledgeInput, tx);
+        knowledgeRecordId = projection.id;
+        await markReviewedCompactionSource(tx, id);
+        if (strictPromotion) await writeTeamAuditEvent(strictPromotion.auditEvent, tx);
+      });
+    } else if (raw && typeof raw.exec === 'function') {
+      // Source, analysis job, projection, and any strict promotion audit share
+      // one SQLite transaction so a failed projection cannot leave half a write.
       raw.exec('BEGIN IMMEDIATE');
       try {
+        promotionAclDenyReason = null;
+        const authorization = strictPromotion?.requiredTeamRole;
+        if (authorization) {
+          const membership = raw.prepare(`SELECT role FROM team_members WHERE team_id = ? AND user_id = ?`)
+            .get(authorization.teamId, authorization.persistedUserId) as { role: string } | undefined;
+          if (!membership || !authorization.roles.includes(membership.role as 'owner' | 'admin')) {
+            throw new TrustBoundaryError('Team role was revoked before promotion could commit');
+          }
+        }
+        if (strictPromotion && accessUser
+          && !await preauthorizeStrictMemoryReadBeforeDecrypt(strictPromotion.source.id, accessUser)) {
+          const hasVisibilityRules = raw.prepare(`SELECT 1 FROM visibility_rules
+            WHERE asset_type = 'memory' AND asset_id = ? LIMIT 1`).get(strictPromotion.source.id);
+          promotionAclDenyReason = hasVisibilityRules ? 'acl_rule' : 'private_default';
+          throw new TrustBoundaryError('Promotion source is no longer readable by the caller');
+        }
         await db.insert(schema.memories).values(insertValues);
+        if (captureKeyHash && captureContentHash) {
+          const receipt = raw.prepare(`INSERT INTO memory_capture_receipts (capture_key_hash, content_hash, memory_id)
+            VALUES (?, ?, ?) ON CONFLICT(capture_key_hash) DO NOTHING`).run(captureKeyHash, captureContentHash, id);
+          if (receipt.changes !== 1) {
+            const existing = raw.prepare(`SELECT r.memory_id, r.content_hash, m.project_id, m.user_id, m.team_id
+              FROM memory_capture_receipts r JOIN memories m ON m.id = r.memory_id WHERE r.capture_key_hash = ?`)
+              .get(captureKeyHash) as { memory_id: string; content_hash: string; project_id: string | null; user_id: string | null; team_id: string | null } | undefined;
+            if (existing && existing.content_hash === captureContentHash && existing.project_id === (project?.id ?? null)
+              && existing.user_id === persistedOwnerId && existing.team_id === (input.teamId ?? null)) {
+              throw new ExistingCaptureReceipt(existing.memory_id);
+            }
+            throw new Error('Capture key was already used for different content or memory scope');
+          }
+        }
+        if (privateSessionIndex) {
+          raw.prepare(`INSERT INTO memory_private_session_index
+            (session_token, memory_id, project_id, user_id, team_id, record_mac)
+            VALUES (?, ?, ?, ?, ?, ?)`)
+            .run(privateSessionIndex.sessionToken, id, project?.id ?? null, persistedOwnerId, input.teamId ?? null,
+              privateSessionIndex.recordMac);
+        }
+        if (project?.id && !clientEncryptionEnabled && enqueueAnalysis) {
+          await db.insert(schema.memoryAnalysisJobs).values({
+            id: randomUUID(),
+            sourceMemoryId: id,
+            projectId: project.id,
+            jobKind: 'analyze_memory',
+            status: 'pending',
+          });
+        }
+        const projection = await createKnowledge(knowledgeInput);
+        knowledgeRecordId = projection.id;
+        await markReviewedCompactionSource(db, id);
+        if (strictPromotion) {
+          const source = raw.prepare(`SELECT id, project_id, user_id, team_id, type, content,
+            encrypted_content, encryption_nonce, is_encrypted, metadata, status, is_active,
+            valid_from, valid_to, expires_at
+            FROM memories WHERE id = ?`).get(strictPromotion.source.id) as {
+              id: string; project_id: string | null; user_id: string | null; team_id: string | null;
+              type: string; content: string; encrypted_content: string | null; encryption_nonce: string | null;
+              is_encrypted: number | null; metadata: string | Record<string, unknown> | null;
+              status: string | null; is_active: number | null;
+              valid_from: number | null; valid_to: number | null; expires_at: number | null;
+            } | undefined;
+          const nowMs = Date.now();
+          const sourceValidFrom = normalizeTimestampValue(source?.valid_from);
+          const sourceValidTo = normalizeTimestampValue(source?.valid_to);
+          const sourceExpiry = normalizeTimestampValue(source?.expires_at);
+          const sourceTemporalStateValid = Boolean(source)
+            && (source!.valid_from == null || sourceValidFrom !== null)
+            && (source!.valid_to == null || sourceValidTo !== null)
+            && (source!.expires_at == null || sourceExpiry !== null)
+            && (sourceValidFrom === null || sourceValidFrom <= nowMs)
+            && (sourceValidTo === null || sourceValidTo > nowMs)
+            && (sourceExpiry === null || sourceExpiry > nowMs);
+          let sourceMetadata: Record<string, unknown> = {};
+          try {
+            const parsed: unknown = typeof source?.metadata === 'string'
+              ? JSON.parse(source.metadata)
+              : source?.metadata;
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              sourceMetadata = parsed as Record<string, unknown>;
+            }
+          } catch {
+            throw new TrustBoundaryError('Promotion source metadata changed before commit');
+          }
+          let sourceContent = source?.content;
+          if (source?.is_encrypted) {
+            if (!source.encrypted_content || !source.encryption_nonce) {
+              throw new TrustBoundaryError('Promotion source could not be verified before commit');
+            }
+            try {
+              sourceContent = decrypt(source.encrypted_content, source.encryption_nonce);
+            } catch {
+              throw new TrustBoundaryError('Promotion source could not be verified before commit');
+            }
+          }
+          const unchangedAndVerified = Boolean(source) &&
+            source!.id === strictPromotion.source.id &&
+            sourceContent === strictPromotion.source.content &&
+            source!.project_id === strictPromotion.source.projectId &&
+            source!.type === strictPromotion.source.type &&
+            source!.user_id === strictPromotion.source.ownerId &&
+            source!.team_id === null &&
+            source!.status === 'active' &&
+            source!.is_active === 1 &&
+            sourceTemporalStateValid &&
+            (strictPromotion.source.expiresAt === undefined || sourceExpiry === (strictPromotion.source.expiresAt?.getTime() ?? null)) &&
+            verifyMemoryProvenance({
+              content: sourceContent ?? '',
+              projectId: source!.project_id,
+              type: source!.type,
+              ownerId: source!.user_id,
+              teamId: source!.team_id,
+              sourceMemoryId: typeof sourceMetadata.sourceMemoryId === 'string'
+                ? sourceMetadata.sourceMemoryId
+                : source!.id,
+              metadata: sourceMetadata,
+            });
+          if (!unchangedAndVerified) {
+            throw new TrustBoundaryError('Promotion source changed or became ineligible before commit');
+          }
+          if (input.expiresAt === undefined && source!.expires_at !== null) {
+            raw.prepare('UPDATE memories SET expires_at = ? WHERE id = ?').run(source!.expires_at, id);
+          }
+          await writeTeamAuditEvent(strictPromotion.auditEvent);
+        }
+        raw.exec('COMMIT');
+      } catch (error) {
+        try { raw.exec('ROLLBACK'); } catch {}
+        if (promotionAclDenyReason && strictPromotion && accessUser) {
+          try {
+            await writeTrustAudit({
+              actorId: accessUser,
+              resourceId: strictPromotion.source.id,
+              assetType: 'memory',
+              decision: 'deny',
+              reason: promotionAclDenyReason,
+            });
+          } catch {
+            throw new TrustBoundaryError('Promotion source ACL denial could not be audited');
+          }
+        }
+        throw error;
+      }
+    } else {
+      if (reviewedCompactionSource) {
+        throw new Error('Reviewed compaction cannot commit without an atomic database transaction');
+      }
+      await db.insert(schema.memories).values(insertValues);
+      if (project?.id && !clientEncryptionEnabled && enqueueAnalysis) {
         await db.insert(schema.memoryAnalysisJobs).values({
           id: randomUUID(),
           sourceMemoryId: id,
@@ -229,43 +1084,48 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
           jobKind: 'analyze_memory',
           status: 'pending',
         });
-        raw.exec('COMMIT');
-      } catch (error) {
-        try { raw.exec('ROLLBACK'); } catch {}
-        throw error;
       }
-    } else {
-      await db.insert(schema.memories).values(insertValues);
+      knowledgeRecordId = (await createKnowledge(knowledgeInput)).id;
     }
   }, { label: 'rememberMemory.insert' });
+  } catch (error) {
+    if (error instanceof ExistingCaptureReceipt) {
+      await repairExistingReviewedCompactionLink(error.memoryId);
+      return await loadCaptureReplayMemory(error.memoryId, accessUser);
+    }
+    throw error;
+  }
 
-  let knowledgeRecordId: string | null = null;
+  if (!knowledgeRecordId) throw new Error(`Failed to create canonical memory projection for ${id}`);
+  logger.debug(`[Knowledge] Stored memory ${id} in knowledge table`);
 
-  if (project?.id) {
-
-    // Store memory in unified knowledge table
-    const knowledgeInput: CreateKnowledgeInput = {
-      projectId: project.id,
-      userId: insertValues.userId ?? undefined,
-      sessionId: input.sessionId ?? undefined,
-      knowledgeKind: 'memory',
-      knowledgeType: type,
-      content: input.content,
-      summary: undefined,
-      confidence: importance.score / 100,
-      tags,
-      metadata: enrichedMetadata,
-      sector,
-      tier: importance.score >= 70 ? 'hot' : 'cold',
-    };
-    const knowledgeRecord = await createKnowledge(knowledgeInput);
-    knowledgeRecordId = knowledgeRecord.id;
-    logger.debug(`[Knowledge] Stored memory ${id} in knowledge table`);
+  const procedureOutcome = enrichedMetadata.procedureOutcome as {
+    procedureKey?: string; result?: 'success' | 'failure'; evidenceId?: string;
+  } | undefined;
+  const procedureSourceId = typeof enrichedMetadata.sourceId === 'string' ? enrichedMetadata.sourceId.trim() : '';
+  if (!clientEncryptionEnabled && !isStrictTrustPolicy() && procedureSourceId && procedureOutcome?.procedureKey && procedureOutcome.result && procedureOutcome.evidenceId) {
+    try {
+      const { linkConflictingProcedureOutcomes } = await import('./procedure-outcomes.js');
+      await linkConflictingProcedureOutcomes({
+        knowledgeId: knowledgeRecordId,
+        projectId: project?.id ?? null,
+        userId: insertValues.userId ?? null,
+        teamId: insertValues.teamId ?? null,
+        outcome: {
+          procedureKey: procedureOutcome.procedureKey,
+          result: procedureOutcome.result,
+          evidenceId: procedureOutcome.evidenceId,
+          sourceId: procedureSourceId,
+        },
+      });
+    } catch (error) {
+      logger.warn(`[Memory] Could not link conflicting procedure outcomes for ${id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   // Build graph for this memory (auto-build if enabled). The sync now projects
   // the knowledge edge after extraction, when newly discovered entities exist.
-  if (config.graphAutoBuild && project?.id) {
+  if (!clientEncryptionEnabled && !isStrictTrustPolicy() && config.graphAutoBuild && project?.id) {
      try {
        const syncResult = await onMemoryStored(id, {
          project: input.project,
@@ -281,38 +1141,14 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
 
    // Mental-model refresh is fire-and-forget and internally catches failures;
    // it must never add latency or failure modes to the durable memory write.
-   if (config.llmEnabled && project?.id) scheduleMentalModelRefresh(project.id);
-
-   // Resolve contradictions and supersede old memories (async, non-blocking)
-   // Benchmarks can skip this expensive path by setting SQUISH_SKIP_CONTRADICTION=true
-    if (process.env.SQUISH_SKIP_CONTRADICTION !== 'true') {
-        resolveContradictions(input.content, type, project?.id ?? undefined, id, insertValues.createdAt as string)
-       .then(async (result) => {
-          if (result.supersededIds.length > 0) {
-            await applySupersession(id, result.supersededIds, result.confidence, result.associationType);
-           // Update metadata with contradiction resolution info
-           const updatedMetadata: Record<string, unknown> = {
-             ...enrichedMetadata,
-             contradictionResolution: {
-               supersededCount: result.supersededIds.length,
-               confidence: result.confidence,
-               reason: result.reason,
-             },
-           };
-           metadataValue = serializeMetadata(updatedMetadata);
-          }
-       })
-       .catch((error) => {
-         import('../logger.js').then(({ logger }) => {
-           logger?.debug?.(`Contradiction resolution failed: ${error}`);
-         });
-       });
-   }
+   if (!clientEncryptionEnabled && !isStrictTrustPolicy() && config.llmEnabled && project?.id) scheduleMentalModelRefresh(project.id);
 
   // Sync to QMD if enabled (async, don't block)
 
-  // Auto-assign to Inbox place by default (or specified placeType)
-  await assignMemoryToDefaultPlace(id, project?.id, input.placeType || null, {
+  // Place APIs have no caller-scoped authorization contract under strict
+  // trust. Skip the automatic path instead of generating routine denial
+  // audits for every valid strict capture.
+  if (!clientEncryptionEnabled && !isStrictTrustPolicy()) await assignMemoryToDefaultPlace(id, project?.id, input.placeType || null, {
     tags: input.tags,
     content: input.content,
     toolName: input.toolName,
@@ -322,7 +1158,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   // Create knowledge_edge from knowledge record to primary place
   // This bridges the knowledge table with the place system so that
   // getConnectedPlaces() can traverse cross-system relationships.
-  if (knowledgeRecordId) {
+  if (!clientEncryptionEnabled && !isStrictTrustPolicy() && knowledgeRecordId) {
     try {
       const db = await getDb();
       const schema = await getSchema();
@@ -343,7 +1179,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   }
 
   // Store tags in memory_tags indexed table (v1.5.0)
-  if (tags.length > 0) {
+  if (!clientEncryptionEnabled && !isStrictTrustPolicy() && tags.length > 0) {
     try {
       const { storeMemoryTags } = await import('../places/memory-places.js');
       await storeMemoryTags(id, tags, 'heuristic');
@@ -355,10 +1191,38 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   // Post-capture geometry check (non-blocking, fire-and-forget)
   // Evaluates whether the new memory's cluster is safe to consolidate
   const embeddingForGeo = parseEmbedding(embedding);
-  if (config.consolidationGeometryAutoConsolidate && embeddingForGeo && embeddingForGeo.length > 0) {
-    evaluateAndConsolidate(id, embeddingForGeo).catch((err: Error) =>
+  if (!clientEncryptionEnabled && !isStrictTrustPolicy() && config.consolidationGeometryAutoConsolidate && embeddingForGeo && embeddingForGeo.length > 0) {
+    evaluateAndConsolidate(id, embeddingForGeo, embeddingValues.embeddingModel ?? null).catch((err: Error) =>
       logger.debug('Post-capture geometry check failed', err)
     );
+  }
+
+  // WS2a: write-time near-duplicate stage. Runs after the store (and after
+  // the contradiction-resolution dispatch above). SQUISH_WRITE_DEDUP default
+  // 'off' short-circuits the getter here, so the shipped write path performs
+  // no extra reads/writes at all. 'link' adds bidirectional near_duplicate
+  // associations + metadata.dedup (non-destructive); 'merge' (explicit
+  // opt-in) reuses the existing reversible approve-merge machinery.
+  // Best-effort: a stage failure is logged, never propagated.
+  if (!clientEncryptionEnabled && !isStrictTrustPolicy() && config.writeDedupMode !== 'off') {
+    try {
+      const dedupOutcome = await runWriteDedupStage({
+        memoryId: id,
+        content: input.content,
+        projectId: project?.id ?? null,
+        projectPath: input.project ?? null,
+        teamId: input.teamId ?? null,
+      });
+      if (dedupOutcome) {
+        // Reflect the detection in the returned record too. The stored row is
+        // already updated by the stage's own read-modify-write
+        // (recordDedupMetadata); re-serializing insertValues' local
+        // metadataValue here was dead code after the INSERT captured it.
+        enrichedMetadata.dedup = dedupOutcome;
+      }
+    } catch (dedupErr) {
+      logger.debug(`[WriteDedup] stage failed for memory ${id}: ${dedupErr}`);
+    }
   }
 
   const memoryRecord: MemoryRecord = {
@@ -370,6 +1234,11 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   metadata: enrichedMetadata,
   visibilityScope,
   importance: importance.score as number,
+  // Return the temporal values written above so callers (including the SDK)
+  // can immediately reason about delayed imports without re-reading storage.
+  validFrom: validFromDate.toISOString(),
+  validTo: null,
+  recordedAt: now.toISOString(),
 };
 
   // Batch 7: every squish_remember write is project activity - feed the
@@ -379,7 +1248,7 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
   // Batch 7 review (M-2): these signals land in the dedicated
   // `memory-write:<project>` pseudo-session and are tagged kind='memory-
   // write' so harness-parsed sessions win wake-up selection.
-  if (input.project) {
+  if (!clientEncryptionEnabled && input.project && !isStrictTrustPolicy()) {
     try {
       await recordSessionSignal({
         sessionId: input.sessionId ?? `memory-write:${input.project}`,
@@ -397,15 +1266,37 @@ export async function rememberMemory(input: RememberInput): Promise<MemoryRecord
     }
   }
 
-  emit({
-    type: 'memory:stored',
-    payload: {
-      memoryId: id,
-      content: input.content,
-      type: type ?? 'note',
-      project: input.project,
-    },
-  });
+  // The legacy event carries raw content but has no principal/ACL contract.
+  if (!clientEncryptionEnabled && !isStrictTrustPolicy()) {
+    emit({
+      type: 'memory:stored',
+      payload: {
+        memoryId: id,
+        content: input.content,
+        type: type ?? 'note',
+        project: input.project,
+      },
+    });
+  }
+
+  // SQLite transactions are connection-scoped. Finish supersession before
+  // returning so the next sequential memory write cannot begin while this
+  // write's resolver still owns a transaction on the shared connection.
+  // PostgreSQL and strict-trust paths remain disabled until their scoped
+  // lifecycle contracts are implemented.
+  if (!clientEncryptionEnabled && !postgresSchema && !isStrictTrustPolicy()
+    && !procedureOutcome && process.env.SQUISH_SKIP_CONTRADICTION !== 'true') {
+    try {
+      const result = await resolveContradictions(
+        input.content, type, project?.id ?? undefined, id, insertValues.createdAt as string,
+      );
+      if (result.supersededIds.length > 0) {
+        await applySupersession(id, result.supersededIds, result.confidence, result.associationType);
+      }
+    } catch (error) {
+      logger.debug(`Contradiction resolution failed: ${error}`);
+    }
+  }
 
   return memoryRecord;
 }
@@ -455,11 +1346,12 @@ function extractFilePathSignals(text: string): string[] {
  */
 async function evaluateAndConsolidate(
   memoryId: string,
-  embedding: number[]
+  embedding: number[],
+  embeddingModel: string | null,
 ): Promise<void> {
   try {
     // Find or create the nearest cluster for this memory
-    const clusterId = await findOrCreateCluster(memoryId, embedding);
+    const clusterId = await findOrCreateCluster(memoryId, embedding, undefined, embeddingModel);
 
     // Update cluster geometry stats (centroid, d_bar, d_eff, etc.)
     await updateClusterStats(clusterId);
@@ -580,9 +1472,10 @@ async function assignMemoryToDefaultPlace(
     const client = ((await getDb()) as any).$client || (await getDb());
     try {
       // Resolve placeType to placeId for legacy place_id column
-      const { getPlaceByType } = await import('../places/places.js');
-      const place = await getPlaceByType(resolvedPlaceProjectId, primaryPlace);
-      const placeId = place?.id ?? null;
+      const placeRow = client.prepare(
+        'SELECT id FROM places WHERE project_id = ? AND place_type = ? LIMIT 1'
+      ).get(resolvedPlaceProjectId, primaryPlace) as { id: string } | undefined;
+      const placeId = placeRow?.id ?? null;
 
       if (placeId) {
         const stmt = client.prepare(

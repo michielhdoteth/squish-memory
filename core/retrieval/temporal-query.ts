@@ -8,7 +8,9 @@
  * for a 2022 query.
  *
  * Kinds:
- *   past-anchored   explicit date/year anchor ("in 2021", "before March 2024",
+ *   past-anchored   explicit date/year or relative past anchor ("in 2021",
+ *                   "yesterday", "last night", "last week",
+ *                   "before March 2024",
  *                   "as of 2023", "back in 2019", "during 2022",
  *                   "throughout 2024"). t carries the parsed reference point.
  *   past-unanchored past-reaching language with NO explicit date ("what did X
@@ -32,6 +34,8 @@ export interface TimeReference {
   kind: TimeReferenceKind;
   /** Anchored reference point. Null for every kind except past-anchored. */
   t: Date | null;
+  /** Half-open local-calendar interval for relative-past phrases only. */
+  range?: { from: Date; to: Date };
   /** The matched text (anchor phrase or cue), null when kind === 'none'. */
   raw: string | null;
 }
@@ -63,7 +67,7 @@ const MONTH_YEAR_DAY = 15;
 const ANCHOR_ISO_DATE = /\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/;
 
 /** ISO year-month: "2024-03". */
-const ANCHOR_ISO_YM = /\b(20\d{2})-(\d{1,2})\b/;
+const ANCHOR_ISO_YM = /\b(20\d{2})-(\d{1,2})\b(?!-\d)/;
 
 /**
  * Preposition + month word + year: "in March 2024", "before Jan 2022",
@@ -81,7 +85,7 @@ const ANCHOR_PREP_MONTH_YEAR =
  * the parser (kind 'none'), so point-in-time queries served current-version
  * answers for periods with no valid version (bench temporal-mismatch cw).
  */
-const ANCHOR_PREP_YEAR = /\b(?:in|during|throughout|before|after|until|since|as\s+of|back\s+in)\s+(20\d{2})\b/i;
+const ANCHOR_PREP_YEAR = /\b(?:in|during|throughout|before|after|until|since|as\s+of|back\s+in)\s+(20\d{2})\b(?!-\d)/i;
 
 /** Bare month name + year without preposition: "March 2024". */
 const ANCHOR_BARE_MONTH_YEAR = /\b([A-Za-z]+)\.?\s+(20\d{2})\b/;
@@ -105,6 +109,129 @@ const UNANCHORED_BEFORE_DID = /\bbefore\b[\s\S]{0,60}?\b(?:did|was|were)\b/i;
 /** Explicit present-tense markers. */
 const CURRENT_CUES =
   /\b(?:currently|now|today|these\s+days|right\s+now|at\s+present)\b/i;
+
+const RELATIVE_PAST_CUES =
+  /\b(last\s+night|yesterday|last\s+(?:week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+};
+
+interface LocalDateTime {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
+
+function localDateTime(date: Date, timeZone: string): LocalDateTime {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((entry) => entry.type === type)?.value);
+  return {
+    year: part('year'), month: part('month'), day: part('day'),
+    hour: part('hour'), minute: part('minute'), second: part('second'),
+  };
+}
+
+function zonedDateTimeToUtc(target: LocalDateTime, timeZone: string): Date {
+  const wallClock = Date.UTC(target.year, target.month - 1, target.day, target.hour, target.minute, target.second);
+  const offsets = new Set<number>();
+  for (const probe of [wallClock - 36 * 60 * 60_000, wallClock, wallClock + 36 * 60 * 60_000]) {
+    const local = localDateTime(new Date(probe), timeZone);
+    offsets.add(Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second) - probe);
+  }
+  const resolveExact = (parts: LocalDateTime): number | null => {
+    const localWallClock = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+    const matches = [...offsets].map((offset) => localWallClock - offset).filter((candidate) => {
+      const actual = localDateTime(new Date(candidate), timeZone);
+      return actual.year === parts.year && actual.month === parts.month && actual.day === parts.day
+        && actual.hour === parts.hour && actual.minute === parts.minute && actual.second === parts.second;
+    });
+    return matches.length ? Math.min(...matches) : null;
+  };
+  const exact = resolveExact(target);
+  if (exact !== null) return new Date(exact);
+
+  // If a zone skips midnight, anchor at the first representable local minute.
+  for (let minute = 1; minute <= 180; minute += 1) {
+    const shifted = new Date(wallClock + minute * 60_000);
+    const parts: LocalDateTime = {
+      year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate(),
+      hour: shifted.getUTCHours(), minute: shifted.getUTCMinutes(), second: shifted.getUTCSeconds(),
+    };
+    const resolved = resolveExact(parts);
+    if (resolved !== null) return new Date(resolved);
+  }
+  throw new RangeError(`Could not resolve local time in ${timeZone}`);
+}
+
+function relativePastRange(phrase: string, referenceDate: Date, timeZone: string): { t: Date; range: { from: Date; to: Date } } {
+  const local = localDateTime(referenceDate, timeZone);
+  const localDate = new Date(Date.UTC(local.year, local.month - 1, local.day));
+  const phraseLower = phrase.toLowerCase();
+  if (phraseLower === 'last night') {
+    const startDate = new Date(localDate);
+    startDate.setUTCDate(startDate.getUTCDate() - 1);
+    const from = zonedDateTimeToUtc({ year: startDate.getUTCFullYear(), month: startDate.getUTCMonth() + 1, day: startDate.getUTCDate(), hour: 18, minute: 0, second: 0 }, timeZone);
+    const morning = zonedDateTimeToUtc({ ...local, hour: 6, minute: 0, second: 0 }, timeZone);
+    const to = new Date(Math.min(referenceDate.getTime(), morning.getTime()));
+    return { t: new Date(to.getTime() - 1), range: { from, to } };
+  }
+
+  let fromParts: LocalDateTime;
+  let toParts: LocalDateTime;
+  if (phraseLower === 'yesterday') {
+    const startDate = new Date(localDate);
+    startDate.setUTCDate(startDate.getUTCDate() - 1);
+    fromParts = { year: startDate.getUTCFullYear(), month: startDate.getUTCMonth() + 1, day: startDate.getUTCDate(), hour: 0, minute: 0, second: 0 };
+    toParts = { ...local, hour: 0, minute: 0, second: 0 };
+  } else if (phraseLower === 'last week') {
+    const weekStart = new Date(localDate);
+    weekStart.setUTCDate(weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7));
+    const priorWeek = new Date(weekStart);
+    priorWeek.setUTCDate(priorWeek.getUTCDate() - 7);
+    fromParts = { year: priorWeek.getUTCFullYear(), month: priorWeek.getUTCMonth() + 1, day: priorWeek.getUTCDate(), hour: 0, minute: 0, second: 0 };
+    toParts = { year: weekStart.getUTCFullYear(), month: weekStart.getUTCMonth() + 1, day: weekStart.getUTCDate(), hour: 0, minute: 0, second: 0 };
+  } else if (phraseLower === 'last month') {
+    const currentMonth = new Date(Date.UTC(local.year, local.month - 1, 1));
+    const priorMonth = new Date(Date.UTC(local.year, local.month - 2, 1));
+    fromParts = { year: priorMonth.getUTCFullYear(), month: priorMonth.getUTCMonth() + 1, day: 1, hour: 0, minute: 0, second: 0 };
+    toParts = { year: currentMonth.getUTCFullYear(), month: currentMonth.getUTCMonth() + 1, day: 1, hour: 0, minute: 0, second: 0 };
+  // "Last Tuesday" on a Tuesday means the Tuesday one week earlier.
+  } else if (phraseLower.startsWith('last ') && WEEKDAY_INDEX[phraseLower.slice(5)] !== undefined) {
+    const daysBack = (localDate.getUTCDay() - WEEKDAY_INDEX[phraseLower.slice(5)] + 7) % 7 || 7;
+    const day = new Date(localDate);
+    day.setUTCDate(day.getUTCDate() - daysBack);
+    const nextDay = new Date(day);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    fromParts = { year: day.getUTCFullYear(), month: day.getUTCMonth() + 1, day: day.getUTCDate(), hour: 0, minute: 0, second: 0 };
+    toParts = { year: nextDay.getUTCFullYear(), month: nextDay.getUTCMonth() + 1, day: nextDay.getUTCDate(), hour: 0, minute: 0, second: 0 };
+  } else {
+    fromParts = { year: local.year - 1, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+    toParts = { year: local.year, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+  }
+  const from = zonedDateTimeToUtc(fromParts, timeZone);
+  const to = zonedDateTimeToUtc(toParts, timeZone);
+  return { t: new Date(to.getTime() - 1), range: { from, to } };
+}
 
 // ---------------------------------------------------------------------------
 // Month resolution
@@ -133,10 +260,17 @@ function resolveMonth(word: string): number | null {
     : null;
 }
 
-function makeUtc(year: number, monthIndex: number, day: number): Date {
-  // Mid-point hours keep the instant inside the intended bucket even when
-  // downstream comparisons land exactly on midnight boundaries.
-  return new Date(Date.UTC(year, monthIndex, day, 12, 0, 0));
+function makeUtc(year: number, monthIndex: number, day: number, timeZone = 'UTC'): Date {
+  // Resolve the bucket midpoint in the caller's local calendar. A fixed UTC
+  // noon can land on the next local date in zones east of UTC+12.
+  return zonedDateTimeToUtc({ year, month: monthIndex + 1, day, hour: 12, minute: 0, second: 0 }, timeZone);
+}
+
+function isValidIsoDate(year: number, month: number, day: number): boolean {
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return candidate.getUTCFullYear() === year
+    && candidate.getUTCMonth() === month - 1
+    && candidate.getUTCDate() === day;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +282,7 @@ function makeUtc(year: number, monthIndex: number, day: number): Date {
  * (regex only). Returns kind 'none' with t/raw null for anything that does
  * not reach into time at all.
  */
-export function parseTimeReference(query: string): TimeReference {
+export function parseTimeReference(query: string, referenceDate?: Date, timeZone = 'UTC'): TimeReference {
   const text = typeof query === 'string' ? query : '';
   if (text.trim().length === 0) {
     return { kind: 'none', t: null, raw: null };
@@ -157,19 +291,19 @@ export function parseTimeReference(query: string): TimeReference {
   // --- Anchored: first match wins -----------------------------------------
 
   let m = ANCHOR_ISO_DATE.exec(text);
-  if (m) {
+  if (m && isValidIsoDate(Number(m[1]), Number(m[2]), Number(m[3]))) {
     return {
       kind: 'past-anchored',
-      t: makeUtc(Number(m[1]), Number(m[2]) - 1, Number(m[3])),
+      t: makeUtc(Number(m[1]), Number(m[2]) - 1, Number(m[3]), timeZone),
       raw: m[0],
     };
   }
 
   m = ANCHOR_ISO_YM.exec(text);
-  if (m) {
+  if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) {
     return {
       kind: 'past-anchored',
-      t: makeUtc(Number(m[1]), Number(m[2]) - 1, MONTH_YEAR_DAY),
+      t: makeUtc(Number(m[1]), Number(m[2]) - 1, MONTH_YEAR_DAY, timeZone),
       raw: m[0],
     };
   }
@@ -180,7 +314,7 @@ export function parseTimeReference(query: string): TimeReference {
     if (monthIndex !== null) {
       return {
         kind: 'past-anchored',
-        t: makeUtc(Number(m[2]), monthIndex, MONTH_YEAR_DAY),
+        t: makeUtc(Number(m[2]), monthIndex, MONTH_YEAR_DAY, timeZone),
         raw: m[0],
       };
     }
@@ -191,7 +325,7 @@ export function parseTimeReference(query: string): TimeReference {
   if (m) {
     return {
       kind: 'past-anchored',
-      t: makeUtc(Number(m[1]), YEAR_ALONE_MONTH_INDEX, YEAR_ALONE_DAY),
+      t: makeUtc(Number(m[1]), YEAR_ALONE_MONTH_INDEX, YEAR_ALONE_DAY, timeZone),
       raw: m[0],
     };
   }
@@ -202,13 +336,27 @@ export function parseTimeReference(query: string): TimeReference {
     if (monthIndex !== null) {
       return {
         kind: 'past-anchored',
-        t: makeUtc(Number(m[2]), monthIndex, MONTH_YEAR_DAY),
+        t: makeUtc(Number(m[2]), monthIndex, MONTH_YEAR_DAY, timeZone),
         raw: m[0],
       };
     }
   }
 
   // --- Unanchored past ------------------------------------------------------
+
+  m = RELATIVE_PAST_CUES.exec(text);
+  if (m) {
+    if (referenceDate && Number.isFinite(referenceDate.getTime())) {
+      const anchor = relativePastRange(m[0], referenceDate, timeZone);
+      return {
+        kind: 'past-anchored',
+        t: anchor.t,
+        range: anchor.range,
+        raw: m[0],
+      };
+    }
+    return { kind: 'past-unanchored', t: null, raw: m[0] };
+  }
 
   m = UNANCHORED_USED_TO.exec(text)
     ?? UNANCHORED_ADVERBS.exec(text)
@@ -222,7 +370,7 @@ export function parseTimeReference(query: string): TimeReference {
 
   m = CURRENT_CUES.exec(text);
   if (m) {
-    return { kind: 'current', t: null, raw: m[0] };
+    return { kind: 'current', t: referenceDate ? new Date(referenceDate) : null, raw: m[0] };
   }
 
   return { kind: 'none', t: null, raw: null };

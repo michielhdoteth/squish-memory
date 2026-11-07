@@ -6,6 +6,7 @@
  *   squish clean --list-stale [--days 30] [--limit 20]
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
 import { client } from '../program.js';
 import { remediationFor } from '../errors.js';
@@ -25,10 +26,7 @@ export function registerCleanCommand(program: Command): void {
     .option('-L, --limit <number>', 'Max stale memories to display (used with --list-stale)', '20')
     .option('-p, --project <project>', 'Project path (global if omitted)')
     .action(async (opts) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (opts.json) {
-        process.env.SQUISH_QUIET = '1';
-      }
+      const restoreQuiet = suppressQuietMode(!!opts.json);
       try {
         // --- Mode 1: List stale memories (absorbed from stale command) ---
         if (opts.listStale) {
@@ -99,13 +97,7 @@ export function registerCleanCommand(program: Command): void {
         }
         process.exit(1);
       } finally {
-        if (opts.json) {
-          if (previousQuiet === undefined) {
-            delete process.env.SQUISH_QUIET;
-          } else {
-            process.env.SQUISH_QUIET = previousQuiet;
-          }
-        }
+        restoreQuiet();
       }
     });
 

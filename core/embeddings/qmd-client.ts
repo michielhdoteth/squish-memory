@@ -18,7 +18,9 @@
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { Client } from "@modelcontextprotocol/client";
 import { spawn } from 'child_process';
+import { config } from '../../config.js';
 import { logger } from '../logger';
+import { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } from '../acl/trust-policy.js';
 
 export interface QMDSearchOptions {
   query: string;
@@ -58,33 +60,60 @@ export interface QMDGetOptions {
  * search, document retrieval, and status checking.
  */
 export class QMDClient {
+  private static readonly CONNECT_TIMEOUT_MS = 3_000;
   private client: Client | null = null;
   private transport: StdioClientTransport | null = null;
   private connected = false;
   private connecting = false;
 
+  constructor(
+    private readonly spawnProcess: typeof spawn = spawn,
+    private readonly connectTimeoutMs = QMDClient.CONNECT_TIMEOUT_MS,
+  ) {}
+
+  private assertStrictAllowed(): void {
+    if (!isStrictTrustPolicy()) return;
+    resolveTrustedCallerId();
+    throw new TrustBoundaryError('QMD access is unavailable under strict trust until collection scope and model-download egress are caller-bound');
+  }
+
+  private assertEnabled(): void {
+    this.assertStrictAllowed();
+    if (!config.qmdEnabled) {
+      throw new TrustBoundaryError('QMD is disabled; set SQUISH_QMD_ENABLED=true to allow its local subprocess and possible model downloads');
+    }
+  }
+
   /**
    * Check if QMD is installed on the system
    */
   async checkQMDInstalled(): Promise<boolean> {
+    this.assertStrictAllowed();
+    if (!config.qmdEnabled) return false;
     return new Promise((resolve) => {
-      const process = spawn('qmd', ['--version'], {
+      const process = this.spawnProcess('qmd', ['--version'], {
         stdio: 'ignore'
       });
+      let settled = false;
+      const finish = (available: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(available);
+      };
 
       process.on('close', (code) => {
-        resolve(code === 0);
+        finish(code === 0);
       });
 
       process.on('error', () => {
-        resolve(false);
+        finish(false);
       });
 
-      // Timeout after 5 seconds
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         process.kill();
-        resolve(false);
-      }, 5000);
+        finish(false);
+      }, this.connectTimeoutMs);
     });
   }
 
@@ -93,6 +122,11 @@ export class QMDClient {
    * QMD must be installed globally and available on PATH
    */
   async connect(): Promise<boolean> {
+    this.assertStrictAllowed();
+    if (!config.qmdEnabled) {
+      if (this.connected) await this.disconnect();
+      return false;
+    }
     if (this.connected || this.connecting) {
       return this.connected;
     }
@@ -102,8 +136,16 @@ export class QMDClient {
     try {
       // Check if QMD is installed
       const installed = await this.checkQMDInstalled();
+      // The install probe is asynchronous. Re-read both gates before starting
+      // the MCP process so a revoked opt-in or newly selected strict policy
+      // cannot be bypassed by an in-flight availability check.
+      this.assertStrictAllowed();
+      if (!config.qmdEnabled) {
+        this.connecting = false;
+        return false;
+      }
       if (!installed) {
-        logger.warn('QMD is not installed. Install it globally with your package manager, for example: npm install -g qmd');
+        logger.warn('QMD is not installed. Install it separately with your package manager, then retry.');
         this.connecting = false;
         return false;
       }
@@ -119,15 +161,37 @@ export class QMDClient {
         { capabilities: {} }
       );
 
-      await this.client.connect(this.transport);
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          this.client.connect(this.transport),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error(`QMD MCP connection timed out after ${this.connectTimeoutMs}ms`)),
+              this.connectTimeoutMs,
+            );
+          }),
+        ]);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
       this.connected = true;
       this.connecting = false;
       logger.info('Connected to QMD MCP server');
       return true;
     } catch (error) {
       logger.warn(`QMD MCP connection failed: ${error}`);
+      const transport = this.transport;
+      this.client = null;
+      this.transport = null;
       this.connected = false;
       this.connecting = false;
+      if (transport) {
+        // A timed-out handshake must not leave the optional subprocess alive.
+        void transport.close().catch((closeError: unknown) => {
+          logger.debug(`Error closing timed-out QMD transport: ${closeError}`);
+        });
+      }
       return false;
     }
   }
@@ -136,6 +200,11 @@ export class QMDClient {
    * Check if QMD is available
    */
   async isAvailable(): Promise<boolean> {
+    this.assertStrictAllowed();
+    if (!config.qmdEnabled) {
+      if (this.connected) await this.disconnect();
+      return false;
+    }
     if (this.connected && this.client) {
       return true;
     }
@@ -147,6 +216,7 @@ export class QMDClient {
    * Uses SQLite FTS5 for fast full-text search
    */
   async search(options: QMDSearchOptions): Promise<QMDSearchResult[]> {
+    this.assertEnabled();
     if (!this.connected || !this.client) {
       throw new Error('QMD client not connected');
     }
@@ -169,6 +239,7 @@ export class QMDClient {
    * Uses embedding-based similarity search
    */
   async vsearch(options: QMDSearchOptions): Promise<QMDSearchResult[]> {
+    this.assertEnabled();
     if (!this.connected || !this.client) {
       throw new Error('QMD client not connected');
     }
@@ -191,6 +262,7 @@ export class QMDClient {
    * Combines BM25 + vector search + LLM re-ranking
    */
   async query(options: QMDSearchOptions): Promise<QMDSearchResult[]> {
+    this.assertEnabled();
     if (!this.connected || !this.client) {
       throw new Error('QMD client not connected');
     }
@@ -212,6 +284,7 @@ export class QMDClient {
    * Get QMD index status and collection info
    */
   async status(): Promise<QMDStatusResult | null> {
+    this.assertEnabled();
     if (!this.connected || !this.client) {
       return null;
     }
@@ -233,6 +306,7 @@ export class QMDClient {
    * Get document by path or docid
    */
   async get(options: QMDGetOptions): Promise<string> {
+    this.assertEnabled();
     if (!this.connected || !this.client) {
       throw new Error('QMD client not connected');
     }
@@ -260,6 +334,7 @@ export class QMDClient {
    * Get multiple documents by glob pattern or list
    */
   async multiGet(patternOrList: string | string[], options?: { maxBytes?: number; limit?: number }): Promise<string[]> {
+    this.assertEnabled();
     if (!this.connected || !this.client) {
       throw new Error('QMD client not connected');
     }

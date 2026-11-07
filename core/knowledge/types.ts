@@ -70,16 +70,31 @@ export type KnowledgeEdgeType =
   // Knowledge-to-Knowledge
   | 'contradicts' | 'supersedes' | 'supports' | 'informed_by'
   | 'depends_on' | 'extends' | 'related_to' | 'causes' | 'rejects'
-  | 'sourced_from'
+  | 'sourced_from' | 'co_occurred' | 'relates_to' | 'duplicate'
+  | 'near_duplicate' | 'merged' | 'updates' | 'derives'
   // Knowledge-to-Entity
   | 'references' | 'about' | 'describes' | 'created_by' | 'affects'
   // Knowledge-to-Place
-  | 'located_in' | 'belongs_to' | 'context_of'
+  | 'located_in' | 'belongs_to' | 'context_of' | 'placed_in'
   // Entity-to-Entity (from existing RelationType)
-  | 'works_on' | 'manages' | 'uses' | 'contains'
-  | 'implements' | 'part_of' | 'owns' | 'resolved' | 'blocks'
+  | 'works_on' | 'depends_on' | 'manages' | 'uses' | 'caused'
+  | 'reports_to' | 'occurred_on' | 'affects' | 'contains'
+  | 'implements' | 'extends' | 'part_of' | 'owns' | 'created'
+  | 'resolved' | 'blocks' | 'oversees' | 'may_affect' | 'co_occurs_with' | 'mentioned_together' | 'mentioned_before'
+  | 'cites' | 'party_to' | 'version_of' | 'supersedes_version' | 'has_status' | 'dated_on'
   // Entity-to-Place
   | 'operates_in';
+
+/** Relation types that may connect two source-backed knowledge projections. */
+export const SOURCE_BACKED_KNOWLEDGE_EDGE_TYPES = [
+  'contradicts', 'supersedes', 'supports', 'informed_by', 'depends_on', 'extends',
+  'related_to', 'causes', 'rejects', 'sourced_from', 'co_occurred', 'relates_to',
+  'duplicate', 'near_duplicate', 'merged', 'updates', 'derives',
+] as const satisfies readonly KnowledgeEdgeType[];
+
+export function isSourceBackedKnowledgeEdgeType(edgeType: string): edgeType is typeof SOURCE_BACKED_KNOWLEDGE_EDGE_TYPES[number] {
+  return (SOURCE_BACKED_KNOWLEDGE_EDGE_TYPES as readonly string[]).includes(edgeType);
+}
 
 // ─── Confidence ──────────────────────────────────────────────────────────────
 
@@ -145,7 +160,7 @@ export interface Knowledge {
   contradictsId: string | null;
   informedById: string | null;
 
-  tags: string | null; // JSON array
+  tags: string[] | null; // parsed from the JSON array TEXT column on read
   metadata: Record<string, unknown> | null;
 
   // Place routing
@@ -156,6 +171,11 @@ export interface Knowledge {
   sector: string;
   tier: string;
   isActive: number;
+
+  // Bi-temporal timestamps distinguish modeled-world validity from system time.
+  validFrom: Date | null;
+  validTo: Date | null;
+  recordedAt: Date | null;
 
   // Cross-system references (populated at query time via knowledge_edges)
   referencedEntities?: EntityRecord[];
@@ -171,6 +191,8 @@ export interface Knowledge {
  * Automatically detects knowledge_kind from provided fields.
  */
 export interface CreateKnowledgeInput {
+  /** Internal source-memory lineage for canonical memory projections. */
+  sourceMemoryId?: string;
   projectId?: string;
   userId?: string;
   agentId?: string;
@@ -197,6 +219,8 @@ export interface CreateKnowledgeInput {
   evidenceSummary?: string;
   lastConfirmedAt?: number;
   sourceCount?: number;
+  ownerId?: string;
+  teamId?: string;
 
   // Strategy fields
   title?: string;
@@ -225,6 +249,10 @@ export interface CreateKnowledgeInput {
   sector?: string;
   tier?: string;
   isActive?: number;
+
+  validFrom?: Date | null;
+  validTo?: Date | null;
+  recordedAt?: Date;
 }
 
 // ─── Graph Entity ────────────────────────────────────────────────────────────
@@ -299,6 +327,10 @@ export interface KnowledgeEdge {
   weight: number;
   metadata: Record<string, unknown> | null;
   createdAt: Date;
+  validFrom: Date | null;
+  validTo: Date | null;
+  recordedAt: Date | null;
+  recordedTo: Date | null;
 }
 
 /**
@@ -312,6 +344,16 @@ export interface CreateKnowledgeEdgeInput {
   edgeType: KnowledgeEdgeType;
   weight?: number;
   metadata?: Record<string, unknown>;
+  validFrom?: Date;
+  validTo?: Date | null;
+  recordedAt?: Date;
+}
+
+export interface KnowledgeEdgeAsOf {
+  /** When the relationship was true in the modeled world. Defaults to now. */
+  validAt?: Date;
+  /** When Squish had recorded this relationship. Defaults to now. */
+  recordedAt?: Date;
 }
 
 // ─── Recall Types ────────────────────────────────────────────────────────────
@@ -374,6 +416,80 @@ export interface StoredBelief {
   beliefDecayRate?: number;
   createdAt?: Date | string | number | null;
   updatedAt?: Date | string | number | null;
+}
+
+// ─── Graph View Types ────────────────────────────────────────────────────────
+
+/** Graph view type for projecting the unified edge table into relational views */
+export type GraphViewType = 'semantic' | 'temporal' | 'causal' | 'entity';
+
+/** Configuration for a graph view */
+export interface GraphViewConfig {
+  viewType: GraphViewType;
+  edgeTypes: string[];
+  orderBy: 'weight' | 'created_at';
+  maxDepth: number;
+  minWeight: number;
+}
+
+/** Result of querying a graph view */
+export interface GraphViewResult {
+  nodes: Array<{
+    id: string;
+    kind: EdgeNodeKind;
+    weight: number;
+    depth: number;
+    edgeType: string;
+  }>;
+  edges: KnowledgeEdge[];
+  viewType: GraphViewType;
+  totalNodes: number;
+  totalEdges: number;
+}
+
+// ─── Audit Types ─────────────────────────────────────────────────────────────
+
+/** Actions that can be audited */
+export type AuditAction =
+  | 'create' | 'read' | 'update' | 'delete'
+  | 'search' | 'consolidate' | 'merge' | 'decay';
+
+/** Audit log entry — immutable record of an operation on a knowledge record */
+export interface AuditEntry {
+  id: string | number;
+  knowledgeId: string;
+  action: AuditAction;
+  agentId: string | null;
+  projectId: string | null;
+  sessionId: string | null;
+  details: Record<string, unknown> | null;
+  createdAt: Date;
+}
+
+/** Input for creating an audit log entry */
+export interface LogAuditInput {
+  knowledgeId: string;
+  action: AuditAction;
+  agentId?: string;
+  projectId?: string;
+  sessionId?: string;
+  details?: Record<string, unknown>;
+}
+
+/** Options for querying audit trail */
+export interface AuditTrailOptions {
+  action?: AuditAction;
+  agentId?: string;
+  limit?: number;
+}
+
+// ─── Provenance Types ────────────────────────────────────────────────────────
+
+/** A node in the provenance chain */
+export interface ProvenanceNode {
+  knowledgeId: string;
+  edgeType: string | null;
+  depth: number;
 }
 
 // ─── Extraction Types ────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ export interface FullMaintenanceResult {
 
 import { config } from '../config.js';
 import { logger } from './logger.js';
+import { isStrictTrustPolicy, TrustBoundaryError } from './acl/trust-policy.js';
 
 /**
  * Run all maintenance steps in sequence: dedup -> stale -> consolidate -> inbox.
@@ -41,6 +42,9 @@ import { logger } from './logger.js';
 export async function runFullMaintenance(
   options?: FullMaintenanceOptions
 ): Promise<FullMaintenanceResult> {
+  if (isStrictTrustPolicy()) {
+    throw new TrustBoundaryError('Background and full maintenance are disabled under strict trust until each job has caller-scoped authorization and provenance');
+  }
   const {
     projectId,
     dryRun = false,
@@ -181,13 +185,8 @@ export async function runFullMaintenance(
           let deleted = 0;
           if (!dryRun && superseded.length > 0) {
             const ids = superseded.map((m: any) => m.id);
-            // Delete associations first
-            for (const id of ids) {
-              sqlite.prepare('DELETE FROM memory_associations WHERE from_memory_id = ? OR to_memory_id = ?').run(id, id);
-            }
-            // Delete the memories
-            const placeholders = ids.map(() => '?').join(',');
-            sqlite.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...ids);
+            const { deleteMemoryPermanently } = await import('./memory/stale-cleaner.js');
+            for (const id of ids) await deleteMemoryPermanently(id);
             deleted = ids.length;
           }
 

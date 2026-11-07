@@ -13,7 +13,8 @@
 
 import { config } from '../../config.js';
 import { logger } from '../logger.js';
-import type { LLMCallOptions, LLMProvider } from './types.js';
+import { isLoopbackUrl } from '../lib/url-validator.js';
+import type { LLMCallOptions, LLMProvider, LLMTokenUsage } from './types.js';
 
 // ─── Provider Registry ──────────────────────────────────────────────────────
 
@@ -76,6 +77,96 @@ export async function callLLMWithContent(options: LLMCallOptions): Promise<strin
   if (!provider) return null;
 
   return provider.call(options);
+}
+
+function decisionProviderEndpoint(name: string): string | null {
+  switch (name) {
+    case 'openai':
+      return config.llmEndpoint || (config.openAiApiKey ? 'https://api.openai.com/v1' : null);
+    case 'ollama':
+      return config.ollamaUrl;
+    case 'lmstudio':
+    case 'local':
+      return config.lmStudioUrl;
+    default:
+      return null;
+  }
+}
+
+function requiresHostedDecisionConsent(name: string): boolean {
+  if (name === 'anthropic' || name === 'google') return true;
+  const endpoint = decisionProviderEndpoint(name);
+  return endpoint === null || !isLoopbackUrl(endpoint);
+}
+
+/**
+ * Call the decision model -- the small fast model used for structured
+ * decisions (classification, relation judging, query routing, prompt gating).
+ *
+ * Gated by the decision layer's own flags, NOT the master SQUISH_LLM_ENABLED:
+ * the extraction system and the decision system opt in independently. The
+ * provider is resolved from SQUISH_DECISION_MODEL_PROVIDER ('auto' falls back
+ * to config.llmProvider), and the model name is always forced to
+ * config.llmReasoningModel -- the otherwise-unused reasoning slot.
+ *
+ * @param options - Call options (model is overridden with the reasoning model)
+ * @returns The response text, or null when the layer is off, unconfigured,
+ *          or the provider call fails. Callers must treat null as "rules stand".
+ */
+export async function callDecisionModel(options: LLMCallOptions): Promise<string | null> {
+  if (!config.decisionLayerEnabled || !config.decisionModelEnabled) return null;
+
+  const name =
+    config.decisionModelProvider === 'auto'
+      ? config.llmProvider
+      : config.decisionModelProvider;
+  if (requiresHostedDecisionConsent(name) && !config.decisionHostedEgressEnabled) {
+    logger.debug('Decision model hosted egress is disabled; rules stand', { provider: name });
+    return null;
+  }
+  const provider = providers.get(name);
+  if (!provider) {
+    logger.debug(`Decision model provider '${name}' not registered (available: ${[...providers.keys()].join(', ')})`);
+    return null;
+  }
+  if (!provider.isAvailable()) {
+    logger.debug(`Decision model provider '${name}' is not available (missing config)`);
+    return null;
+  }
+
+  const model = config.llmReasoningModel;
+  if (!model) {
+    logger.debug('Decision model call skipped: SQUISH_LLM_REASONING_MODEL is not set');
+    return null;
+  }
+
+  let usage: LLMTokenUsage | null = null;
+  let outcome: 'response' | 'unavailable' | 'error' = 'error';
+  const startedAt = performance.now();
+  try {
+    const result = await provider.call({
+      ...options,
+      model,
+      onUsage: (reported) => {
+        usage = reported;
+        try {
+          options.onUsage?.(reported);
+        } catch {
+          // Optional usage observers must never affect the decision result.
+        }
+      },
+    });
+    outcome = result === null ? 'unavailable' : 'response';
+    return result;
+  } finally {
+    logger.debug('Decision model provider call', {
+      provider: name,
+      model,
+      latencyMs: Math.round(performance.now() - startedAt),
+      outcome,
+      usage,
+    });
+  }
 }
 
 /**

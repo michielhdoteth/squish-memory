@@ -9,6 +9,7 @@ import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { logger } from '../logger.js';
+import { getMemoryAssociationRows } from '../associations.js';
 
 export interface BridgePath {
   route: string[]; // Memory IDs in path
@@ -62,8 +63,10 @@ export async function discoverBridges(
 
     const memoriesById = new Map(allMemories.map((m: any) => [m.id, m]));
 
-    // Get all associations
-    const associations = await (db as any).select().from(schema.memoryAssociations);
+    const projectMemoryIds = new Set(memoriesById.keys());
+    const associations = (await getMemoryAssociationRows()).filter((association) =>
+      projectMemoryIds.has(association.fromMemoryId) && projectMemoryIds.has(association.toMemoryId)
+    );
 
     // Build adjacency list graph
     const graph = new Map<string, Array<{ toId: string; weight: number; type: string }>>();
@@ -272,10 +275,15 @@ export async function getMemoryBridges(
     const schema = await getSchema();
 
     // Find memories connected to this one
-    const associations = await (db as any)
-      .select()
-      .from(schema.memoryAssociations)
-      .where(eq(schema.memoryAssociations.fromMemoryId, memoryId));
+    const projectMemories = await (db as any)
+      .select({ id: schema.memories.id })
+      .from(schema.memories)
+      .where(eq(schema.memories.projectId, projectId));
+    const projectMemoryIds = new Set(projectMemories.map((memory: { id: string }) => memory.id));
+    if (!projectMemoryIds.has(memoryId)) return [];
+
+    const associations = (await getMemoryAssociationRows([memoryId]))
+      .filter((association) => projectMemoryIds.has(association.fromMemoryId) && projectMemoryIds.has(association.toMemoryId));
 
     if (associations.length === 0) {
       return [];
@@ -341,7 +349,10 @@ export async function analyzeNetworkConnectivity(
     }
 
     // Get all associations
-    const associations = await (db as any).select().from(schema.memoryAssociations);
+    const projectMemoryIds = new Set(allMemories.map((memory: { id: string }) => memory.id));
+    const associations = (await getMemoryAssociationRows()).filter((association) =>
+      projectMemoryIds.has(association.fromMemoryId) && projectMemoryIds.has(association.toMemoryId)
+    );
 
     // Calculate graph metrics
     const degree = new Map<string, number>();

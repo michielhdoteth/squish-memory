@@ -12,8 +12,11 @@
 import { getDb } from '../../../db/index.js';
 import { getSchema } from '../../../db/schema.js';
 import { createDatabaseClient, runInTransaction } from '../../../core/storage/database.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gt, isNull, lte, or, sql } from 'drizzle-orm';
 import { asArray } from '../utils/json-fields.js';
+import { assertMergeWorkflowAvailable } from './strict-trust-guard.js';
+import { evictMemoryRuntimeState } from '../../memory/runtime-cache-lifecycle.js';
+import { invalidateSourceDerivedProjections } from '../../memory/edit-workflow.js';
 
 interface ReverseMergeInput {
   mergeHistoryId: string;
@@ -47,6 +50,7 @@ interface SourceSnapshot {
 
 export async function handleReverseMerge(input: ReverseMergeInput): Promise<ReverseMergeResponse> {
   try {
+    assertMergeWorkflowAvailable();
     const { mergeHistoryId, reason } = input;
 
     if (!mergeHistoryId) {
@@ -141,13 +145,22 @@ export async function handleReverseMerge(input: ReverseMergeInput): Promise<Reve
       // concurrent re-merge between the guard check and the write cannot be
       // silently clobbered; such rows are reported as skipped.
       for (const snapshotData of restorableSnapshots) {
+        await db.update(schema.memories)
+          .set({ status: 'expired', isActive: false, recordedAt: now, updatedAt: now })
+          .where(and(
+            eq(schema.memories.id, snapshotData.id),
+            eq(schema.memories.mergedIntoId, history.canonicalMemoryId),
+            eq(schema.memories.status, 'active'),
+            or(lte(schema.memories.validTo, now), lte(schema.memories.expiresAt, now)),
+          ));
+
         const updated = await db
           .update(schema.memories)
           .set({
             isMerged: false,
             mergedIntoId: null,
             mergedAt: null,
-            isActive: true,
+            isActive: false,
             content: snapshotData.content,
             summary: snapshotData.summary ?? undefined,
             tags: snapshotData.tags as any,
@@ -170,6 +183,26 @@ export async function handleReverseMerge(input: ReverseMergeInput): Promise<Reve
         const affected = (updated as any)?.changes ?? (updated as any)?.rowCount ?? (updated as any)?.rowsAffected;
         if (affected === undefined || Number(affected) > 0) {
           restoredMemoryIds.push(snapshotData.id);
+          await db.update(schema.memories).set({ isActive: true })
+            .where(and(
+              eq(schema.memories.id, snapshotData.id),
+              eq(schema.memories.status, 'active'),
+              or(isNull(schema.memories.validTo), gt(schema.memories.validTo, now)),
+              or(isNull(schema.memories.expiresAt), gt(schema.memories.expiresAt, now)),
+            ));
+          const [restoredSource] = await db.select({ status: schema.memories.status })
+            .from(schema.memories).where(eq(schema.memories.id, snapshotData.id)).limit(1);
+          if (restoredSource?.status === 'expired') {
+            await invalidateSourceDerivedProjections(db, schema, snapshotData.id, now, 'source_expired');
+            await db.update(schema.knowledge).set({ status: 'expired', isActive: false, recordedAt: now, updatedAt: now })
+              .where(and(
+                eq(schema.knowledge.knowledgeKind, 'memory'),
+                or(
+                  eq(schema.knowledge.id, snapshotData.id),
+                  sql`${schema.knowledge.metadata}->>'sourceMemoryId' = ${snapshotData.id}`,
+                ),
+              ));
+          }
         } else {
           skippedMemoryIds.push(snapshotData.id);
         }
@@ -194,6 +227,10 @@ export async function handleReverseMerge(input: ReverseMergeInput): Promise<Reve
         })
         .where(eq(schema.memoryMergeHistory.id, mergeHistoryId));
     });
+
+    // The canonical row is inactive and restored sources may have new content.
+    // Evict their process-local state only after all database writes commit.
+    await evictMemoryRuntimeState([...restoredMemoryIds, history.canonicalMemoryId]);
 
     return {
       ok: true,

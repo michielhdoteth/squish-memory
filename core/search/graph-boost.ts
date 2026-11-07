@@ -14,11 +14,13 @@
  * - Supports in-memory graph backend
  */
 
-import { getDbClient } from '../lib/db-client.js';
 import { logger } from '../logger.js';
 import { config } from '../../config.js';
-import { eq, and, or, inArray } from 'drizzle-orm';
 import { InMemoryGraphBackend, GraphBackend } from '../graph/backend.js';
+import type { GraphViewResult } from '../knowledge/graph-views.js';
+import { createGraphView } from '../knowledge/graph-views.js';
+import type { EdgeNodeKind } from '../knowledge/types.js';
+import { getMemoryAssociationRows } from '../associations.js';
 
 export interface GraphBoostParams {
   memoryId: string;
@@ -100,51 +102,9 @@ export async function calculateGraphBoost(
   if (memoryIds.length === 0) {
     return boostMap;
   }
-
-  try {
-    const backend = await getGraphBackend();
-
-    // Batch BFS: run all memory ID traversals in parallel
-    const bfsResults = await Promise.all(
-      memoryIds.map(async (memoryId) => {
-        try {
-          const nodes = await backend.bfs(memoryId, maxDepth, minWeight);
-          let totalBoost = 0;
-
-          for (const node of nodes) {
-            const recencyBonus = calculateRecencyBonus(node.lastAccessedAt);
-            const nodeBoost = (node.weight * node.coactivationCount * recencyBonus) / (node.depth + 1);
-            totalBoost += nodeBoost;
-          }
-
-          // Cap boost at 3.0x to prevent dominance
-          const cappedBoost = Math.min(totalBoost, 3.0);
-          return { memoryId, boost: Math.max(0, cappedBoost), totalNodes: nodes.length, rawBoost: totalBoost };
-        } catch (e: any) {
-          logger.warn(`Graph boost calculation failed for ${memoryId}:`, e);
-          return { memoryId, boost: 0, totalNodes: 0, rawBoost: 0 };
-        }
-      })
-    );
-
-    for (const result of bfsResults) {
-      boostMap.set(result.memoryId, result.boost);
-      if (result.totalNodes > 0) {
-        logger.debug('Graph boost calculated', {
-          memoryId: result.memoryId,
-          totalNodes: result.totalNodes,
-          rawBoost: result.rawBoost,
-          cappedBoost: result.boost,
-        });
-      }
-    }
-  } catch (e: any) {
-    logger.warn('Graph backend initialization failed, falling back to DB query method:', e);
-    // Fallback to original DB-based method
-    return calculateGraphBoostFallback(memoryIds, projectId, options);
-  }
-
-  return boostMap;
+  // Retrieval must use persisted associations. A process-global in-memory graph
+  // is neither populated by canonical writes nor scoped by project/caller.
+  return calculateGraphBoostFallback(memoryIds, projectId, options);
 }
 
 /**
@@ -153,208 +113,103 @@ export async function calculateGraphBoost(
  */
 async function calculateGraphBoostFallback(
   memoryIds: string[],
-  projectId?: string,
+  _projectId?: string,
   options: { maxDepth?: number; minWeight?: number } = {}
 ): Promise<Map<string, number>> {
   const { maxDepth = 2, minWeight = 0.3 } = options;
   const boostMap = new Map<string, number>();
+  let nodesByMemoryId: Map<string, GraphNode[]>;
+  try {
+    nodesByMemoryId = await bfsTraverseBatchFallback(memoryIds, maxDepth, minWeight);
+  } catch (error: unknown) {
+    logger.warn('Graph boost fallback failed', { reason: error instanceof Error ? error.message : String(error) });
+    for (const memoryId of memoryIds) boostMap.set(memoryId, 0);
+    return boostMap;
+  }
 
-  // Batch BFS: run all memory ID traversals in parallel
-  const fallbackResults = await Promise.all(
-    memoryIds.map(async (memoryId) => {
-      try {
-        const nodes = await bfsTraverseFallback(memoryId, projectId, maxDepth, minWeight);
-        let totalBoost = 0;
-
-        for (const node of nodes) {
-          const recencyBonus = calculateRecencyBonus(node.lastAccessedAt);
-          const nodeBoost = (node.weight * node.coactivationCount * recencyBonus) / (node.depth + 1);
-          totalBoost += nodeBoost;
-        }
-
-        const cappedBoost = Math.min(totalBoost, 3.0);
-        return { memoryId, boost: Math.max(0, cappedBoost) };
-      } catch (e: any) {
-        logger.warn(`Graph boost fallback failed for ${memoryId}:`, e);
-        return { memoryId, boost: 0 };
-      }
-    })
-  );
-
-  for (const result of fallbackResults) {
-    boostMap.set(result.memoryId, result.boost);
+  for (const memoryId of memoryIds) {
+    let totalBoost = 0;
+    for (const node of nodesByMemoryId.get(memoryId) ?? []) {
+      const recencyBonus = calculateRecencyBonus(node.lastAccessedAt);
+      totalBoost += (node.weight * node.coactivationCount * recencyBonus) / (node.depth + 1);
+    }
+    boostMap.set(memoryId, Math.max(0, Math.min(totalBoost, 3.0)));
   }
 
   return boostMap;
 }
 
 /**
- * BFS traversal of memory association graph (Fallback method)
- * Traverses from start node up to maxDepth, filtering by minimum weight
- * Used when graph backend is not available
+ * Traverse all candidate roots together, reading each BFS frontier from the
+ * canonical association store once instead of issuing one query per root.
  *
- * @param startId - Starting memory ID
- * @param projectId - Optional project ID to filter
+ * @param memoryIds - Starting candidate memory IDs
  * @param maxDepth - Maximum traversal depth (default: 2)
  * @param minWeight - Minimum edge weight to include (default: 0.3)
- * @returns Array of GraphNode with depth information
+ * @returns Per-root traversed nodes with depth information
  */
-async function bfsTraverseFallback(
-  startId: string,
-  projectId?: string,
+async function bfsTraverseBatchFallback(
+  memoryIds: string[],
   maxDepth: number = 2,
   minWeight: number = 0.3
-): Promise<GraphNode[]> {
-  const { db, schema } = await getDbClient();
-  const visited = new Set<string>();
-  const queue: { id: string; depth: number }[] = [{ id: startId, depth: 0 }];
-  const results: GraphNode[] = [];
+): Promise<Map<string, GraphNode[]>> {
+  const results = new Map(memoryIds.map((id) => [id, [] as GraphNode[]]));
+  const visited = new Map(memoryIds.map((id) => [id, new Set([id])]));
+  let frontier = memoryIds.map((rootId) => ({ rootId, id: rootId, depth: 0 }));
 
-  while (queue.length > 0) {
-    // Batch: collect all nodes at the current BFS level
-    const currentBatch = [...queue];
-    queue.length = 0;
-
-    // Filter to unvisited nodes and mark them visited
-    const levelNodes: { id: string; depth: number }[] = [];
-    for (const item of currentBatch) {
-      if (!visited.has(item.id) && item.depth <= maxDepth) {
-        visited.add(item.id);
-        levelNodes.push(item);
+  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
+    const frontierIds = [...new Set(frontier.map((item) => item.id))];
+    const nodeIdSet = new Set(frontierIds);
+    const edges: Awaited<ReturnType<typeof getMemoryAssociationRows>> = [];
+    const edgeIds = new Set<string>();
+    // Stay below SQLite's bound-variable limit while retaining one query for
+    // ordinary candidate sets. Large frontiers are fetched in bounded slices.
+    for (let offset = 0; offset < frontierIds.length; offset += 200) {
+      const rows = await getMemoryAssociationRows(frontierIds.slice(offset, offset + 200));
+      for (const edge of rows) {
+        if (!edgeIds.has(edge.id)) {
+          edgeIds.add(edge.id);
+          edges.push(edge);
+        }
       }
     }
 
-    if (levelNodes.length === 0) break;
-
-    try {
-      // Batch DB query: fetch ALL associations for ALL nodes in this level at once
-      const nodeIds = levelNodes.map(n => n.id);
-      const edges = await (db as any)
-        .select()
-        .from(schema.memoryAssociations)
-        .where(
-          or(
-            inArray(schema.memoryAssociations.fromMemoryId, nodeIds),
-            inArray(schema.memoryAssociations.toMemoryId, nodeIds)
-          )
-        );
-
-      // Also fetch knowledge edges (from LLM consolidation) for these nodes
-      let knowledgeEdges: any[] = [];
-      try {
-        const schemaMod = await import('../../db/drizzle/schema-sqlite.js') as any;
-        const keSchema = schemaMod.knowledgeEdges;
-        if (keSchema) {
-          knowledgeEdges = await (db as any)
-          .select()
-          .from(keSchema)
-          .where(
-            or(
-              inArray(keSchema.sourceId, nodeIds),
-              inArray(keSchema.targetId, nodeIds)
-            )
-          );
-        }
-      } catch {
-        // knowledge_edges table may not exist yet
+    const edgesByNode = new Map<string, typeof edges>();
+    for (const edge of edges) {
+      if (nodeIdSet.has(edge.fromMemoryId)) {
+        const list = edgesByNode.get(edge.fromMemoryId) ?? [];
+        list.push(edge);
+        edgesByNode.set(edge.fromMemoryId, list);
       }
-
-      // Knowledge edge type weights (supports=positive, contradicts=negative)
-      const KNOWLEDGE_EDGE_WEIGHTS: Record<string, number> = {
-        supports: 0.05,
-        contradicts: -0.10,
-        informed_by: 0.03,
-        extends: 0.04,
-        related_to: 0.02,
-      };
-
-      // Index edges by node ID for O(1) lookup using Set for fast membership tests
-      const nodeIdSet = new Set(nodeIds);
-      const edgesByNode = new Map<string, typeof edges>();
-      for (const edge of edges) {
-        // An edge is relevant to a node if the node is either from or to
-        if (nodeIdSet.has(edge.fromMemoryId)) {
-          const list = edgesByNode.get(edge.fromMemoryId) || [];
-          list.push(edge);
-          edgesByNode.set(edge.fromMemoryId, list);
-        }
-        if (nodeIdSet.has(edge.toMemoryId)) {
-          const list = edgesByNode.get(edge.toMemoryId) || [];
-          list.push(edge);
-          edgesByNode.set(edge.toMemoryId, list);
-        }
+      if (nodeIdSet.has(edge.toMemoryId) && edge.toMemoryId !== edge.fromMemoryId) {
+        const list = edgesByNode.get(edge.toMemoryId) ?? [];
+        list.push(edge);
+        edgesByNode.set(edge.toMemoryId, list);
       }
-
-      // Process each node's edges
-      for (const current of levelNodes) {
-        const nodeEdges = edgesByNode.get(current.id) || [];
-
-        for (const edge of nodeEdges) {
-          // Determine the connected memory ID
-          const connectedId = edge.fromMemoryId === current.id ? edge.toMemoryId : edge.fromMemoryId;
-
-          // Skip if minimum weight not met
-          if (edge.weight < minWeight) {
-            continue;
-          }
-
-          // Calculate new depth BEFORE adding to results
-          const newNodeDepth = current.depth + 1;
-
-          // Skip if new node would exceed maxDepth
-          if (newNodeDepth > maxDepth) {
-            continue;
-          }
-
-          results.push({
-            id: connectedId,
-            weight: edge.weight,
-            depth: newNodeDepth,
-            associationType: edge.associationType,
-            coactivationCount: edge.coactivationCount || 1,
-            lastAccessedAt: edge.lastCoactivatedAt || edge.createdAt || new Date(),
-          });
-
-          // Add to queue for further traversal only if not at max depth
-          if (newNodeDepth < maxDepth && !visited.has(connectedId)) {
-            queue.push({ id: connectedId, depth: newNodeDepth });
-          }
-        }
-
-        // Also process knowledge edges for this node
-        for (const ke of knowledgeEdges) {
-          const keSourceId = ke.sourceId;
-          const keTargetId = ke.targetId;
-          const connectedId = nodeIdSet.has(keSourceId) ? keTargetId : keSourceId;
-          const edgeType = ke.edgeType || 'related_to';
-
-          if (nodeIdSet.has(connectedId)) continue; // skip self-loops
-          if (visited.has(connectedId)) continue;
-
-          const keWeight = KNOWLEDGE_EDGE_WEIGHTS[edgeType] ?? 0.02;
-          if (Math.abs(keWeight) < minWeight) continue;
-
-          const newNodeDepth = current.depth + 1;
-          if (newNodeDepth > maxDepth) continue;
-
-          // Knowledge edges use absolute weight for traversal, signed weight for boost
-          results.push({
-            id: connectedId,
-            weight: Math.abs(keWeight),
-            depth: newNodeDepth,
-            associationType: `knowledge:${edgeType}`,
-            coactivationCount: 1,
-            lastAccessedAt: ke.createdAt || new Date(),
-          });
-
-          if (newNodeDepth < maxDepth && !visited.has(connectedId)) {
-            queue.push({ id: connectedId, depth: newNodeDepth });
-          }
-        }
-      }
-    } catch (e: any) {
-      logger.warn(`Error batch traversing associations:`, e);
     }
+
+    const next: typeof frontier = [];
+    for (const current of frontier) {
+      for (const edge of edgesByNode.get(current.id) ?? []) {
+        if (edge.weight < minWeight) continue;
+        const connectedId = edge.fromMemoryId === current.id ? edge.toMemoryId : edge.fromMemoryId;
+        const nextDepth = current.depth + 1;
+        results.get(current.rootId)?.push({
+          id: connectedId,
+          weight: edge.weight,
+          depth: nextDepth,
+          associationType: edge.associationType,
+          coactivationCount: edge.coactivationCount || 1,
+          lastAccessedAt: edge.lastCoactivatedAt || edge.createdAt,
+        });
+        const rootVisited = visited.get(current.rootId)!;
+        if (nextDepth < maxDepth && !rootVisited.has(connectedId)) {
+          rootVisited.add(connectedId);
+          next.push({ rootId: current.rootId, id: connectedId, depth: nextDepth });
+        }
+      }
+    }
+    frontier = next;
   }
 
   return results;
@@ -468,7 +323,7 @@ export interface NormalizedGraphBoost {
  */
 export async function calculateGraphBoostNormalized(
   memoryIds: string[],
-  projectId?: string,
+  _projectId?: string,
   options: { maxDepth?: number; minWeight?: number } = {}
 ): Promise<NormalizedGraphBoost> {
   const { maxDepth = 2, minWeight = 0.3 } = options;
@@ -484,32 +339,96 @@ export async function calculateGraphBoostNormalized(
     return total;
   };
 
+  // The in-memory backend is a legacy/testing utility. Canonical association
+  // writes live in SQLite/PostgreSQL and must be the source used by retrieval.
   try {
-    const backend = await getGraphBackend();
-    await Promise.all(
-      memoryIds.map(async (memoryId) => {
-        try {
-          raw.set(memoryId, sumNodes(await backend.bfs(memoryId, maxDepth, minWeight)));
-        } catch (e: any) {
-          logger.warn(`Normalized graph boost failed for ${memoryId}:`, e);
-          raw.set(memoryId, 0);
-        }
-      })
-    );
-  } catch (e: any) {
-    logger.warn('Graph backend initialization failed, falling back to DB query method:', e);
-    await Promise.all(
-      memoryIds.map(async (memoryId) => {
-        try {
-          const nodes = await bfsTraverseFallback(memoryId, projectId, maxDepth, minWeight);
-          raw.set(memoryId, sumNodes(nodes));
-        } catch (err: any) {
-          logger.warn(`Normalized graph boost fallback failed for ${memoryId}:`, err);
-          raw.set(memoryId, 0);
-        }
-      })
-    );
+    const nodesByMemoryId = await bfsTraverseBatchFallback(memoryIds, maxDepth, minWeight);
+    for (const memoryId of memoryIds) raw.set(memoryId, sumNodes(nodesByMemoryId.get(memoryId) ?? []));
+  } catch (error: unknown) {
+    logger.warn('Normalized graph boost failed', { reason: error instanceof Error ? error.message : String(error) });
+    for (const memoryId of memoryIds) raw.set(memoryId, 0);
   }
 
   return { normalized: normalizeGraphBoostMap(raw), raw };
+}
+
+// ---------------------------------------------------------------------------
+// v2.2: View-aware graph boost
+//
+// Uses the graph view engine to traverse only edges relevant to a specific
+// view type (semantic, temporal, causal, entity). This produces more
+// targeted boosts than the generic BFS traversal.
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculate a boost value from a GraphViewResult.
+ *
+ * Sums node contributions using the same formula as the legacy BFS boost:
+ *   contribution = (weight * recencyBonus) / (depth + 1)
+ *
+ * The result is capped at 3.0 to prevent dominance.
+ */
+export function calculateBoostFromViewResult(result: GraphViewResult): number {
+  let total = 0;
+  for (const node of result.nodes) {
+    const recencyBonus = calculateRecencyBonus(new Date());
+    const contribution = (node.weight * recencyBonus) / (node.depth + 1);
+    total += contribution;
+  }
+  return Math.min(total, 3.0);
+}
+
+export interface ViewAwareBoostParams {
+  memoryIds: string[];
+  viewType: 'semantic' | 'temporal' | 'causal' | 'entity';
+  nodeKind?: EdgeNodeKind;
+}
+
+/**
+ * Type for the graph view query function (matches queryGraphView signature).
+ */
+export type GraphViewQueryFn = (
+  nodeId: string,
+  nodeKind: EdgeNodeKind,
+  config: ReturnType<typeof createGraphView>
+) => Promise<GraphViewResult>;
+
+/**
+ * Calculate view-aware graph boost for multiple memories.
+ *
+ * For each memory ID, queries the graph view and calculates a boost based on
+ * the returned subgraph. Uses the view-specific edge types and depth limits.
+ *
+ * @param params - View-aware boost parameters
+ * @param queryFn - Optional query function override (for testing)
+ * @returns Map of memory ID to boost value
+ */
+export async function calculateViewAwareBoost(
+  params: ViewAwareBoostParams,
+  queryFn?: GraphViewQueryFn
+): Promise<Map<string, number>> {
+  const { memoryIds, viewType, nodeKind = 'knowledge' } = params;
+  const boostMap = new Map<string, number>();
+
+  if (memoryIds.length === 0) {
+    return boostMap;
+  }
+
+  const viewConfig = createGraphView(viewType);
+  const query = queryFn ?? (await import('../knowledge/graph-view-engine.js')).queryGraphView;
+
+  await Promise.all(
+    memoryIds.map(async (memoryId) => {
+      try {
+        const result = await query(memoryId, nodeKind, viewConfig);
+        const boost = calculateBoostFromViewResult(result);
+        boostMap.set(memoryId, boost);
+      } catch (e: any) {
+        logger.warn(`View-aware boost failed for ${memoryId}:`, e);
+        boostMap.set(memoryId, 0);
+      }
+    })
+  );
+
+  return boostMap;
 }

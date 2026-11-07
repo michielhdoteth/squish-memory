@@ -40,7 +40,10 @@ export async function getSnapshotStats(memoryId?: string): Promise<{
     let newest: Date | null = null;
 
     for (const snap of snapshots) {
-      stats.byType[snap.snapshotType]++;
+      // Snapshot types are an open set (before_update, after_update, periodic,
+      // correction...); seeding only the known ones made an unknown type
+      // count as NaN.
+      stats.byType[snap.snapshotType] = (stats.byType[snap.snapshotType] ?? 0) + 1;
 
       const date = new Date(snap.createdAt);
       if (!oldest || date < oldest) oldest = date;

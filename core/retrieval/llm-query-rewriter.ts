@@ -9,7 +9,13 @@
 
 import { config } from '../../config.js';
 
-const LLM_REWRITE_ENABLED = process.env.SQUISH_LLM_REWRITE === 'true';
+/**
+ * Read the flag per call rather than caching it at import: callers and tests
+ * toggle SQUISH_LLM_REWRITE after this module loads.
+ */
+function llmRewriteEnabled(): boolean {
+  return process.env.SQUISH_LLM_REWRITE === 'true';
+}
 
 interface LLMClient {
   (prompt: string, options?: { maxTokens?: number; temperature?: number }): Promise<string | null>;
@@ -23,7 +29,7 @@ export async function rewriteQuery(
   query: string,
   callLLM?: LLMClient
 ): Promise<string> {
-  if (!LLM_REWRITE_ENABLED || !callLLM) {
+  if (!llmRewriteEnabled() || !callLLM) {
     return query;
   }
 
@@ -55,5 +61,5 @@ Rewritten:`;
  * Check if LLM rewriting is enabled
  */
 export function isLLMRewriteEnabled(): boolean {
-  return LLM_REWRITE_ENABLED;
+  return llmRewriteEnabled();
 }

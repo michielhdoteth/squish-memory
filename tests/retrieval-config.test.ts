@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { getRetrievalConfig, getEnvRetrievalConfig } from '../core/retrieval/config.js';
+import { getRetrievalConfig, getEnvRetrievalConfig, getPrecisionStackFlags } from '../core/retrieval/config.js';
+import { getRetrievalDiagnostics, getRetrievalProfile, resolveProfileFlag } from '../core/retrieval/profiles.js';
+import { config } from '../config.js';
 import type { SquishRetrievalConfig, RetrievalTrace } from '../core/retrieval/config.js';
 
 describe('getRetrievalConfig', () => {
@@ -37,6 +39,62 @@ describe('getRetrievalConfig', () => {
     const cfg = getRetrievalConfig();
     expect(cfg.scoring.supersededPenalty).toBe(0.50);
     expect(cfg.scoring.supersededPenalty).toBeGreaterThan(0);
+  });
+});
+
+describe('retrieval profiles', () => {
+  it('defaults to fast-local and keeps remote behavior disabled', () => {
+    const profile = getRetrievalProfile({});
+    expect(profile.name).toBe('fast-local');
+    expect(profile.reranker).toBe(false);
+    expect(profile.contextualEnrichment).toBe(false);
+    expect(profile.graphExpansion).toBe(false);
+  });
+
+  it('high-recall enables local retrieval stages without enabling remote egress', () => {
+    const profile = getRetrievalProfile({ SQUISH_PROFILE: 'high-recall' });
+    expect(profile.name).toBe('high-recall');
+    expect(profile.reranker).toBe(true);
+    expect(profile.contextualEnrichment).toBe(true);
+    expect(profile.graphExpansion).toBe(true);
+    expect('remoteProvider' in profile).toBe(false);
+  });
+
+  it('explicit precision flags override the selected profile', () => {
+    expect(getPrecisionStackFlags({
+      SQUISH_PROFILE: 'high-recall',
+      SQUISH_RERANKER_ENABLED: 'false',
+      SQUISH_QUERY_EXPANSION: 'false',
+    })).toMatchObject({ reranker: false, queryExpansion: false });
+    expect(resolveProfileFlag('true', false)).toEqual({ value: true, source: 'explicit' });
+    expect(resolveProfileFlag(undefined, true)).toEqual({ value: true, source: 'profile' });
+  });
+
+  it('reports effective feature settings and their precedence without enabling egress', () => {
+    const diagnostics = getRetrievalDiagnostics({
+      SQUISH_PROFILE: 'high-recall',
+      SQUISH_RERANKER_ENABLED: 'false',
+    });
+    expect(diagnostics.profile).toEqual({ name: 'high-recall', source: 'environment' });
+    expect(diagnostics.features.reranker).toEqual({ value: false, source: 'explicit' });
+    expect(diagnostics.features.graphExpansion).toEqual({ value: true, source: 'profile' });
+    expect(diagnostics.features.contextualEnrichment).toEqual({ value: true, source: 'profile' });
+    expect(diagnostics.egress.enabledByProfile).toBe(false);
+  });
+});
+
+describe('vector scan default', () => {
+  it('defaults to full recall while allowing an explicit recency tradeoff', () => {
+    const saved = process.env.SQUISH_VECTOR_SCAN;
+    try {
+      delete process.env.SQUISH_VECTOR_SCAN;
+      expect(config.vectorScanMode).toBe('full');
+      process.env.SQUISH_VECTOR_SCAN = 'recency';
+      expect(config.vectorScanMode).toBe('recency');
+    } finally {
+      if (saved === undefined) delete process.env.SQUISH_VECTOR_SCAN;
+      else process.env.SQUISH_VECTOR_SCAN = saved;
+    }
   });
 });
 

@@ -2,8 +2,7 @@
  * Memory benchmark runner (Batch 9) — contradiction, temporal and abstention
  * quality over the real retrieval pipeline.
  *
- * Measures the axes where hosted memory providers publish their worst
- * numbers (Mem0 BEAM: 32.5% contradiction resolution, 40% abstention):
+ * Measures contradiction handling, temporal recall, and abstention quality:
  *
  *   fact-update            current-state + point-in-time recall across v1→v3
  *   planted-falsehood      must retrieve the established fact, never assert
@@ -14,10 +13,11 @@
  *
  * SCORING APPROXIMATION (LLM-free, by design): we score WHICH memory ranked
  * and its calibrated confidence tier, not a simulated answer model.
- *   - "Confident-wrong" = the false/absent memory ranked top-1 at QUALIFIED+
- *     confidence (>= 0.60). This under-approximates real answer-model harm
- *     (a small model may follow even LOW-tier wrong context) — treat
- *     confident-wrong rates as a lower bound.
+ *   - Retrieval wrong = a query receives a negative oracle penalty.
+ *   - Confident-wrong = a negatively scored query whose verdict is
+ *     "confident". This under-approximates real answer-model harm (a small
+ *     model may follow even LOW-tier wrong context) — treat this as a lower
+ *     bound, and report retrieval errors separately.
  *   - Abstention uses the production recallAssessment verdict thresholds
  *     (SQUISH_ABSTAIN_BELOW, default DEFAULT_ABSTAIN_BELOW = 0.60; tiers
  *     HIGH >= 0.90 / QUALIFIED >= 0.60 / LOW below).
@@ -26,6 +26,7 @@
  * Deterministic + offline by default (same pinned env as the golden eval).
  */
 
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
@@ -42,6 +43,9 @@ import {
 // Single source of truth for the abstention floor: the bench mirrors the
 // production default (SQUISH_ABSTAIN_BELOW env still overrides per run).
 import { DEFAULT_ABSTAIN_BELOW } from '../core/scoring/recall-confidence.js';
+import { hasTrackedSourceChanges } from '../benchmark/source-provenance.js';
+import { getGraphBoostFlags, getPrecisionStackFlags } from '../core/retrieval/config.js';
+import { getRetrievalDiagnostics } from '../core/retrieval/profiles.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -85,11 +89,7 @@ function shortGitSha(): string | null {
 }
 
 function isGitDirty(): boolean | null {
-  try {
-    return execSync('git status --porcelain', { encoding: 'utf-8' }).trim().length > 0;
-  } catch {
-    return null;
-  }
+  return hasTrackedSourceChanges();
 }
 
 async function seedCorpus(corpus: BenchCorpus, dataDir: string) {
@@ -163,6 +163,13 @@ export function scoreQuery(
         return { penalty: +1, guardOk: true };
       }
       if (input.top3BenchIds.some((id) => query.expectTop3?.includes(id))) {
+        return { penalty: +0.5, guardOk: true };
+      }
+      // A current-version record can itself be direct historical evidence
+      // when it explicitly states the prior value ("Tailwind instead of
+      // custom Sass"). Count that as useful but partial retrieval: we still
+      // reserve full credit for retrieving the historical record itself.
+      if (input.top1BenchId && query.supportingEvidenceTop1?.includes(input.top1BenchId)) {
         return { penalty: +0.5, guardOk: true };
       }
       if (input.top1BenchId === null) return { penalty: 0, guardOk: false };
@@ -264,19 +271,23 @@ async function main() {
   process.env.SQUISH_DATA_DIR = dataDir;
   process.env.DATABASE_URL = '';
   delete process.env.SQUISH_DATABASE_URL;
-  process.env.SQUISH_EMBEDDINGS_PROVIDER ||= 'local';
+  process.env.SQUISH_PROFILE = 'fast-local';
+  process.env.SQUISH_EMBEDDINGS_PROVIDER = 'local';
   // Pinned precision stack for cross-host determinism (mirrors golden eval).
-  if (!process.env.SQUISH_RERANKER_ENABLED) process.env.SQUISH_RERANKER_ENABLED = 'false';
-  if (!process.env.SQUISH_QUERY_EXPANSION) process.env.SQUISH_QUERY_EXPANSION = 'true';
-  if (!process.env.SQUISH_GRAPH_BOOST_LEGACY) process.env.SQUISH_GRAPH_BOOST_LEGACY = 'false';
+  process.env.SQUISH_RERANKER_ENABLED = 'false';
+  process.env.SQUISH_QUERY_EXPANSION = 'true';
+  process.env.SQUISH_CONTEXTUAL_RETRIEVAL = 'false';
+  process.env.SQUISH_GRAPH_EXPANSION = 'false';
+  process.env.SQUISH_GRAPH_BOOST_LEGACY = 'false';
   // Mirrors the production default (v2 query-conditioned temporal validity).
-  if (!process.env.SQUISH_TEMPORAL_VALIDITY) process.env.SQUISH_TEMPORAL_VALIDITY = 'true';
-  if (!process.env.SQUISH_SCORING_V2) process.env.SQUISH_SCORING_V2 = 'true';
-  if (!process.env.SQUISH_LOCAL_BUNDLED_MODEL) {
-    process.env.SQUISH_LOCAL_BUNDLED_MODEL = realModelMode ? 'Xenova/all-MiniLM-L6-v2' : 'off';
-  }
+  process.env.SQUISH_TEMPORAL_VALIDITY = 'true';
+  process.env.SQUISH_SCORING_V2 = 'true';
+  process.env.SQUISH_LOCAL_BUNDLED_MODEL = realModelMode ? 'Xenova/all-MiniLM-L6-v2' : 'off';
 
   const corpus = buildBenchCorpus();
+  const datasetSha256 = createHash('sha256')
+    .update(JSON.stringify({ memories: corpus.memories, queries: corpus.queries }))
+    .digest('hex');
   const { client, uuidToBench } = await seedCorpus(corpus, dataDir);
   const abstainBelow = Number(
     process.env.SQUISH_ABSTAIN_BELOW ?? String(DEFAULT_ABSTAIN_BELOW)
@@ -390,17 +401,25 @@ async function main() {
       gitDirty: isGitDirty(),
       generatedAt: new Date().toISOString(),
       runtimeMs: Date.now() - startedAt,
+      evaluationMode: 'retrieval-oracle-only',
+      datasetSha256,
+      retrievalProfile: getRetrievalDiagnostics().profile,
+      retrievalFeatures: getPrecisionStackFlags(),
+      graphBoost: getGraphBoostFlags(),
       embeddingsProvider: process.env.SQUISH_EMBEDDINGS_PROVIDER,
       bundledModel: process.env.SQUISH_LOCAL_BUNDLED_MODEL ?? 'off',
       abstainBelow,
+      modelTokens: 0,
+      estimatedModelCostUsd: 0,
       scoringApproximation:
-        'LLM-free: ranks + calibrated tiers only. Confident-wrong = false memory top-1 at >= QUALIFIED. Lower bound on real answer-model harm.',
+        'LLM-free: ranks + calibrated tiers only. Retrieval errors are oracle penalties < 0; confident-wrong requires a negative penalty and verdict=confident. This is a lower bound on real answer-model harm.',
     },
     overall: {
       count: overall.count,
       macroPenaltyScore: Number(macroScore.toFixed(4)),
       microPenaltyScore: overall.count ? Number((overall.scoreSum / overall.count).toFixed(4)) : 0,
-      confidentWrong: overall.wrong,
+      wrongTotal: overall.wrong,
+      confidentWrong: perQuery.filter((q) => q.penalty === -1 && q.verdict === 'confident').length,
     },
     byCategory: Object.fromEntries(
       BENCH_CATEGORIES.map((c) => {
@@ -449,14 +468,14 @@ async function main() {
       })
     );
     console.log(
-      `macro=${macroScore.toFixed(3)} micro=${report.overall.microPenaltyScore} confidentWrong=${overall.wrong} runtime=${report.meta.runtimeMs}ms`
+      `macro=${macroScore.toFixed(3)} micro=${report.overall.microPenaltyScore} wrongTotal=${overall.wrong} confidentWrong=${report.overall.confidentWrong} runtime=${report.meta.runtimeMs}ms`
     );
   }
 
   // B12-3: the adversarial trap-class breakdown is the headline output of
   // the suite, so it prints even in --quiet mode. Gate expectations:
-  //   overall confidentWrong <= 2, macro >= 0.45, no trap class < -0.5.
-  // A confidently-wrong-dominated class means the system fails that shape -
+  //   oracle wrongTotal <= 2, macro >= 0.45, no trap class < -0.5.
+  // A negative-oracle-dominated class means the system fails that shape -
   // report it loudly here; fixing product code is a FOLLOW-UP task.
   console.log('\n=== UNANSWERABLE BY TRAP CLASS ===');
   printTable(
@@ -475,19 +494,19 @@ async function main() {
     })
   );
   const gateBreaches: string[] = [];
-  if (overall.wrong > 2) gateBreaches.push(`confidentWrong ${overall.wrong} > 2`);
+  if (overall.wrong > 2) gateBreaches.push(`wrongTotal ${overall.wrong} > 2`);
   if (macroScore < 0.45) gateBreaches.push(`macro ${macroScore.toFixed(4)} < 0.45`);
   for (const k of trapClassOrder) {
     const s = byTrapClass.get(k)!;
     if (s.score < -0.5) {
-      gateBreaches.push(`trap class '${k}' score ${s.score.toFixed(3)} < -0.5 (${s.wrong} confident-wrongs)`);
+      gateBreaches.push(`trap class '${k}' score ${s.score.toFixed(3)} < -0.5 (${s.wrong} negative oracle scores)`);
     }
   }
   if (gateBreaches.length > 0) {
     console.error('\n[memory-bench] GATE BREACHES (findings for the next task, non-fatal):');
     for (const b of gateBreaches) console.error(`  - ${b}`);
   } else if (!quiet) {
-    console.log('gates: PASS (confidentWrong <= 2, macro >= 0.45, no trap class < -0.5)');
+    console.log('gates: PASS (wrongTotal <= 2, macro >= 0.45, no trap class < -0.5)');
   }
   if (!quiet) {
     console.log(`report: ${outPath}\n`);

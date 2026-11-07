@@ -6,11 +6,18 @@
 
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 import { eq, and } from 'drizzle-orm';
 import { logger } from '../logger.js';
 
 export type EntityType =
   | 'person'
+  | 'organization'
+  | 'matter'
+  | 'document'
+  | 'document_version'
+  | 'status'
   | 'file'
   | 'function'
   | 'class'
@@ -30,6 +37,13 @@ export interface ExtractedEntity {
   endIndex: number;
   context: string;
   normalized?: string;
+}
+
+function denyUnscopedEntityOperation(operation: string, resourceId: string): Promise<never> {
+  if (!isStrictTrustPolicy()) {
+    return Promise.reject(new Error('Entity operation guard called outside strict trust'));
+  }
+  return denyStrictSurface(resourceId, 'graph_operation', `Entity extractor ${operation} is disabled under strict trust until caller-scoped authorization is implemented`);
 }
 
 // Regex patterns for entity detection
@@ -279,6 +293,7 @@ export async function linkEntitiesToMemories(
   memoryId: string,
   entities: ExtractedEntity[]
 ): Promise<void> {
+  if (isStrictTrustPolicy()) await denyUnscopedEntityOperation('linking', memoryId);
   if (entities.length === 0) return;
 
   try {
@@ -343,6 +358,7 @@ export async function linkEntitiesToMemories(
  * Get entities extracted from a memory based on properties
  */
 export async function getMemoryEntities(memoryId: string): Promise<ExtractedEntity[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedEntityOperation('memory lookup', memoryId);
   try {
     const db = await getDb();
     const schema = await getSchema();
@@ -381,6 +397,7 @@ export async function getProjectEntities(
   projectId: string,
   type?: EntityType
 ): Promise<any[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedEntityOperation('project listing', projectId);
   try {
     const db = await getDb();
     const schema = await getSchema();

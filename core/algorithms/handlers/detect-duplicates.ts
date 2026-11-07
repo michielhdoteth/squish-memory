@@ -17,6 +17,7 @@ import { createDatabaseClient } from '../../../core/storage/database.js';
 import { eq } from 'drizzle-orm';
 import { buildSuccessResponse, buildErrorResponse } from '../utils/response-builder.js';
 import { toSqliteJson } from '../../../core/memory/serialization.js';
+import { assertMergeWorkflowAvailable } from './strict-trust-guard.js';
 
 interface DetectDuplicatesInput {
   projectId?: string;
@@ -60,6 +61,7 @@ interface DetectDuplicatesResponse {
  */
 export async function handleDetectDuplicates(input: DetectDuplicatesInput): Promise<DetectDuplicatesResponse> {
   try {
+    assertMergeWorkflowAvailable();
     const projectId = input.projectId;
     const threshold = input.threshold ?? 0.85;
     const memoryType = input.memoryType;

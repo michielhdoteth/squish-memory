@@ -1,0 +1,41 @@
+{"_meta":{"kind":"dev-fixture","note":"AUTHORED examples for the Squish decision-model calibration bench (Phase B9). Not real user data; never pulled from a live Squish database. Gold labels are the intended decision for each input under the four production primitives.","created":"2026-10-13"}}
+{"id":"mt-001","primitive":"memory-type","input":"Yesterday we shipped Squish v2.1 to the VPS and watched the health probe pass.","gold":"episodic"}
+{"id":"mt-002","primitive":"memory-type","input":"TypeScript is a typed superset of JavaScript that compiles to plain JavaScript.","gold":"semantic"}
+{"id":"mt-003","primitive":"memory-type","input":"The ollaya daemon binds 127.0.0.1 port 11435, not 11434.","gold":"semantic"}
+{"id":"mt-004","primitive":"memory-type","input":"How to deploy 4m-landing: run tests, build the image, push to the registry, then verify staging health before promoting.","gold":"procedural"}
+{"id":"mt-005","primitive":"memory-type","input":"I prefer bun test --isolate over plain bun test for this repo.","gold":"preference"}
+{"id":"mt-006","primitive":"memory-type","input":"ok","gold":"discard"}
+{"id":"mt-007","primitive":"memory-type","input":"hmm hm hm","gold":"discard"}
+{"id":"mt-008","primitive":"memory-type","input":"Last Tuesday the squad call with DynaMind moved from Monday to Friday.","gold":"episodic"}
+{"id":"mt-009","primitive":"memory-type","input":"4M Labs proposals always quote four numbers: bookings, invoiced, cash collected, MRR.","gold":"procedural"}
+{"id":"mt-010","primitive":"memory-type","input":"The be-me September invoice was paid on time.","gold":"episodic"}
+{"id":"mt-011","primitive":"memory-type","input":"Thanks!","gold":"discard"}
+{"id":"mt-012","primitive":"memory-type","input":"Standing choice: never npm or yarn anywhere in the 4M Labs workspace.","gold":"preference"}
+{"id":"rel-001","primitive":"relation","input":"Sarah now lives in Houston.","existing":"Sarah lives in Austin.","gold":"temporal"}
+{"id":"rel-002","primitive":"relation","input":"ollaya binds port 11435.","existing":"The ollaya default port is 11434.","gold":"semantic"}
+{"id":"rel-003","primitive":"relation","input":"Michiel signed the DynaMind retainer.","existing":"Michiel runs 4M Labs.","gold":"entity"}
+{"id":"rel-004","primitive":"relation","input":"CI moved squish-cloud back to plain npm install.","existing":"The bun.lock workspace migration broke CI for squish-cloud.","gold":"causal"}
+{"id":"rel-005","primitive":"relation","input":"The mediapp.ai launch moved to 2026-09-15.","existing":"The mediapp.ai launch is scheduled for 2026-09-01.","gold":"temporal"}
+{"id":"rel-006","primitive":"relation","input":"The squish API stores everything in MySQL.","existing":"The squish API stores everything in Postgres.","gold":"semantic"}
+{"id":"rel-007","primitive":"relation","input":"ZKYC onboarding needs a selfie video and a passport scan.","existing":"ZKYC onboarding needs a selfie video.","gold":"temporal"}
+{"id":"rel-008","primitive":"relation","input":"DynaMind closed the Q3 retainer.","existing":"DynaMind's founder is based in Nairobi.","gold":"entity"}
+{"id":"rel-009","primitive":"relation","input":"Phase B of squish shipped with 2413 passing tests.","existing":"Phase A of squish shipped with 2317 passing tests.","gold":"temporal"}
+{"id":"rel-010","primitive":"relation","input":"A missing OPENROUTER_API_KEY makes the preset fail closed with no fetch.","existing":"Hosted System One providers require a Bearer key read from the environment.","gold":"causal"}
+{"id":"rt-001","primitive":"route-view","input":"when did we ship Squish v2.1","gold":"temporal"}
+{"id":"rt-002","primitive":"route-view","input":"definition of TACOS in retail media advertising","gold":"semantic"}
+{"id":"rt-003","primitive":"route-view","input":"why did the build fail after the drizzle migration","gold":"causal"}
+{"id":"rt-004","primitive":"route-view","input":"what modules depend on trust-state.js","gold":"causal"}
+{"id":"rt-005","primitive":"route-view","input":"last week's DynaMind meeting notes","gold":"temporal"}
+{"id":"rt-006","primitive":"route-view","input":"who is Michiel and what is 4M Labs","gold":"entity"}
+{"id":"rt-007","primitive":"route-view","input":"what is ZKYC","gold":"entity"}
+{"id":"rt-008","primitive":"route-view","input":"how does squish recall confidence scoring work","gold":"semantic"}
+{"id":"gt-001","primitive":"gate-search","input":"hi","gold":"no-search"}
+{"id":"gt-002","primitive":"gate-search","input":"thanks!","gold":"no-search"}
+{"id":"gt-003","primitive":"gate-search","input":"gm","gold":"no-search"}
+{"id":"gt-004","primitive":"gate-search","input":"ok great","gold":"no-search"}
+{"id":"gt-005","primitive":"gate-search","input":"answer this without using memory","gold":"no-search"}
+{"id":"gt-006","primitive":"gate-search","input":"why is my be-me deploy failing again","gold":"search"}
+{"id":"gt-007","primitive":"gate-search","input":"continue the squish phase B work","gold":"search"}
+{"id":"gt-008","primitive":"gate-search","input":"what did we decide about the 4mlabs.cloud apex domain rule","gold":"search"}
+{"id":"gt-009","primitive":"gate-search","input":"fix the recall tool error response","gold":"search"}
+{"id":"gt-010","primitive":"gate-search","input":"add hreflang tags to the mediapp landing page","gold":"search"}

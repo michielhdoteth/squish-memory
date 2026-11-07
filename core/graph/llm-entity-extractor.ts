@@ -6,37 +6,26 @@
  */
 
 import { logger } from '../logger.js';
-import { config } from '../../config.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyUnscopedGraphOperation } from './strict-gates.js';
 import { callLLM } from '../llm/client.js';
 import {
   extractEntities as regexExtractEntities,
-  linkEntitiesToMemories,
   type EntityType,
   type ExtractedEntity,
 } from '../memory/entity-extractor.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type RelationType =
-  | 'works_on'
-  | 'depends_on'
-  | 'manages'
-  | 'uses'
-  | 'caused'
-  | 'located_in'
-  | 'belongs_to'
-  | 'reports_to'
-  | 'occurred_on'
-  | 'affects'
-  | 'contains'
-  | 'implements'
-  | 'extends'
-  | 'related_to'
-  | 'part_of'
-  | 'owns'
-  | 'created'
-  | 'resolved'
-  | 'blocks';
+export const ENTITY_RELATION_TYPES = [
+  'works_on', 'depends_on', 'manages', 'oversees', 'uses', 'caused', 'located_in',
+  'belongs_to', 'reports_to', 'occurred_on', 'affects', 'contains',
+  'implements', 'extends', 'related_to', 'part_of', 'owns', 'created',
+  'resolved', 'blocks', 'cites', 'party_to', 'version_of',
+  'supersedes_version', 'has_status', 'dated_on',
+] as const;
+
+export type RelationType = (typeof ENTITY_RELATION_TYPES)[number];
 
 export interface ExtractedRelation {
   fromEntity: string;
@@ -71,11 +60,14 @@ Return ONLY valid JSON in this exact format:
   ]
 }
 
-Entity types: person, file, function, class, concept, tool, date, location, pattern, technique, other
-Relation types: works_on, depends_on, manages, uses, caused, located_in, belongs_to, reports_to, occurred_on, affects, contains, implements, extends, related_to, part_of, owns, created, resolved, blocks
+Entity types: person, organization, matter, document, document_version, status, file, function, class, concept, tool, date, location, pattern, technique, other
+Relation types: ${ENTITY_RELATION_TYPES.join(', ')}
+
+For document-centered matters, classify named agreements, briefs, filings, and correspondence as document; classify a specific revision or draft as document_version; classify legal or business organizations as organization; and classify a case, transaction, or client matter as matter. Use cites for an explicit document citation, party_to for an explicit person or organization role in a matter or agreement, version_of for a revision's base document, supersedes_version when one revision explicitly replaces another, has_status for explicit draft/executed/filed status, and dated_on for an explicit document date. Keep edges directed from subject to target. Do not infer execution, legal effect, parties, citations, or version order from proximity alone.
 
 Rules:
 - Extract only explicitly mentioned entities and relationships
+- When emitting relationship context, copy the exact supporting phrase or sentence from the source text
 - Use the most specific relation type available
 - Include confidence scores (0-1)
 - Keep entity names as they appear in text (preserve capitalization)
@@ -144,22 +136,125 @@ function parseLLMResponse(response: string): { entities: ExtractedEntity[]; rela
 }
 
 function validateEntityType(type: string): EntityType {
-  const validTypes: EntityType[] = ['person', 'file', 'function', 'class', 'concept', 'tool', 'date', 'location', 'pattern', 'technique', 'other'];
+  const validTypes: EntityType[] = ['person', 'organization', 'matter', 'document', 'document_version', 'status', 'file', 'function', 'class', 'concept', 'tool', 'date', 'location', 'pattern', 'technique', 'other'];
   const lower = type.toLowerCase() as EntityType;
   if (validTypes.includes(lower)) return lower;
   return 'other';
 }
 
 function validateRelationType(type: string): RelationType {
-  const validTypes: RelationType[] = [
-    'works_on', 'depends_on', 'manages', 'uses', 'caused', 'located_in',
-    'belongs_to', 'reports_to', 'occurred_on', 'affects', 'contains',
-    'implements', 'extends', 'related_to', 'part_of', 'owns', 'created',
-    'resolved', 'blocks',
-  ];
-  const lower = type.toLowerCase() as RelationType;
-  if (validTypes.includes(lower)) return lower;
+  const lower = type.toLowerCase();
+  if ((ENTITY_RELATION_TYPES as readonly string[]).includes(lower)) return lower as RelationType;
   return 'related_to';
+}
+
+function mentionsEntity(content: string, name: string): boolean {
+  const nameParts = name.trim().split(/\s+/).filter(Boolean);
+  if (nameParts.length === 0) return false;
+  const escapedName = nameParts
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('\\s+');
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapedName}(?![\\p{L}\\p{N}])`, 'iu').test(content);
+}
+
+function entityOccurrenceIndexes(content: string, name: string): number[] {
+  const nameParts = name.trim().split(/\s+/).filter(Boolean);
+  if (nameParts.length === 0) return [];
+  const escapedName = nameParts
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('\\s+');
+  return [...content.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${escapedName}(?![\\p{L}\\p{N}])`, 'giu'))]
+    .flatMap((match) => typeof match.index === 'number' ? [match.index] : []);
+}
+
+const RELATION_CONTEXT_CUES: Readonly<Partial<Record<RelationType, RegExp>>> = {
+  works_on: /\bworks?\s+on\b|\bworking\s+on\b/i,
+  depends_on: /\bdepends?\s+on\b|\brequires?\b|\brelies?\s+on\b/i,
+  manages: /\bmanages?\b|\bmanaged\s+by\b|\boversees?\b|\bsupervises?\b/i,
+  oversees: /\boversees?\b|\bsupervises?\b/i,
+  uses: /\buses?\b|\bused\b|\busing\b|\butili[sz]es?\b/i,
+  caused: /\bcaused?\b|\bled\s+to\b|\bresulted\s+in\b/i,
+  located_in: /\blocated\s+in\b|\bbased\s+in\b|\bsituated\s+in\b/i,
+  belongs_to: /\bbelongs?\s+to\b|\bmember\s+of\b/i,
+  reports_to: /\breports?\s+to\b|\breported\s+to\b/i,
+  occurred_on: /\boccurred\s+on\b|\bhappened\s+on\b|\btook\s+place\s+on\b/i,
+  affects: /\baffects?\b|\bimpacts?\b|\binfluences?\b/i,
+  contains: /\bcontains?\b|\bincludes?\b|\bcomprises?\b/i,
+  implements: /\bimplements?\b|\bimplemented\b|\bdeploys?\b/i,
+  extends: /\bextends?\b|\bbuilds?\s+on\b|\bexpands?\s+on\b/i,
+  part_of: /\bpart\s+of\b|\bcomponent\s+of\b/i,
+  owns: /\bowns?\b|\bowned\s+by\b/i,
+  created: /\bcreates?\b|\bcreated\b|\bauthored\b|\bproduced\b/i,
+  resolved: /\bresolves?\b|\bresolved\b|\bfixed\b/i,
+  blocks: /\bblocks?\b|\bblocked\b|\bprevents?\b/i,
+  cites: /\bcites?\b|\bcited\b|\bcitation\s+to\b|\breferences?\b/i,
+  party_to: /\bparty\s+to\b|\bparty\s+in\b|\bsignator(?:y|ies)\s+to\b|\bsigned\s+by\b/i,
+  version_of: /\bversion\s+of\b|\brevision\s+of\b|\bdraft\s+of\b/i,
+  supersedes_version: /\bsupersedes?\b|\bsuperseded\b|\breplaces?\b|\breplaced\b/i,
+  has_status: /\bstatus\s+(?:is|was|:)|\b(?:is|was|remains?|became)\s+(?:draft|executed|filed|active|inactive)\b/i,
+  dated_on: /\bdated\s+on\b|\bdated\s+\w+\s+\d{1,2},?\s+20\d{2}\b|\bdated\s+20\d{2}-\d{2}-\d{2}\b/i,
+};
+
+function relationTypeMatchesContext(relation: ExtractedRelation, context: string): boolean {
+  if (/[?;]/.test(context)
+    || /\b(?:not|never|no longer|without|might|may|could|possibly|perhaps|allegedly|uncertain)\b/i.test(context)) return false;
+  const expectedCue = RELATION_CONTEXT_CUES[relation.relationType];
+  if (expectedCue) {
+    // Match a cue to a directed pair of mentions; a prior mention in another sentence
+    // must not hide a later, correctly ordered relation.
+    return [...context.matchAll(new RegExp(expectedCue.source, expectedCue.flags.replace('g', '') + 'g'))]
+      .some((cue) => {
+        if (typeof cue.index !== 'number') return false;
+        const previousBoundary = Math.max(
+          context.lastIndexOf('.', cue.index),
+          context.lastIndexOf('!', cue.index),
+          context.lastIndexOf('?', cue.index),
+          context.lastIndexOf(';', cue.index),
+        );
+        const cueEnd = cue.index + cue[0].length;
+        const followingBoundaries = ['.', '!', '?', ';']
+          .map((boundary) => context.indexOf(boundary, cueEnd))
+          .filter((index) => index >= 0);
+        const nextBoundary = followingBoundaries.length > 0 ? Math.min(...followingBoundaries) : context.length;
+        const segment = context.slice(previousBoundary + 1, nextBoundary);
+        const segmentOffset = previousBoundary + 1;
+        const fromIndexes = entityOccurrenceIndexes(segment, relation.fromEntity)
+          .map((index) => index + segmentOffset);
+        const toIndexes = entityOccurrenceIndexes(segment, relation.toEntity)
+          .map((index) => index + segmentOffset);
+        if (fromIndexes.length === 0 || toIndexes.length === 0) return false;
+
+        const cueWithFollowingWord = cue[0] + context.slice(cueEnd, cueEnd + 32);
+        const passiveCue = /\b(?:managed|supervised|used|caused|owned|created|implemented|cited|signed|superseded|replaced)\s+by\b/i.test(cueWithFollowingWord);
+        return fromIndexes.some((fromIndex) => toIndexes.some((toIndex) => passiveCue
+          ? toIndex < cue.index! && cue.index! < fromIndex
+          : fromIndex < cue.index! && cue.index! < toIndex));
+      });
+  }
+  // Generic relations remain the fallback when no specific cue is present.
+  if (relation.relationType === 'related_to') return true;
+  return false;
+}
+
+function validateLLMExtraction(
+  content: string,
+  parsed: { entities: ExtractedEntity[]; relations: ExtractedRelation[] },
+): { entities: ExtractedEntity[]; relations: ExtractedRelation[] } {
+  const validatedEntities = parsed.entities.filter((entity) => mentionsEntity(content, entity.name));
+  const entityNames = new Set(validatedEntities.map((entity) => entity.name.toLowerCase()));
+  const validatedRelations = parsed.relations.filter((relation) => {
+    const bothEntitiesValidated = entityNames.has(relation.fromEntity.toLowerCase())
+      && entityNames.has(relation.toEntity.toLowerCase());
+    const context = relation.context.trim();
+    const sourceBackedContext = context.length > 0
+      && content.includes(context)
+      && mentionsEntity(context, relation.fromEntity)
+      && mentionsEntity(context, relation.toEntity)
+      && relationTypeMatchesContext(relation, context);
+    return bothEntitiesValidated && sourceBackedContext;
+  });
+
+  return { entities: validatedEntities, relations: validatedRelations };
 }
 
 // ─── Main Extraction Functions ───────────────────────────────────────────────
@@ -176,6 +271,9 @@ export async function extractEntitiesAndRelations(
   }
 ): Promise<LLMExtractionResult> {
   const { preferLLM = true, maxContentLength = 4000 } = options || {};
+  if (preferLLM && isStrictTrustPolicy()) {
+    await denyUnscopedGraphOperation('llm_entity_extraction', 'unscoped_content');
+  }
 
   // Truncate very long content
   const truncatedContent = content.length > maxContentLength
@@ -222,33 +320,7 @@ async function extractWithLLM(content: string): Promise<Omit<LLMExtractionResult
   const parsed = parseLLMResponse(response);
   if (!parsed) return null;
 
-  // Validate that extracted entities actually appear in the content
-  const validatedEntities = parsed.entities.filter((entity) => {
-    // Allow entities whose name or a significant substring appears in content
-    const nameLower = entity.name.toLowerCase();
-    const contentLower = content.toLowerCase();
-    // Check if the entity name or a key part of it appears in content
-    const words = nameLower.split(/\s+/);
-    return words.some(word => word.length > 2 && contentLower.includes(word));
-  });
-
-  // Validate that relation entities exist in the entity list
-  const entityNames = new Set(validatedEntities.map(e => e.name.toLowerCase()));
-  const validatedRelations = parsed.relations.filter((relation) => {
-    const fromExists = entityNames.has(relation.fromEntity.toLowerCase());
-    const toExists = entityNames.has(relation.toEntity.toLowerCase());
-    // Allow relations where at least one entity is known
-    // (the LLM might use slightly different names)
-    return fromExists || toExists || 
-      // Also allow if both entity names appear in the content
-      (content.toLowerCase().includes(relation.fromEntity.toLowerCase()) &&
-       content.toLowerCase().includes(relation.toEntity.toLowerCase()));
-  });
-
-  return {
-    entities: validatedEntities,
-    relations: validatedRelations,
-  };
+  return validateLLMExtraction(content, parsed);
 }
 
 /**
@@ -264,6 +336,10 @@ export async function batchExtractEntitiesAndRelations(
   }
 ): Promise<LLMExtractionResult[]> {
   const { batchSize = 5 } = options || {};
+  const preferLLM = options?.preferLLM ?? true;
+  if (preferLLM && isStrictTrustPolicy()) {
+    await denyUnscopedGraphOperation('llm_entity_batch_extraction', 'unscoped_content');
+  }
   const results: LLMExtractionResult[] = [];
 
   // Process in batches to avoid overwhelming the LLM
@@ -290,4 +366,13 @@ export function getExtractionPrompt(): string {
  */
 export function testParseLLMResponse(response: string): { entities: ExtractedEntity[]; relations: ExtractedRelation[] } | null {
   return parseLLMResponse(response);
+}
+
+/** Validate parsed names and relation endpoints against source text. */
+export function testValidateLLMResponse(
+  content: string,
+  response: string,
+): { entities: ExtractedEntity[]; relations: ExtractedRelation[] } | null {
+  const parsed = parseLLMResponse(response);
+  return parsed ? validateLLMExtraction(content, parsed) : null;
 }

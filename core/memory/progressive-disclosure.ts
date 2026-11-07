@@ -3,6 +3,8 @@ import { eq, desc, and, sql } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { createDatabaseClient } from '../storage/database.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 
 export interface LightweightIndex {
   id: string;
@@ -45,12 +47,19 @@ const PREVIEW_TOKENS = 50;
 const MAX_PRELOAD_CANDIDATES = 20;
 const TOKEN_ESTIMATE_CHARS = 4;
 
+async function assertProgressiveDisclosureAvailable(operation: string): Promise<void> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface('progressive_disclosure', 'memory_index', `Progressive-disclosure ${operation} is disabled under strict trust until caller-scoped memory authorization is implemented`);
+  }
+}
+
 export async function createLightweightIndex(
   memoryId: string,
   content: string,
   category: string,
   importance: number
 ): Promise<LightweightIndex> {
+  await assertProgressiveDisclosureAvailable('writes');
   const db = createDatabaseClient(await getDb());
   const schema = await getSchema();
   
@@ -88,6 +97,7 @@ export async function searchLightweightIndices(
   query: string,
   limit: number = 10
 ): Promise<MemoryPreview[]> {
+  await assertProgressiveDisclosureAvailable('search');
   const db = createDatabaseClient(await getDb());
   const schema = await getSchema();
 
@@ -154,6 +164,7 @@ export async function searchLightweightIndices(
 }
 
 export async function loadFullMemory(memoryId: string): Promise<FullMemoryLoad | null> {
+  await assertProgressiveDisclosureAvailable('full-memory reads');
   const db = createDatabaseClient(await getDb());
   const schema = await getSchema();
 
@@ -183,6 +194,7 @@ export async function allocateTokenBudget(
   sessionId: string,
   budget: number
 ): Promise<TokenBudgetStatus> {
+  await assertProgressiveDisclosureAvailable('session budget reads');
   const db = createDatabaseClient(await getDb());
   const schema = await getSchema();
 
@@ -221,6 +233,7 @@ export async function preloadCandidateMemories(
   budget: number,
   excludeLoadedIds: string[]
 ): Promise<string[]> {
+  await assertProgressiveDisclosureAvailable('preload candidate selection');
   const status = await allocateTokenBudget(sessionId, budget);
   const availableTokens = status.remaining;
 
@@ -275,6 +288,7 @@ export async function preloadCandidateMemories(
 }
 
 export async function getPreloadCandidates(sessionId: string): Promise<MemoryPreview[]> {
+  await assertProgressiveDisclosureAvailable('preload candidate reads');
   const db = createDatabaseClient(await getDb());
   const schema = await getSchema();
 
@@ -320,6 +334,7 @@ export async function updateIndexImportance(
   memoryId: string,
   importance: number
 ): Promise<void> {
+  await assertProgressiveDisclosureAvailable('index updates');
   const db = createDatabaseClient(await getDb());
   const schema = await getSchema();
 
@@ -332,6 +347,7 @@ export async function updateIndexImportance(
 }
 
 export async function deleteLightweightIndex(memoryId: string): Promise<void> {
+  await assertProgressiveDisclosureAvailable('index deletion');
   const db = createDatabaseClient(await getDb());
   const schema = await getSchema();
 

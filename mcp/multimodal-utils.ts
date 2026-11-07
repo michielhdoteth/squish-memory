@@ -50,7 +50,8 @@ export async function ingestFile(
   filePath: string,
   projectId?: string,
   description?: string,
-  tags?: string[]
+  tags?: string[],
+  userId?: string,
 ): Promise<IngestResult> {
   try {
     // Path traversal guard -- reject paths outside allowed directories
@@ -65,7 +66,8 @@ export async function ingestFile(
     const result = await pipeline.ingestMediaFile({
       filePath,
       projectId,
-      tags
+      tags,
+      userId,
     });
     return {
       success: true,

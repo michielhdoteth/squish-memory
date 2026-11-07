@@ -4,6 +4,8 @@
  * depending on the write path / backend).
  */
 
+import { toEpochMillisFromMixed } from '../../lib/timestamps.js';
+
 export function asArray<T = unknown>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];
   if (typeof value === 'string') {
@@ -18,14 +20,13 @@ export function asArray<T = unknown>(value: unknown): T[] {
 }
 
 /**
- * Convert a timestamp cell (Date | epoch seconds | ISO string) to ISO 8601,
- * returning '' for null/invalid values instead of throwing.
+ * Convert a timestamp cell (Date | epoch seconds | epoch millis | ISO string)
+ * to ISO 8601, returning '' for null/invalid values instead of throwing.
+ * Numbers go through the shared mixed-value ladder so a millisecond cell is
+ * not silently read as seconds (which would anchor it in the far future).
  */
 export function toIsoString(value: unknown): string {
   if (!value) return '';
-  const date =
-    value instanceof Date
-      ? value
-      : new Date(typeof value === 'number' ? value * 1000 : String(value));
-  return isNaN(date.getTime()) ? '' : date.toISOString();
+  const ms = toEpochMillisFromMixed(value as string | number | Date | null | undefined);
+  return ms === null ? '' : new Date(ms).toISOString();
 }

@@ -59,7 +59,7 @@ async function insertTestMemory(content: string, projectId?: string): Promise<st
     sqlite.prepare(`
       INSERT INTO memories (id, content, type, tags, created_at, project_id, visibility_scope)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, content, 'observation', '[]', now, projectId || null, 'project');
+    `).run(id, content, 'observation', '[]', now, projectId ?? globalProjectId, 'project');
   } catch (e) {
     // Fallback: try drizzle
     const schema = await (await import('../../../db/schema.js')).getSchema();
@@ -146,6 +146,26 @@ describe('Walking Module', () => {
       
       expect(result).not.toBeNull();
       expect(result!.memories.length).toBe(0);
+    });
+
+    test('only walks memories belonging to the requested project', async () => {
+      const { getOrCreateProject } = await import('../../../core/projects.js');
+      const { initializeDefaultPlaces } = await import('../../../core/places/places.js');
+      const firstProject = await getOrCreateProject('/walk-project-first');
+      const secondProject = await getOrCreateProject('/walk-project-second');
+      if (!firstProject || !secondProject) throw new Error('Failed to create projects');
+      await initializeDefaultPlaces(firstProject.id);
+      await initializeDefaultPlaces(secondProject.id);
+
+      const firstMemory = await insertTestMemory('First project memory', firstProject.id);
+      await assignMemoryToPlaceType(firstMemory, 'wip');
+      const secondMemory = await insertTestMemory('Second project memory', secondProject.id);
+      await assignMemoryToPlaceType(secondMemory, 'wip');
+
+      const result = await walkPlace(firstProject.id, 'wip');
+
+      expect(result?.memories.map(memory => memory.id)).toContain(firstMemory);
+      expect(result?.memories.map(memory => memory.id)).not.toContain(secondMemory);
     });
   });
 

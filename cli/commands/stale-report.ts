@@ -8,6 +8,7 @@
  * squish_stale_report tool share one staleness definition.
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
 import { remediationFor } from '../errors.js';
 import { colors } from '../colors.js';
@@ -18,17 +19,24 @@ export function registerStaleReportCommand(program: Command) {
     .description('Generate a read-only report of stale memories grouped by attribution')
     .option('-d, --days <number>', 'Show memories older than N days', '30')
     .option('-l, --limit <number>', 'Max memories to scan', '200')
+    .option('-m, --min-importance <number>', 'Minimum importance (0-1, normalized). Omit or 0 for no filter', '')
     .option('-o, --output <file>', 'Output file (default: stdout)')
     .option('-p, --project <project>', 'Project path')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const { buildStalenessReport } = await import('../../core/memory/staleness-report.js');
         const report = await buildStalenessReport({
           projectId: options.project,
           olderThanDays: parseInt(options.days) || 30,
+          // Only forwarded when the operator actually supplied it. Passing
+          // `undefined` is what `buildStalenessReport` reads as "no filter";
+          // passing a parsed NaN would have been silently dropped anyway, which
+          // is exactly the confusion the runtime clamp now handles too.
+          ...(options.minImportance !== '' && options.minImportance !== undefined
+            ? { minImportance: Number(options.minImportance) }
+            : {}),
           limit: parseInt(options.limit) || 200,
         });
 
@@ -72,10 +80,7 @@ export function registerStaleReportCommand(program: Command) {
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     });
 }

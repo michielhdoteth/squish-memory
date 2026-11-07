@@ -10,7 +10,7 @@
  *   - cross-encoder/ms-marco-MiniLM-L-12-v2 (better accuracy, ~170MB)
  *
  * Usage:
- *   Enabled by default since Batch 5 (set SQUISH_RERANKER_ENABLED=false to opt out).
+ *   Enabled by the high-recall profile; set SQUISH_RERANKER_ENABLED to override.
  *   When @huggingface/transformers does not resolve or the model cannot load
  *   within SQUISH_RERANKER_LOAD_TIMEOUT_MS (default 10s), reranking is skipped
  *   silently and skips are counted in the rerank meta (see getLastRerankMeta).
@@ -32,6 +32,7 @@ export interface RerankerConfig {
   loadTimeoutMs: number;
   device: 'cpu' | 'webgpu';
   dtype: 'q8' | 'q4' | 'f16' | 'f32';
+  allowModelDownloads: boolean;
 }
 
 /** Outcome of the most recent rerankResults call (for trace reporting). */
@@ -43,32 +44,19 @@ export interface RerankMeta {
 }
 
 /**
- * Aligned with parseEnvFlag semantics (core/retrieval/config.ts): recognized
- * truthy/falsey tokens are honored; unrecognized junk falls back to the
- * component default (ON since Batch 5) instead of being coerced to a value.
- */
-function parseEnabledFlag(raw: string | undefined): boolean {
-  const DEFAULT = true; // Batch 5 default ON
-  if (raw === undefined || raw === '') return DEFAULT;
-  const v = raw.trim().toLowerCase();
-  if (['false', '0', 'no', 'off'].includes(v)) return false;
-  if (['true', '1', 'yes', 'on'].includes(v)) return true;
-  return DEFAULT;
-}
-
-/**
  * Get reranker configuration from environment variables
  * Reads directly from process.env for testability
  */
 export function getRerankerConfig(): RerankerConfig {
   return {
-    enabled: parseEnabledFlag(process.env.SQUISH_RERANKER_ENABLED),
+    enabled: getPrecisionStackFlags().reranker,
     model: process.env.SQUISH_RERANKER_MODEL || 'cross-encoder/ms-marco-MiniLM-L-6-v2',
     topK: parseInt(process.env.SQUISH_RERANKER_TOP_K ?? '30', 10),
     returnTopK: parseInt(process.env.SQUISH_RERANKER_RETURN_TOP_K ?? '20', 10),
     loadTimeoutMs: parseInt(process.env.SQUISH_RERANKER_LOAD_TIMEOUT_MS ?? '10000', 10),
     device: 'cpu',
     dtype: 'q8',
+    allowModelDownloads: process.env.SQUISH_ALLOW_MODEL_DOWNLOADS === 'true',
   };
 }
 
@@ -121,6 +109,7 @@ async function loadPipelineWithTimeout(cfg: RerankerConfig): Promise<Pipeline | 
       mod.pipeline('text-classification', cfg.model as any, {
         device: cfg.device as any,
         dtype: cfg.dtype as any,
+        local_files_only: !cfg.allowModelDownloads,
       }),
       new Promise<null>((resolve) => {
         timer = setTimeout(() => {

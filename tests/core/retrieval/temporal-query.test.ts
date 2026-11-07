@@ -18,7 +18,10 @@ import {
   isValidAt,
   applyTemporalEligibility,
   normalizeTimestampValue,
+  overlapsValidTimeWindow,
   TEMPORAL_VALID_AT_T_BOOST,
+  TEMPORAL_DATE_FIT_BOOST,
+  temporalDateFitBoost,
 } from '../../../core/retrieval/temporal-validity.js';
 
 function utc(iso: string): Date {
@@ -26,6 +29,57 @@ function utc(iso: string): Date {
 }
 
 describe('parseTimeReference - past-anchored', () => {
+  test('relative past phrases anchor to a fixed clock in the requested IANA zone', () => {
+    const referenceDate = utc('2025-08-10T12:00:00.000Z');
+    const expected: Array<[string, string]> = [
+      ['What did I eat yesterday?', '2025-08-10T06:59:59.999Z'],
+      ['Where did I run last night?', '2025-08-10T11:59:59.999Z'],
+      ['Where did I run last week?', '2025-08-04T06:59:59.999Z'],
+      ['What happened last month?', '2025-08-01T06:59:59.999Z'],
+      ['What changed last year?', '2025-01-01T07:59:59.999Z'],
+    ];
+
+    for (const [query, instant] of expected) {
+      const result = parseTimeReference(query, referenceDate, 'America/Los_Angeles');
+      expect(result.kind).toBe('past-anchored');
+      expect(result.t?.toISOString()).toBe(instant);
+    }
+    const lastWeek = parseTimeReference('Where did I run last week?', referenceDate, 'America/Los_Angeles');
+    expect(lastWeek.range?.from.toISOString()).toBe('2025-07-28T07:00:00.000Z');
+    expect(lastWeek.range?.to.toISOString()).toBe('2025-08-04T07:00:00.000Z');
+  });
+
+  test('relative week anchor respects daylight-saving offset at local week boundary', () => {
+    const result = parseTimeReference(
+      'What happened last week?',
+      utc('2024-03-11T08:30:00.000Z'),
+      'America/Los_Angeles'
+    );
+    expect(result.t?.toISOString()).toBe('2024-03-11T06:59:59.999Z');
+  });
+
+  test('last weekday resolves to the previous local calendar day across DST', () => {
+    const result = parseTimeReference(
+      'What did I do last Sunday?',
+      utc('2024-03-11T08:30:00.000Z'),
+      'America/Los_Angeles'
+    );
+    expect(result.kind).toBe('past-anchored');
+    expect(result.t?.toISOString()).toBe('2024-03-11T06:59:59.999Z');
+    expect(result.range?.from.toISOString()).toBe('2024-03-10T08:00:00.000Z');
+    expect(result.range?.to.toISOString()).toBe('2024-03-11T07:00:00.000Z');
+  });
+
+  test('last weekday on that weekday refers to the prior week', () => {
+    const result = parseTimeReference(
+      'What happened last Tuesday?',
+      utc('2025-08-12T12:00:00.000Z'),
+      'UTC'
+    );
+    expect(result.range?.from.toISOString()).toBe('2025-08-05T00:00:00.000Z');
+    expect(result.range?.to.toISOString()).toBe('2025-08-06T00:00:00.000Z');
+  });
+
   test('bare year with preposition uses mid-year convention', () => {
     for (const q of ['in 2021', 'during 2022', 'since 2021', 'back in 2019', 'as of 2023']) {
       const r = parseTimeReference(q);
@@ -83,6 +137,26 @@ describe('parseTimeReference - past-anchored', () => {
     expect(r.t!.toISOString()).toBe('2024-03-15T12:00:00.000Z');
   });
 
+  test('explicit calendar anchors use local noon in the requested time zone', () => {
+    const result = parseTimeReference('status as of 2024-06-15', undefined, 'Pacific/Kiritimati');
+    expect(result.kind).toBe('past-anchored');
+    // Kiritimati is UTC+14: UTC noon falls on June 16 locally, while local
+    // noon on the requested June 15 date is June 14 at 22:00 UTC.
+    expect(result.t?.toISOString()).toBe('2024-06-14T22:00:00.000Z');
+  });
+
+  test('impossible ISO dates and months do not normalize into a different temporal anchor', () => {
+    for (const query of [
+      'status as of 2024-02-30',
+      'status as of 2023-02-29',
+      'status as of 2024-13-01',
+      'config in 2024-13',
+    ]) {
+      expect(parseTimeReference(query).kind).toBe('none');
+    }
+    expect(parseTimeReference('status as of 2024-02-29').kind).toBe('past-anchored');
+  });
+
   test('ISO year-month anchors to mid-month', () => {
     const r = parseTimeReference('config in 2022-06');
     expect(r.kind).toBe('past-anchored');
@@ -94,6 +168,17 @@ describe('parseTimeReference - past-anchored', () => {
     // stay unanchored so its must-hit memories are never excluded by t.
     const r = parseTimeReference('Which annotation platform did the team switch away from in spring 2026?');
     expect(r.kind).not.toBe('past-anchored');
+  });
+});
+
+describe('overlapsValidTimeWindow', () => {
+  test('uses half-open boundaries and includes intervals that overlap the window', () => {
+    const windowStart = utc('2024-01-01T00:00:00Z');
+    const windowEnd = utc('2024-02-01T00:00:00Z');
+    expect(overlapsValidTimeWindow({ validFrom: '2023-12-01T00:00:00Z', validTo: '2024-01-01T00:00:00Z' }, windowStart, windowEnd)).toBe(false);
+    expect(overlapsValidTimeWindow({ validFrom: '2023-12-01T00:00:00Z', validTo: '2024-01-02T00:00:00Z' }, windowStart, windowEnd)).toBe(true);
+    expect(overlapsValidTimeWindow({ validFrom: '2024-02-01T00:00:00Z' }, windowStart, windowEnd)).toBe(false);
+    expect(overlapsValidTimeWindow({ validFrom: '2024-01-15T00:00:00Z' }, windowStart, windowEnd)).toBe(true);
   });
 });
 
@@ -147,6 +232,11 @@ describe('parseTimeReference - current', () => {
       expect(r.t).toBeNull();
     }
   });
+
+  test('current marker uses an explicitly supplied fixed clock', () => {
+    const fixed = utc('2025-08-10T12:00:00Z');
+    expect(parseTimeReference('What is current now?', fixed).t?.toISOString()).toBe(fixed.toISOString());
+  });
 });
 
 describe('parseTimeReference - none + negatives', () => {
@@ -164,6 +254,13 @@ describe('parseTimeReference - none + negatives', () => {
       expect(r.t).toBeNull();
       expect(r.raw).toBeNull();
     }
+  });
+
+  test('future-action language is not a memory valid-time filter', () => {
+    const query = parseTimeReference('Plan workouts for next week.', new Date('2022-01-01T00:00:00.000Z'));
+    expect(query.kind).toBe('none');
+    expect(query.t).toBeNull();
+    expect(parseTimeReference('Schedule the run for next Tuesday.', new Date('2025-08-10T12:00:00.000Z')).kind).toBe('none');
   });
 
   test('"use" must not match "user"', () => {
@@ -218,6 +315,16 @@ describe('isValidAt', () => {
 
   test('createdAt after t is invalid', () => {
     expect(isValidAt({ createdAt: '2026-08-25T00:00:00Z' }, t)).toBe(false);
+  });
+
+  test('uses source valid-time intervals for delayed imports', () => {
+    const importedLater = {
+      createdAt: '2025-01-01T00:00:00Z',
+      validFrom: '2022-03-01T00:00:00Z',
+      validTo: '2022-12-01T00:00:00Z',
+    };
+    expect(isValidAt(importedLater, utc('2022-06-01T00:00:00Z'))).toBe(true);
+    expect(isValidAt(importedLater, utc('2023-01-01T00:00:00Z'))).toBe(false);
   });
 
   test('supersededAt == t boundary is EXCLUSIVE (invalid at t)', () => {
@@ -316,5 +423,20 @@ describe('applyTemporalEligibility', () => {
     const verdicts = applyTemporalEligibility([iphone, nokia], anchored);
     expect(verdicts[0].eligible).toBe(false); // iphone (created after t)
     expect(verdicts[1].eligible).toBe(true); // nokia
+  });
+});
+
+describe('temporalDateFitBoost', () => {
+  const range = parseTimeReference('What happened last week?', utc('2025-08-10T12:00:00Z'), 'America/Los_Angeles');
+
+  test('boosts event time inside the half-open relative window without eligibility effects', () => {
+    expect(temporalDateFitBoost({ validFrom: '2025-08-01T12:00:00Z' }, range)).toBe(TEMPORAL_DATE_FIT_BOOST);
+    expect(temporalDateFitBoost({ validFrom: '2025-07-18T12:00:00Z' }, range)).toBe(0);
+    expect(temporalDateFitBoost({ validFrom: '2025-08-04T07:00:00Z' }, range)).toBe(0);
+  });
+
+  test('explicit point anchors do not acquire date-fit boosts', () => {
+    const explicit = parseTimeReference('What happened in 2025?', utc('2025-08-10T12:00:00Z'));
+    expect(temporalDateFitBoost({ validFrom: '2025-08-01T12:00:00Z' }, explicit)).toBe(0);
   });
 });

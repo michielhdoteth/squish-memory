@@ -1,10 +1,10 @@
 /**
- * Confident-wrong autopsy (Batch B12-2) — instrumentation + analysis ONLY.
+ * Confident-wrong autopsy (WS2b) - instrumentation + analysis.
  *
  * Reproduces the memory bench (scripts/run-memory-bench.ts) exactly — same
  * fixtures, same seeding path, same env pins, same search calls, same scorer
- * — and then dissects every query the scorer counts as WRONG (penalty <=
- * -0.5). For each such case it dumps the full evidence vector attached by
+ * — and then dissects every negatively scored oracle case. Confident-wrong
+ * cases additionally require verdict=confident. For each negative case it dumps the full evidence vector attached by
  * search-evidence, a step-by-step recomposition of the recall confidence
  * that cleared the threshold, and an auto-diagnosis of which signal(s)
  * failed.
@@ -13,15 +13,12 @@
  *   - human-readable report on stdout
  *   - machine-readable JSON at tests/benchmarks/reports/confident-wrong-autopsy.json
  *
- * NOTE on the confident-wrong definition: the bench scorer buckets
- * `penalty < 0` as wrong regardless of verdict. The task filter
- * `penalty <= -0.5` is equivalent over this corpus (bench penalties are in
- * {+1, +0.5, 0, -1}) and matches baseline.json's confidentWrong=5. Each row
- * records its own verdict; 4/5 carry verdict=confident, edge_noise_q
- * carries verdict=qualified.
+ * A negative oracle penalty is not necessarily a confidently asserted false
+ * answer: abstentions can still expose retrieval/oracle mismatches. Preserve
+ * both wrongTotal and verdict-gated confidentWrong in the report.
  *
  * Run:  bun scripts/diagnose-confident-wrong.ts [--out <path>]
- * Deterministic + offline: identical pinned env as the bench/golden eval.
+ * Deterministic + offline: identical pinned env as the benchmark/golden eval.
  */
 
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
@@ -29,6 +26,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { hasTrackedSourceChanges } from '../benchmark/source-provenance.js';
 
 // Pure fixture + pure scoring imports (no env reads at module load).
 import {
@@ -97,6 +95,9 @@ function scoreQuery(
         return { penalty: +1, guardOk: true };
       }
       if (input.top3BenchIds.some((id) => query.expectTop3?.includes(id))) {
+        return { penalty: +0.5, guardOk: true };
+      }
+      if (input.top1BenchId && query.supportingEvidenceTop1?.includes(input.top1BenchId)) {
         return { penalty: +0.5, guardOk: true };
       }
       if (input.top1BenchId === null) return { penalty: 0, guardOk: false };
@@ -559,7 +560,7 @@ async function main() {
     const candidateSemanticScores = raw.map(r2 => (typeof r2.semanticScore === 'number' ? r2.semanticScore : null));
     const candAlignments = raw.map(r2 =>
       qTopic.entity || qTopic.attribute
-        ? topicalAlignment(qTopic, parseMemoryTopic(r2.memory.content))
+        ? topicalAlignment(qTopic, parseMemoryTopic(r2.memory.content), r2.memory.content)
         : null
     );
 
@@ -619,8 +620,10 @@ async function main() {
   const macro =
     [...catAcc.values()].reduce((sum, a) => sum + a.sum / a.count, 0) / BENCH_CATEGORIES.length;
 
-  // THE filter: scorer's wrong bucket (== confident-wrong per bench semantics).
-  const cwRuns = runs.filter(run => run.penalty <= -0.5);
+  // Keep the full negative-oracle set for diagnosis and derive the stricter
+  // confident-wrong subset from the answer-policy verdict.
+  const wrongRuns = runs.filter(run => run.penalty < 0);
+  const cwRuns = wrongRuns.filter(run => run.verdict === 'confident');
 
   // Build case dumps.
   interface CaseRow {
@@ -727,14 +730,12 @@ async function main() {
   try {
     gitSha = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
   } catch { /* not a repo */ }
-  try {
-    gitDirty = execSync('git status --porcelain', { encoding: 'utf-8' }).trim().length > 0;
-  } catch { /* not a repo */ }
+  gitDirty = hasTrackedSourceChanges();
 
   const report = {
     meta: {
       name: 'confident-wrong-autopsy',
-      task: 'B12-2',
+      task: 'WS2b',
       gitSha,
       gitDirty,
       generatedAt: new Date().toISOString(),
@@ -742,8 +743,9 @@ async function main() {
       embeddingsProvider: process.env.SQUISH_EMBEDDINGS_PROVIDER,
       bundledModel: process.env.SQUISH_LOCAL_BUNDLED_MODEL ?? 'off',
       abstainBelow,
-      definition: 'penalty <= -0.5 (scorer wrong bucket; bench penalties in {+1,+0.5,0,-1}); verdict recorded per row',
+      definition: 'wrongTotal = penalty < 0; confidentWrong = penalty < 0 and verdict=confident',
       totalQueries: runs.length,
+      wrongTotal: wrongRuns.length,
       confidentWrongCount: cwRuns.length,
       reproducedOverall: {
         macroPenaltyScore: Math.round(macro * 10000) / 10000,

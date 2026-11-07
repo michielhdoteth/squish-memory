@@ -21,6 +21,7 @@ export async function runMemoriesMigrations(sqlite: Database): Promise<void> {
   }
 
   await migrateTable(sqlite, memoriesSchema);
+  sqlite.exec('CREATE INDEX IF NOT EXISTS memories_valid_from_idx ON memories(valid_from)');
   await runEmbeddingBlobBackfill(sqlite);
   // Batch 6b: sector re-classification + legacy hot-tier repair (one-time,
   // marker-gated, O(1) after first successful pass).

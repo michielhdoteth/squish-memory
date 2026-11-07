@@ -1,0 +1,1155 @@
+{
+  "meta": {
+    "graphAblationQueryIds": [
+      "q_multidoc_001",
+      "q_multidoc_002",
+      "q_multidoc_003",
+      "q_multidoc_004",
+      "q_multidoc_005",
+      "q_multidoc_006",
+      "q_multidoc_007",
+      "q_multidoc_008",
+      "q_multidoc_009",
+      "q_multidoc_010",
+      "q_multidoc_011",
+      "q_multidoc_012",
+      "q_multidoc_013",
+      "q_multidoc_014",
+      "q_multidoc_015",
+      "q_multidoc_016",
+      "q_multidoc_017",
+      "q_multidoc_018",
+      "q_multidoc_019",
+      "q_multidoc_020"
+    ],
+    "description": "Deterministic offline graph retrieval diagnostic with 20 paired cross-memory questions, 40 answer-bearing target/bridge memories, and 60 unrelated distractors. Synthetic fixtures only; not a public or general-purpose benchmark.",
+    "notes": "Each query provides a unique project anchor but omits the distinct hosting entity. The target and bridge records connect project to store and store to hosting environment; mustHit is the bridge record and mayHit is the direct project-to-store record.",
+    "deterministic": true,
+    "version": 2,
+    "name": "squish-synthetic-graph-disambiguation-2026-10-25-v2"
+  },
+  "queries": [
+    {
+      "mustHit": [
+        "bridge_001"
+      ],
+      "query": "Across sessions, which hosting environment supports Aurelia's deployment records?",
+      "id": "q_multidoc_001",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_001"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_002"
+      ],
+      "query": "Across sessions, which hosting environment supports Borealis's deployment records?",
+      "id": "q_multidoc_002",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_002"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_003"
+      ],
+      "query": "Across sessions, which hosting environment supports Celandine's deployment records?",
+      "id": "q_multidoc_003",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_003"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_004"
+      ],
+      "query": "Across sessions, which hosting environment supports Damaris's deployment records?",
+      "id": "q_multidoc_004",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_004"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_005"
+      ],
+      "query": "Across sessions, which hosting environment supports Eudora's deployment records?",
+      "id": "q_multidoc_005",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_005"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_006"
+      ],
+      "query": "Across sessions, which hosting environment supports Faramir's deployment records?",
+      "id": "q_multidoc_006",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_006"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_007"
+      ],
+      "query": "Across sessions, which hosting environment supports Galatea's deployment records?",
+      "id": "q_multidoc_007",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_007"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_008"
+      ],
+      "query": "Across sessions, which hosting environment supports Hesper's deployment records?",
+      "id": "q_multidoc_008",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_008"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_009"
+      ],
+      "query": "Across sessions, which hosting environment supports Isolde's deployment records?",
+      "id": "q_multidoc_009",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_009"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_010"
+      ],
+      "query": "Across sessions, which hosting environment supports Jovian's deployment records?",
+      "id": "q_multidoc_010",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_010"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_011"
+      ],
+      "query": "Across sessions, which hosting environment supports Kallisto's deployment records?",
+      "id": "q_multidoc_011",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_011"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_012"
+      ],
+      "query": "Across sessions, which hosting environment supports Leontes's deployment records?",
+      "id": "q_multidoc_012",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_012"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_013"
+      ],
+      "query": "Across sessions, which hosting environment supports Meliora's deployment records?",
+      "id": "q_multidoc_013",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_013"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_014"
+      ],
+      "query": "Across sessions, which hosting environment supports Nerissa's deployment records?",
+      "id": "q_multidoc_014",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_014"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_015"
+      ],
+      "query": "Across sessions, which hosting environment supports Oberon's deployment records?",
+      "id": "q_multidoc_015",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_015"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_016"
+      ],
+      "query": "Across sessions, which hosting environment supports Phaedra's deployment records?",
+      "id": "q_multidoc_016",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_016"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_017"
+      ],
+      "query": "Across sessions, which hosting environment supports Quillon's deployment records?",
+      "id": "q_multidoc_017",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_017"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_018"
+      ],
+      "query": "Across sessions, which hosting environment supports Rhea's deployment records?",
+      "id": "q_multidoc_018",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_018"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_019"
+      ],
+      "query": "Across sessions, which hosting environment supports Sophron's deployment records?",
+      "id": "q_multidoc_019",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_019"
+      ]
+    },
+    {
+      "mustHit": [
+        "bridge_020"
+      ],
+      "query": "Across sessions, which hosting environment supports Thalia's deployment records?",
+      "id": "q_multidoc_020",
+      "category": "multi-hop",
+      "mayHit": [
+        "target_020"
+      ]
+    }
+  ],
+  "memories": [
+    {
+      "type": "fact",
+      "id": "target_001",
+      "content": "Aurelia stores deployment records in Asterion; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_001",
+      "content": "Asterion is hosted by Marigold; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_002",
+      "content": "Borealis stores deployment records in Brontes; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_002",
+      "content": "Brontes is hosted by Northstar; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_003",
+      "content": "Celandine stores deployment records in Cygnus; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_003",
+      "content": "Cygnus is hosted by Opaline; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_004",
+      "content": "Damaris stores deployment records in Dione; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_004",
+      "content": "Dione is hosted by Prairie; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_005",
+      "content": "Eudora stores deployment records in Ephyra; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_005",
+      "content": "Ephyra is hosted by Quarry; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_006",
+      "content": "Faramir stores deployment records in Fenrir; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_006",
+      "content": "Fenrir is hosted by Redwood; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_007",
+      "content": "Galatea stores deployment records in Ganymede; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_007",
+      "content": "Ganymede is hosted by Silverleaf; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_008",
+      "content": "Hesper stores deployment records in Hyperion; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_008",
+      "content": "Hyperion is hosted by Tundra; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_009",
+      "content": "Isolde stores deployment records in Icarus; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_009",
+      "content": "Icarus is hosted by Umber; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_010",
+      "content": "Jovian stores deployment records in Janus; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_010",
+      "content": "Janus is hosted by Verdant; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_011",
+      "content": "Kallisto stores deployment records in Kronos; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_011",
+      "content": "Kronos is hosted by Willow; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_012",
+      "content": "Leontes stores deployment records in Lyra; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_012",
+      "content": "Lyra is hosted by Xenon; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_013",
+      "content": "Meliora stores deployment records in Morpheus; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_013",
+      "content": "Morpheus is hosted by Yellowstone; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_014",
+      "content": "Nerissa stores deployment records in Nereid; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_014",
+      "content": "Nereid is hosted by Zephyr; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_015",
+      "content": "Oberon stores deployment records in Orion; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_015",
+      "content": "Orion is hosted by Amberly; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_016",
+      "content": "Phaedra stores deployment records in Perseus; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_016",
+      "content": "Perseus is hosted by Bluebird; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_017",
+      "content": "Quillon stores deployment records in Quasar; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_017",
+      "content": "Quasar is hosted by Cobalt; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_018",
+      "content": "Rhea stores deployment records in Rigel; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_018",
+      "content": "Rigel is hosted by Dawnstar; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_019",
+      "content": "Sophron stores deployment records in Sirius; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_019",
+      "content": "Sirius is hosted by Evergreen; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "target_020",
+      "content": "Thalia stores deployment records in Tethys; it retains records for seven years and reviews access each April.",
+      "tags": [
+        "synthetic",
+        "project"
+      ]
+    },
+    {
+      "type": "fact",
+      "id": "bridge_020",
+      "content": "Tethys is hosted by Foxglove; its recovery window is fifteen minutes and it keeps an isolated replica.",
+      "tags": [
+        "synthetic",
+        "infrastructure"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_001",
+      "content": "Vesper documented sensor calibration with the Beacon; the action item is due in cycle 1.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_002",
+      "content": "Windrow documented archive retention with the Compass; the action item is due in cycle 2.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_003",
+      "content": "Xanthic documented shipment routing with the Dossier; the action item is due in cycle 3.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_004",
+      "content": "Yarrow documented lab inventory with the Emblem; the action item is due in cycle 4.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_005",
+      "content": "Zorion documented weather analysis with the Fixture; the action item is due in cycle 5.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_006",
+      "content": "Alabaster documented billing reconciliation with the Gauge; the action item is due in cycle 6.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_007",
+      "content": "Bracken documented network monitoring with the Harbor; the action item is due in cycle 7.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_008",
+      "content": "Citrine documented document review with the Insignia; the action item is due in cycle 8.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_009",
+      "content": "Dovetail documented safety inspection with the Kiln; the action item is due in cycle 9.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_010",
+      "content": "Estuary documented field sampling with the Lantern; the action item is due in cycle 10.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_011",
+      "content": "Faraday documented workstation setup with the Medallion; the action item is due in cycle 11.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_012",
+      "content": "Gossamer documented release scheduling with the Notary; the action item is due in cycle 12.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_013",
+      "content": "Hawthorn documented incident response with the Oculus; the action item is due in cycle 13.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_014",
+      "content": "Iridium documented backup rotation with the Palette; the action item is due in cycle 14.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_015",
+      "content": "Juniper documented equipment repair with the Quiver; the action item is due in cycle 15.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_016",
+      "content": "Kestrel documented grant reporting with the Relay; the action item is due in cycle 16.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_017",
+      "content": "Lodestar documented quality control with the Spindle; the action item is due in cycle 17.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_018",
+      "content": "Madrigal documented staff onboarding with the Trestle; the action item is due in cycle 18.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_019",
+      "content": "Nightingale documented access reviews with the Urchin; the action item is due in cycle 19.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_020",
+      "content": "Ochre documented catalog migration with the Vantage; the action item is due in cycle 20.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_021",
+      "content": "Peregrine documented sensor calibration with the Walnut; the action item is due in cycle 21.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_022",
+      "content": "Quintessence documented archive retention with the Xylem; the action item is due in cycle 22.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_023",
+      "content": "Rivulet documented shipment routing with the Yacht; the action item is due in cycle 23.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_024",
+      "content": "Saffron documented lab inventory with the Zeppelin; the action item is due in cycle 24.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_025",
+      "content": "Topaz documented weather analysis with the Atlas; the action item is due in cycle 25.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_026",
+      "content": "Upland documented billing reconciliation with the Buckle; the action item is due in cycle 26.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_027",
+      "content": "Valerian documented network monitoring with the Cipher; the action item is due in cycle 27.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_028",
+      "content": "Wisteria documented document review with the Dynamo; the action item is due in cycle 28.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_029",
+      "content": "Xeric documented safety inspection with the Easel; the action item is due in cycle 29.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_030",
+      "content": "Yonder documented field sampling with the Flint; the action item is due in cycle 30.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_031",
+      "content": "Zinnia documented workstation setup with the Gadget; the action item is due in cycle 31.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_032",
+      "content": "Ashlar documented release scheduling with the Hinge; the action item is due in cycle 32.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_033",
+      "content": "Bramble documented incident response with the Icon; the action item is due in cycle 33.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_034",
+      "content": "Cairn documented backup rotation with the Jigsaw; the action item is due in cycle 34.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_035",
+      "content": "Dahlia documented equipment repair with the Kernel; the action item is due in cycle 35.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_036",
+      "content": "Eider documented grant reporting with the Loom; the action item is due in cycle 36.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_037",
+      "content": "Fresco documented quality control with the Mosaic; the action item is due in cycle 37.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_038",
+      "content": "Glimmer documented staff onboarding with the Needle; the action item is due in cycle 38.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_039",
+      "content": "Hearth documented access reviews with the Orbital; the action item is due in cycle 39.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_040",
+      "content": "Inkwell documented catalog migration with the Prism; the action item is due in cycle 40.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_041",
+      "content": "Jubilee documented sensor calibration with the Quarryman; the action item is due in cycle 41.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_042",
+      "content": "Kindred documented archive retention with the Rivet; the action item is due in cycle 42.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_043",
+      "content": "Lattice documented shipment routing with the Sundial; the action item is due in cycle 43.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_044",
+      "content": "Mistral documented lab inventory with the Thimble; the action item is due in cycle 44.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_045",
+      "content": "Nacre documented weather analysis with the Utopia; the action item is due in cycle 45.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_046",
+      "content": "Oriel documented billing reconciliation with the Vise; the action item is due in cycle 46.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_047",
+      "content": "Pumice documented network monitoring with the Widget; the action item is due in cycle 47.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_048",
+      "content": "Quill documented document review with the Xylograph; the action item is due in cycle 48.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_049",
+      "content": "Ravel documented safety inspection with the Yoke; the action item is due in cycle 49.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_050",
+      "content": "Sable documented field sampling with the Zigzag; the action item is due in cycle 50.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_051",
+      "content": "Tallow documented workstation setup with the Anchor; the action item is due in cycle 51.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_052",
+      "content": "Umbral documented release scheduling with the Bracket; the action item is due in cycle 52.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_053",
+      "content": "Vellum documented incident response with the Casket; the action item is due in cycle 53.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_054",
+      "content": "Weldon documented backup rotation with the Dial; the action item is due in cycle 54.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_055",
+      "content": "Xyloid documented equipment repair with the Escapement; the action item is due in cycle 55.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_056",
+      "content": "Yew documented grant reporting with the Funnel; the action item is due in cycle 56.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_057",
+      "content": "Zest documented quality control with the Gimbal; the action item is due in cycle 57.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_058",
+      "content": "Acantha documented staff onboarding with the Husk; the action item is due in cycle 58.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_059",
+      "content": "Beryl documented access reviews with the Ingot; the action item is due in cycle 59.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    },
+    {
+      "type": "observation",
+      "id": "noise_060",
+      "content": "Coda documented catalog migration with the Junction; the action item is due in cycle 60.",
+      "tags": [
+        "synthetic",
+        "distractor"
+      ]
+    }
+  ]
+}

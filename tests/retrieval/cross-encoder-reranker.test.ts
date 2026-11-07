@@ -39,14 +39,14 @@ describe('Cross-Encoder Reranker', () => {
   });
 
   describe('getRerankerConfig', () => {
-    it('should default enabled=true since Batch 5 when env unset', () => {
+    it('should default disabled under fast-local when env unset', () => {
       delete process.env.SQUISH_RERANKER_ENABLED;
       delete process.env.SQUISH_RERANKER_MODEL;
       delete process.env.SQUISH_RERANKER_TOP_K;
       delete process.env.SQUISH_RERANKER_RETURN_TOP_K;
 
       const cfg = getRerankerConfig();
-      expect(cfg.enabled).toBe(true);
+      expect(cfg.enabled).toBe(false);
       expect(cfg.model).toBe('cross-encoder/ms-marco-MiniLM-L-6-v2');
       expect(cfg.topK).toBe(30);
       expect(cfg.returnTopK).toBe(20);

@@ -6,7 +6,7 @@ import {
 
 function userMessage(content: string): MessageRow {
   return {
-    id: crypto.randomUUID(),
+    id: `message-${crypto.randomUUID()}`,
     conversationId: 'conversation-1',
     role: 'user',
     content,
@@ -43,13 +43,14 @@ describe('self-iteration extraction', () => {
   });
 
   it('dedupes repeated captures from one ended conversation', () => {
-    const extracted = extractDurableSelfIterationFacts([
-      userMessage('We decided to use SQLite for local mode.'),
-      userMessage('Decision: we decided to use SQLite for local mode.'),
-    ]);
+    const first = userMessage('We decided to use SQLite for local mode.');
+    const second = userMessage('Decision: we decided to use SQLite for local mode.');
+    const extracted = extractDurableSelfIterationFacts([first, second]);
 
     expect(extracted).toHaveLength(1);
     expect(extracted[0].type).toBe('decision');
     expect(extracted[0].content).toBe('Decision: We decided to use SQLite for local mode.');
+    expect(extracted[0].evidence.map((item) => item.messageId)).toEqual([first.id, second.id]);
+    expect(extracted[0].evidence.every((item) => Number.isFinite(Date.parse(item.observedAt)))).toBe(true);
   });
 });

@@ -7,6 +7,10 @@
  */
 
 import { randomUUID } from 'crypto';
+import {
+  sqlEpochSeconds,
+  sqlLifecycleBound
+} from '../lib/timestamps.js';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { requireProject } from '../../core/projects.js';
 import { logger } from '../logger.js';
@@ -15,7 +19,18 @@ import { requireUuid } from '../lib/validation.js';
 import { decrypt } from '../security/encrypt.js';
 import { getDbClient } from '../lib/db-client.js';
 import { deserializeTags, deserializeMetadata } from '../../core/memory/serialization.js';
+import { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } from '../../core/acl/trust-policy.js';
+import { denyStrictSurface, writeTrustAudit } from '../../core/acl/trust-audit.js';
 import type { MemoryRecord } from './memory-types.js';
+
+export { EncryptedMemoryReadError } from '../security/encrypted-read.js';
+import { EncryptedMemoryReadError, readMemoryContent } from '../security/encrypted-read.js';
+
+async function assertUnscopedCrudAvailable(operation: string, resourceId = 'unscoped'): Promise<void> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(resourceId, 'memory', `Direct ${operation} is disabled under strict trust until caller-scoped provenance authorization is implemented`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Lazy score initialization for legacy memories with NULL scores
@@ -30,6 +45,7 @@ import type { MemoryRecord } from './memory-types.js';
  */
 export async function ensureMemoryScores(row: any): Promise<void> {
   if (row.importance_score != null && row.relevance_score != null) return;
+  await assertUnscopedCrudAvailable('score initialization', typeof row.id === 'string' ? row.id : 'memory_score');
 
   try {
     const { db, schema } = await getDbClient();
@@ -38,12 +54,15 @@ export async function ensureMemoryScores(row: any): Promise<void> {
 
     const now = Math.floor(Date.now() / 1000);
 
-    // Compute importance from type + recency + access signals
-    const TYPE_WEIGHTS: Record<string, number> = {
+    // Compute importance from type + recency + access signals.
+    // NOTE: this legacy lazy-score blend is NOT the additive TYPE_WEIGHTS in
+    // importance.ts (different concept, same legacy name); renamed here so the
+    // two stop reading as one contract.
+    const LAZY_SCORE_TYPE_WEIGHTS: Record<string, number> = {
       decision: 85, preference: 80, fact: 65, context: 55,
       observation: 45, note: 40, conversation: 30,
     };
-    const typeWeight = TYPE_WEIGHTS[row.type] ?? 50;
+    const typeWeight = LAZY_SCORE_TYPE_WEIGHTS[row.type] ?? 50;
 
     const ageDays = row.created_at
       ? Math.max(0, (Date.now() / 1000 - row.created_at) / 86400)
@@ -154,6 +173,7 @@ export async function getMemory(
   try {
     // Validate UUID
     requireUuid(id);
+    await assertUnscopedCrudAvailable('memory read', id);
 
     const { db, schema } = await getDbClient();
     const rows = await db.select().from(schema.memories).where(eq(schema.memories.id, id)).limit(1);
@@ -173,18 +193,10 @@ export async function getMemory(
 			.where(eq(schema.memories.id, id));
 		}
 
-  let content = row.content;
-  if (row.is_encrypted) {
-		  try {
-		    content = decrypt(row.encrypted_content, row.encryption_nonce);
-		  } catch (e: any) {
-		    logger.warn('Failed to decrypt memory', e);
-		    content = row.content; // fall back to stored content
-		  }
-		}
-		const decryptedRow = { ...row, content };
-    const normalized = normalizeMemoryRecord(decryptedRow);
-		return normalized;
+  let content = readMemoryContent(row);
+  const decryptedRow = { ...row, content };
+	const normalized = normalizeMemoryRecord(decryptedRow);
+	return normalized;
 	} catch (error: any) {
 		throw error;
 	}
@@ -199,6 +211,7 @@ export async function getMemoriesByIds(
   incrementAccess: boolean = false
 ): Promise<MemoryRecord[]> {
   if (ids.length === 0) return [];
+  await assertUnscopedCrudAvailable('batch memory read', 'memory_batch_read');
 
   try {
     const { db, schema } = await getDbClient();
@@ -220,14 +233,7 @@ export async function getMemoriesByIds(
       // Lazy-initialize scores for legacy memories with NULL values
       await ensureMemoryScores(row);
 
-      let content = row.content;
-      if (row.is_encrypted) {
-        try {
-          content = decrypt(row.encrypted_content, row.encryption_nonce);
-        } catch {
-          content = row.content;
-        }
-      }
+      let content = readMemoryContent(row);
       const decryptedRow = { ...row, content };
       const normalized = normalizeMemoryRecord(decryptedRow);
       // Skip team mode check for batch (simplified - trust the caller)
@@ -236,16 +242,17 @@ export async function getMemoriesByIds(
 
     return memories;
   } catch (error) {
+    if (error instanceof EncryptedMemoryReadError) throw error;
     logger.debug(`[Memories] getMemoriesByIds failed: ${error}`);
     return [];
   }
 }
 
 export async function setConfidence(id: string, level: 'certain' | 'speculative' | 'outdated'): Promise<boolean> {
-  try {
-    // Validate UUID
-    requireUuid(id);
+  requireUuid(id);
+  await assertUnscopedCrudAvailable('confidence update', id);
 
+  try {
     const { db, schema } = await getDbClient();
     await db.update(schema.memories)
 			.set({ confidenceLevel: level, updatedAt: new Date() })
@@ -256,21 +263,57 @@ export async function setConfidence(id: string, level: 'certain' | 'speculative'
 	}
 }
 
-export async function getRecent(projectPath: string, limit: number): Promise<MemoryRecord[]> {
+export async function getRecent(projectPath: string, limit: number, candidateFilter?: { sql: string; params: string[] }): Promise<MemoryRecord[]> {
   try {
+    const strict = isStrictTrustPolicy();
+    let effectiveFilter = candidateFilter;
+    let acl: import('../../core/acl/read-gate.js').AclContext | null = null;
+    let effectiveLimit = limit;
+    if (strict) {
+      let callerId: string;
+      try {
+        callerId = resolveTrustedCallerId() ?? '';
+      } catch {
+        await writeTrustAudit({
+          actorId: 'unbound',
+          resourceId: 'recent-memory-read',
+          assetType: 'memory',
+          decision: 'deny',
+          reason: 'caller_unbound',
+        });
+        throw new TrustBoundaryError('Strict recent-memory reads require an authenticated caller');
+      }
+      if (!callerId) throw new TrustBoundaryError('Strict recent-memory reads require an authenticated caller');
+      const { buildAutoAclContext, buildStrictMemoryCandidateFilter } = await import('../../core/acl/read-gate.js');
+      acl = await buildAutoAclContext(callerId);
+      effectiveFilter = await buildStrictMemoryCandidateFilter({ userId: callerId });
+      effectiveLimit = Math.max(0, Math.min(500, Math.floor(Number.isFinite(limit) ? limit : 10)));
+    }
+
     const { db } = await getDbClient();
     const sqlite = db.$client as any;
     const project = await requireProject(projectPath);
+    const nowSeconds = Math.floor(Date.now() / 1000);
 
-    // Use raw SQL to avoid drizzle column name issues
+    // Use raw SQL to avoid drizzle column name issues. Recent memories feed
+    // agent context directly, so apply the same current-lifecycle boundary as
+    // retrieval even when the scheduled expiry transition has not run yet.
     const rows = sqlite.prepare(`
-      SELECT * FROM memories 
+      SELECT m.* FROM memories m
       WHERE project_id = ? 
+        AND m.status = 'active' AND m.is_active = 1
+        AND ${sqlLifecycleBound('m.expires_at', '>')}
+        AND ${sqlLifecycleBound('m.valid_from', '<=')}
+        AND ${sqlLifecycleBound('m.valid_to', '>')}
+      ${effectiveFilter ? `AND ${effectiveFilter.sql}` : ''}
       ORDER BY created_at DESC 
       LIMIT ?
-    `).all(project.id, limit);
+    `).all(project.id, nowSeconds, nowSeconds, nowSeconds, ...(effectiveFilter?.params ?? []), effectiveLimit);
 
-    return rows.map((row: any) => normalizeMemoryRecord(row));
+    const normalized = rows.map((row: any) => normalizeMemoryRecord(row));
+    if (!strict) return normalized;
+    const { applyAclReadGate } = await import('../../core/acl/read-gate.js');
+    return await applyAclReadGate(normalized, acl);
   } catch (error: any) {
     throw error;
   }

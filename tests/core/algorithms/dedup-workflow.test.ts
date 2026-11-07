@@ -11,6 +11,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { mkdirSync, rmSync } from 'fs';
+import { clearClusters, findOrCreateCluster, getClusterForMemory } from '../../../core/clustering/cluster-engine.js';
 
 const testDataDir = join(
   tmpdir(),
@@ -150,6 +151,40 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
     expect((await getMemoryRow('dup-b')).is_merged).toBe(0);
   });
 
+  test('direct merge handlers fail closed under strict trust before reading or writing', async () => {
+    const previousPolicy = process.env.SQUISH_TRUST_POLICY;
+    const before = getSqlite().prepare('SELECT COUNT(*) AS count FROM memory_merge_proposals').get().count;
+    const [detect, list, preview, approve, reject, reverse, stats] = await Promise.all([
+      import('../../../core/algorithms/handlers/detect-duplicates.js'),
+      import('../../../core/algorithms/handlers/list-proposals.js'),
+      import('../../../core/algorithms/handlers/preview-merge.js'),
+      import('../../../core/algorithms/handlers/approve-merge.js'),
+      import('../../../core/algorithms/handlers/reject-merge.js'),
+      import('../../../core/algorithms/handlers/reverse-merge.js'),
+      import('../../../core/algorithms/handlers/get-stats.js'),
+    ]);
+    process.env.SQUISH_TRUST_POLICY = 'strict';
+    try {
+      const results = await Promise.all([
+        detect.handleDetectDuplicates({ projectId: PROJECT_ID }),
+        list.handleListProposals({ projectId: PROJECT_ID }),
+        preview.handlePreviewMerge({ proposalId: 'strict-handler-missing' }),
+        approve.handleApproveMerge({ proposalId: 'strict-handler-missing' }),
+        reject.handleRejectMerge({ proposalId: 'strict-handler-missing' }),
+        reverse.handleReverseMerge({ mergeHistoryId: 'strict-handler-missing' }),
+        stats.handleGetMergeStats({ projectId: PROJECT_ID }),
+      ]);
+      for (const result of results) {
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('disabled under strict trust');
+      }
+    } finally {
+      if (previousPolicy === undefined) delete process.env.SQUISH_TRUST_POLICY;
+      else process.env.SQUISH_TRUST_POLICY = previousPolicy;
+    }
+    expect(getSqlite().prepare('SELECT COUNT(*) AS count FROM memory_merge_proposals').get().count).toBe(before);
+  });
+
   test('preview shows before/after for a proposal', async () => {
     const client = new sdk.SquishRuntime();
     const listing = await client.listMergeProposals({ projectId: PROJECT_ID, status: 'pending' });
@@ -227,12 +262,116 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
     expect(historyAfter.is_reversed).toBe(1);
   });
 
+  test('approval fails closed when a legacy proposal references an encrypted source', async () => {
+    const client = new sdk.SquishRuntime();
+    await insertMemory('encrypted-merge-source', 'Sensitive source content');
+    await insertMemory('plain-merge-source', 'A separate source eligible for plain merge');
+    getSqlite().prepare(`UPDATE memories SET content='', encrypted_content=?, encryption_nonce=?, is_encrypted=1
+      WHERE id=?`).run('opaque-ciphertext', 'opaque-nonce', 'encrypted-merge-source');
+    await insertPairProposal('proposal-with-encrypted-source', ['encrypted-merge-source', 'plain-merge-source']);
+
+    const historyBefore = getSqlite().prepare('SELECT COUNT(*) AS count FROM memory_merge_history').get().count;
+    const result = await client.approveMerge({ proposalId: 'proposal-with-encrypted-source' });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('encrypted_memory_unsupported');
+    expect((await getMemoryRow('encrypted-merge-source')).is_active).toBe(1);
+    expect((await getMemoryRow('plain-merge-source')).is_active).toBe(1);
+    expect(getSqlite().prepare('SELECT status FROM memory_merge_proposals WHERE id=?')
+      .get('proposal-with-encrypted-source').status).toBe('pending');
+    expect(getSqlite().prepare('SELECT COUNT(*) AS count FROM memory_merge_history').get().count).toBe(historyBefore);
+  });
+
   test('auto is gated behind SQUISH_DEDUP_AUTO=true by default', async () => {
     const client = new sdk.SquishRuntime();
     const result = await client.dedupAutoMerge({ threshold: 0.95, cap: 25 });
     expect(result.gated).toBe(true);
     expect(result.approved).toBe(0);
     expect(result.message).toContain('SQUISH_DEDUP_AUTO');
+  });
+
+  test('approve merge evicts archived source clusters only after the SQLite transaction commits', async () => {
+    const client = new sdk.SquishRuntime();
+    clearClusters();
+    await insertMemory('cache-merge-a', 'User prefers quiet mornings for focused work');
+    await insertMemory('cache-merge-b', 'User prefers quiet mornings for focused work');
+    await insertPairProposal('prop-cache-merge', ['cache-merge-a', 'cache-merge-b']);
+    await findOrCreateCluster('cache-merge-a', [1, 0]);
+    await findOrCreateCluster('cache-merge-b', [0.99, 0.01]);
+    expect(getClusterForMemory('cache-merge-a')).not.toBeNull();
+    expect(getClusterForMemory('cache-merge-b')).not.toBeNull();
+
+    // Inject a failure after the canonical insert and source updates. The
+    // transaction must roll back and process-local state must stay untouched.
+    getSqlite().exec(`CREATE TRIGGER fail_merge_history_insert
+      BEFORE INSERT ON memory_merge_history
+      BEGIN SELECT RAISE(ABORT, 'injected merge history failure'); END;`);
+    const failed = await client.approveMerge({ proposalId: 'prop-cache-merge' });
+    expect(failed.ok).toBe(false);
+    expect((await getMemoryRow('cache-merge-a')).is_active).toBe(1);
+    expect(getClusterForMemory('cache-merge-a')).not.toBeNull();
+    getSqlite().exec('DROP TRIGGER fail_merge_history_insert;');
+
+    const approved = await client.approveMerge({ proposalId: 'prop-cache-merge' });
+    expect(approved.ok).toBe(true);
+    expect((await getMemoryRow('cache-merge-a')).is_active).toBe(0);
+    expect(getClusterForMemory('cache-merge-a')).toBeNull();
+    expect(getClusterForMemory('cache-merge-b')).toBeNull();
+  });
+
+  test('reverse merge evicts the deactivated canonical cluster only after commit', async () => {
+    const client = new sdk.SquishRuntime();
+    clearClusters();
+    await insertMemory('reverse-cache-a', 'User prefers handwritten notes for planning');
+    await insertMemory('reverse-cache-b', 'User prefers handwritten notes for planning');
+    await insertPairProposal('prop-reverse-cache', ['reverse-cache-a', 'reverse-cache-b']);
+
+    const approved = await client.approveMerge({ proposalId: 'prop-reverse-cache' });
+    expect(approved.ok).toBe(true);
+    const { canonicalMemoryId, mergeHistoryId } = approved.data!;
+    await findOrCreateCluster(canonicalMemoryId, [1, 0]);
+    expect(getClusterForMemory(canonicalMemoryId)).not.toBeNull();
+
+    // Fail after source restoration and canonical deactivation. Rollback must
+    // leave the canonical active and preserve its process-local membership.
+    getSqlite().exec(`CREATE TRIGGER fail_merge_history_reverse
+      BEFORE UPDATE OF is_reversed ON memory_merge_history
+      BEGIN SELECT RAISE(ABORT, 'injected merge reversal failure'); END;`);
+    const failed = await client.reverseMerge({ mergeHistoryId });
+    expect(failed.ok).toBe(false);
+    expect((await getMemoryRow(canonicalMemoryId)).is_active).toBe(1);
+    expect(getClusterForMemory(canonicalMemoryId)).not.toBeNull();
+    getSqlite().exec('DROP TRIGGER fail_merge_history_reverse;');
+
+    const reversed = await client.reverseMerge({ mergeHistoryId });
+    expect(reversed.ok).toBe(true);
+    expect((await getMemoryRow(canonicalMemoryId)).is_active).toBe(0);
+    expect(getClusterForMemory(canonicalMemoryId)).toBeNull();
+  });
+
+  test('reverse merge does not reactivate a source that expired while merged', async () => {
+    const client = new sdk.SquishRuntime();
+    await insertMemory('expired-reverse-a', 'User prefers a quiet room for reading');
+    await insertMemory('expired-reverse-b', 'User prefers a quiet room for reading');
+    await insertPairProposal('prop-expired-reverse', ['expired-reverse-a', 'expired-reverse-b']);
+
+    const approved = await client.approveMerge({ proposalId: 'prop-expired-reverse' });
+    expect(approved.ok).toBe(true);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    getSqlite().prepare('UPDATE memories SET expires_at = ? WHERE id = ?').run(nowSeconds - 1, 'expired-reverse-a');
+    getSqlite().prepare(`INSERT INTO knowledge
+      (id, project_id, knowledge_kind, knowledge_type, content, status, is_active, metadata)
+      VALUES (?, ?, 'memory', 'fact', ?, 'active', 1, '{}')`)
+      .run('expired-reverse-a', PROJECT_ID, 'User prefers a quiet room for reading');
+
+    const reversed = await client.reverseMerge({ mergeHistoryId: approved.data!.mergeHistoryId! });
+    expect(reversed).toMatchObject({ ok: true });
+    expect(await getMemoryRow('expired-reverse-a')).toMatchObject({
+      status: 'expired', is_active: 0, is_merged: 0, merged_into_id: null,
+    });
+    expect(getSqlite().prepare('SELECT status, is_active FROM knowledge WHERE id = ?')
+      .get('expired-reverse-a')).toEqual({ status: 'expired', is_active: 0 });
+    expect(await getMemoryRow('expired-reverse-b')).toMatchObject({ status: 'active', is_active: 1 });
   });
 
   test('auto respects env gate, threshold filter, and per-invocation cap', async () => {
@@ -282,6 +421,58 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
     expect(relevant.filter((p) => p.status === 'pending').length).toBeGreaterThanOrEqual(1);
   });
 
+  async function expectStaleLifecycleMergeRejected(
+    suffix: string,
+    boundaryColumn: 'valid_from' | 'valid_to' | 'expires_at',
+    boundarySeconds: number,
+  ): Promise<void> {
+    const client = new sdk.SquishRuntime();
+    const sourceIds = [`lifecycle-${suffix}-a`, `lifecycle-${suffix}-b`];
+    const proposalId = `proposal-lifecycle-${suffix}`;
+    await insertMemory(sourceIds[0], `A stale merge source for ${suffix}.`);
+    await insertMemory(sourceIds[1], `A current merge source for ${suffix}.`);
+    await insertPairProposal(proposalId, sourceIds);
+    getSqlite().prepare(`UPDATE memories SET ${boundaryColumn}=? WHERE id=?`).run(boundarySeconds, sourceIds[0]);
+
+    const historyBefore = getSqlite().prepare('SELECT COUNT(*) AS count FROM memory_merge_history').get().count;
+    const canonicalBefore = getSqlite().prepare("SELECT COUNT(*) AS count FROM memories WHERE source='merge'").get().count;
+    const result = await client.approveMerge({ proposalId });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('source memories are inactive, merged, expired, or outside their valid-time window');
+    expect(getSqlite().prepare('SELECT status FROM memory_merge_proposals WHERE id=?').get(proposalId).status)
+      .toBe('pending');
+    for (const sourceId of sourceIds) {
+      expect(await getMemoryRow(sourceId)).toMatchObject({ is_active: 1, is_merged: 0, merged_into_id: null });
+    }
+    expect(getSqlite().prepare('SELECT COUNT(*) AS count FROM memory_merge_history').get().count).toBe(historyBefore);
+    expect(getSqlite().prepare("SELECT COUNT(*) AS count FROM memories WHERE source='merge'").get().count).toBe(canonicalBefore);
+  }
+
+  test('approval rejects sources that expired after proposal creation without writing merge state', async () => {
+    await expectStaleLifecycleMergeRejected(
+      'expires-at',
+      'expires_at',
+      Math.floor(Date.now() / 1000) - 60,
+    );
+  });
+
+  test('approval rejects sources whose valid-time interval ended after proposal creation', async () => {
+    await expectStaleLifecycleMergeRejected(
+      'valid-to',
+      'valid_to',
+      Math.floor(Date.now() / 1000) - 60,
+    );
+  });
+
+  test('approval rejects future-valid sources without writing merge state', async () => {
+    await expectStaleLifecycleMergeRejected(
+      'valid-from',
+      'valid_from',
+      Math.floor(Date.now() / 1000) + 60,
+    );
+  });
+
   async function insertPairProposal(id: string, sources: string[]): Promise<void> {
     const schema = await getSchema();
     const db = createDatabaseClient(dbRef);
@@ -326,6 +517,12 @@ describe('squish_dedup workflow (SDK wrappers)', () => {
     expect((await getMemoryRow('snap-b')).content).toBe(SNAPSHOT_CONTENT);
     expect((await getMemoryRow('snap-a')).is_active).toBe(1);
     expect((await getMemoryRow('snap-a')).merged_into_id).toBeNull();
+    const sourceRow = getSqlite().prepare('SELECT rowid FROM memories WHERE id = ?').get('snap-a') as { rowid: number };
+    const ftsCount = (term: string) => getSqlite()
+      .prepare('SELECT COUNT(*) AS count FROM memories_fts WHERE memories_fts MATCH ? AND rowid = ?')
+      .get(term, sourceRow.rowid).count as number;
+    expect(ftsCount('DRIFTED')).toBe(0);
+    expect(ftsCount('kombucha')).toBe(1);
     // Canonical is deactivated
     expect((await getMemoryRow(canonicalMemoryId)).is_active).toBe(0);
   });

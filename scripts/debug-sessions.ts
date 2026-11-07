@@ -1,6 +1,9 @@
-process.env.SQUISH_DATA_DIR = require('os').tmpdir() + '/squish-debug-' + Date.now();
+const os = await import('node:os');
+const fs = await import('node:fs');
+const debugDataDir = os.tmpdir() + '/squish-debug-' + Date.now();
+process.env.SQUISH_DATA_DIR = debugDataDir;
 process.env.DATABASE_URL = '';
-require('fs').mkdirSync(process.env.SQUISH_DATA_DIR, { recursive: true });
+fs.mkdirSync(debugDataDir, { recursive: true });
 const { resetDb, getDb } = await import('../db/index.ts');
 const { rememberMemory, search } = await import('../core/memory/memories.ts');
 resetDb();
@@ -19,3 +22,7 @@ const s1 = await search({ query: 'router bug', limit: 10 });
 console.log('plain search results:', s1.length, s1.map(x => x.content.slice(0, 50)));
 const s2 = await search({ query: 'router bug', limit: 10, tags: ['squish_chunk:'] });
 console.log('tagged search results:', s2.length, s2.map(x => x.content.slice(0, 50)));
+
+// This file uses top-level await, so it must be a module: the package is
+// `"type": "module"` but nothing above is an import/export declaration.
+export {};

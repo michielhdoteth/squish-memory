@@ -1,0 +1,7 @@
+{
+  "content": "The violet archive key for the packed package smoke is ORBIT-742.",
+  "type": "fact",
+  "query": "violet archive key",
+  "expected": "ORBIT-742",
+  "maxTokens": 128
+}

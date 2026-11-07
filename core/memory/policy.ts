@@ -4,6 +4,8 @@ import { logger } from '../logger.js';
 import { serializeMetadata, deserializeMetadata } from './serialization.js';
 import { detectMemorySignals, type MemorySignals } from './trigger-detector.js';
 import type { MemoryType } from '../lib/types.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
 
 export type VisibilityScope = 'private' | 'project' | 'team';
 export type MemoryAudience = 'personal' | 'project' | 'team';
@@ -258,6 +260,13 @@ export async function promoteMemoryVisibility(
   reason: string,
   teamId?: string,
 ): Promise<MemoryPolicyUpdateResult | null> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(
+      `memory_visibility:${memoryId}`,
+      'memory',
+      'Visibility promotion is disabled under strict trust until caller-scoped provenance updates are implemented',
+    );
+  }
   try {
     const { db, schema } = await getDbClient();
     const rows = await db.select().from(schema.memories).where(eq(schema.memories.id, memoryId)).limit(1);

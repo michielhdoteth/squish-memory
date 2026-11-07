@@ -93,7 +93,7 @@ describe('ClaudeCodeSessionStore', () => {
       expect(result.ok).toBe(true);
       expect(result.meta).toBeDefined();
       expect(typeof result.meta!.path).toBe('string');
-      expect(typeof result.meta!.session_count).toBe('number');
+      expect(result.meta).not.toHaveProperty('session_count');
     });
 
     test('returns ok:false when SQUISH_CLAUDE_DISABLED=1', async () => {

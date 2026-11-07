@@ -7,6 +7,8 @@ import { getMemoryPlace } from '../places/memory-places.js';
 import { getPlace } from '../places/places.js';
 import { getBeliefsForMemory } from '../knowledge/store.js';
 import type { StoredBelief } from '../knowledge/types.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
 
 export interface MemoryInspection {
   id: string;
@@ -62,6 +64,10 @@ export function summarizeInspection(input: MemoryInspection): string {
 }
 
 export async function explainMemory(id: string): Promise<MemoryInspection | null> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(id, 'memory', 'Unscoped memory inspection is disabled under strict trust');
+  }
+
   const { db, schema } = await getDbClient();
   const rows = await db.select().from(schema.memories).where(eq(schema.memories.id, id)).limit(1);
   const row = rows[0];
@@ -69,7 +75,12 @@ export async function explainMemory(id: string): Promise<MemoryInspection | null
 
   const metadata = deserializeMetadata(row.metadata ?? null) as Record<string, any> | null;
   const signal = (metadata?.signal ?? {}) as Record<string, any>;
-  const rawClassification = signal.classification ?? metadata?.classification ?? null;
+  // Rows written before key unification carry classification under the
+  // memorySignals block instead; honor both so fresh and pre-unification
+  // metadata classify correctly. 'legacy-durable' stays the last resort only.
+  const memorySignals = (metadata?.memorySignals ?? {}) as Record<string, any>;
+  const rawClassification =
+    signal.classification ?? memorySignals.classification ?? metadata?.classification ?? null;
   const classification: string = typeof rawClassification === 'string' && rawClassification.trim().length > 0
     ? rawClassification
     : 'legacy-durable';

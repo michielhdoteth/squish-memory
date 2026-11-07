@@ -2,25 +2,22 @@
 
 Squish integrates with OpenCode as an MCP (Model Context Protocol) server that provides persistent memory capabilities.
 
+> **Release status (2026-10-20): Squish 2.2.0 is an unpublished source candidate.** npm currently
+> resolves to 1.9.0, which has not been validated with this host guide. Do not install that package
+> or run setup commands from this page until a matching release and OpenCode compatibility are
+> announced. The configuration notes below are target-version reference material only.
+
 ## Prerequisites
 
 - OpenCode v0.1.0 or later
-- Node.js 18.0.0 or later
-- Squish memory server (installed via npm)
+- Node.js 20.0.0 or later for the 2.2.0 source candidate
+- A published Squish release explicitly validated for OpenCode
 
-## Installation Methods
+## Installation
 
-### Method 1: Universal Plugin Installer (Recommended)
-```bash
-# Install Squish if not already installed
-npm install -g squish-memory
-
-# Install the OpenCode plugin
-npx squish-memory install-plugin --client=opencode
-
-# Verify installation
-npx squish-memory install-plugin --client=opencode --verify
-```
+Install and plugin commands are intentionally withheld until the current package version and this
+host path are validated. Use the configuration reference below only after a matching release is
+announced.
 
 ## What Gets Installed
 
@@ -72,26 +69,29 @@ Once installed, Squish works automatically with OpenCode:
 ### Environment Variables
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SQUISH_DATA_DIR` | Data directory for Squish | `~/.squish/opencode` |
+| `SQUISH_DATA_DIR` | Optional override for the shared Squish data directory | `~/.squish` |
 | `SQUISH_COMMAND` | Command to start Squish MCP | `squish-mcp` |
 
 ### OpenCode MCP Configuration
-Configuration is stored in OpenCode's MCP config file (typically `~/.config/opencode/mcp-servers.json`):
+Configuration is stored in OpenCode's main config file (typically `~/.config/opencode/opencode.json`):
 
-```jsonc
+```json
 {
-  "mcpServers": {
+  "mcp": {
     "squish-memory": {
-      "command": "squish-mcp",
-      "args": ["--stdio"],
-      "env": {
-        "SQUISH_MODE": "local",
-        "SQUISH_DATA_DIR": "~/.squish/opencode"
-      }
+      "type": "local",
+      "command": ["squish-mcp", "--stdio"],
+      "environment": {
+        "SQUISH_MODE": "local"
+      },
+      "enabled": true
     }
   }
 }
 ```
+
+On Windows, use `squish-mcp.cmd` as the first item in the `command` array; the installer selects
+that shim on Windows.
 
 ### Configuration Options
 The MCP server configuration supports:
@@ -102,10 +102,9 @@ The MCP server configuration supports:
 ## Troubleshooting
 
 ### Server Not Starting
-1. Verify installation: `npx squish-memory install-plugin --client=opencode --verify`
-2. Check that `~/.config/opencode/mcp-servers.json` contains valid JSON
-3. Test Squish MCP directly: `squish-mcp --stdio`
-4. Check OpenCode logs for MCP connection errors
+1. Check that the configured OpenCode MCP file contains valid JSON
+2. Test Squish MCP directly: `squish-mcp --stdio`
+3. Check OpenCode logs for MCP connection errors
 
 ### Memory Tools Not Available
 1. Verify Squish MCP server is running and responsive
@@ -120,9 +119,7 @@ The MCP server configuration supports:
 
 ## Uninstallation
 
-```bash
-npx squish-memory uninstall-plugin --client=opencode
-```
+Use only the uninstall procedure documented for the matching published release.
 
 This removes the Squish entry from OpenCode's MCP configuration but preserves your Squish data and memories.
 
@@ -152,8 +149,8 @@ Memories are automatically organized into places:
 ## Compatibility
 
 - OpenCode: v0.1.0+
-- Node.js: 18.0.0+
-- Squish: v1.0.0+
+- Node.js: 20.0.0+
+- Squish: 2.2.0 source candidate (unpublished; host compatibility pending)
 - Operating System: Linux, macOS, Windows
 
 ## See Also

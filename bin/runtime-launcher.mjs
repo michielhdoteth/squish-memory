@@ -73,6 +73,35 @@ export function resolveRuntimeLaunch({ rootDir, entryRelativePath, env = process
   };
 }
 
+/**
+ * Build the replacement environment for a spawned runtime.
+ *
+ * WHY: agent hosts (opencode, claude, cursor, ...) launch this wrapper with
+ * their own cwd (the session workspace) and with no SQUISH_WORKING_DIRECTORY
+ * and no INIT_CWD. config.ts detectProjectRoot() falls back to process.cwd(),
+ * so the child must keep the launcher's cwd or project scope silently resolves
+ * to the package install directory instead of the user's workspace. Forwarding
+ * the value explicitly also keeps scope correct for --http mode, where there is
+ * no per-request cwd, and keeps an operator-provided override authoritative.
+ *
+ * @param {string} rootDir absolute package root; used only as a last-resort
+ *   scope if the launcher cwd has been deleted (process.cwd() can fail there).
+ * @returns {NodeJS.ProcessEnv}
+ */
+export function buildRuntimeEnv(rootDir) {
+  const env = { ...process.env };
+  if (!env.SQUISH_WORKING_DIRECTORY) {
+    let workingDir = rootDir;
+    try {
+      workingDir = process.cwd();
+    } catch {
+      // cwd was removed under us; fall back to the package root.
+    }
+    env.SQUISH_WORKING_DIRECTORY = workingDir;
+  }
+  return env;
+}
+
 function resolveTsxCliPath(rootDir) {
   try {
     const requireFromRoot = createRequire(path.join(rootDir, 'package.json'));

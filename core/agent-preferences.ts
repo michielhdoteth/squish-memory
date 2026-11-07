@@ -4,8 +4,18 @@
  */
 
 import { getDb } from '../db/index.js';
+import { sqlLifecycleBound } from './lib/timestamps.js';
+
+/** SQL bound for "is the row within its lifecycle window right now". */
+const NOW_BOUND = "CAST(strftime('%s','now') AS INTEGER)";
 import { eq, and } from 'drizzle-orm';
 import { logger } from './logger.js';
+
+type AgentPreferenceRow = { key: string; value: string };
+type AgentPreferenceClient = {
+  prepare?: (sql: string) => { all: (...params: unknown[]) => AgentPreferenceRow[] };
+  query?: (sql: string, params: unknown[]) => Promise<{ rows: AgentPreferenceRow[] }>;
+};
 
 /**
  * Extract preference from learning content
@@ -114,21 +124,30 @@ export async function updateAgentPreference(
 export async function getAgentPreferences(projectId: string): Promise<Array<{key: string; value: string}>> {
   try {
     const db = await getDb();
-    const results = await db.query.agentPreferences?.findMany({
-      where: eq(db.schema.agentPreferences.projectId, projectId)
-    }).catch(() => []);
-    
-    if (results && results.length > 0) {
-      return results.map((p: any) => ({ key: p.key, value: p.value }));
+    const client = (db as unknown as { $client?: AgentPreferenceClient }).$client;
+    const activeSource = typeof client?.prepare === 'function'
+      ? `(p.source_memory_id IS NULL OR EXISTS (
+          SELECT 1 FROM memories m WHERE m.id = p.source_memory_id
+            AND m.status = 'active' AND m.is_active = 1
+            AND ${sqlLifecycleBound('m.valid_from', '<=', NOW_BOUND)}
+            AND ${sqlLifecycleBound('m.valid_to', '>', NOW_BOUND)}
+            AND ${sqlLifecycleBound('m.expires_at', '>', NOW_BOUND)}
+        ))`
+      : `(p.source_memory_id IS NULL OR EXISTS (
+          SELECT 1 FROM memories m WHERE m.id = p.source_memory_id
+            AND m.status = 'active' AND m.is_active = TRUE
+            AND (m.valid_to IS NULL OR m.valid_to > NOW())
+            AND (m.expires_at IS NULL OR m.expires_at > NOW())
+        ))`;
+    if (typeof client?.prepare === 'function') {
+      return client.prepare(`SELECT p.key, p.value FROM agent_preferences p
+        WHERE p.project_id = ? AND ${activeSource} ORDER BY p.key`).all(projectId);
     }
-    
-    // Fallback for SQLite
-    const sqlite = (db as any)._?.sqlite || (db as any);
-    if (sqlite) {
-      const rows = sqlite.prepare('SELECT key, value FROM agent_preferences WHERE project_id = ?').all(projectId) as Array<{key: string; value: string}>;
-      return rows.map(r => ({ key: r.key, value: r.value }));
+    if (typeof client?.query === 'function') {
+      const result = await client.query(`SELECT p.key, p.value FROM agent_preferences p
+        WHERE p.project_id = $1 AND ${activeSource} ORDER BY p.key`, [projectId]);
+      return result.rows;
     }
-    
     return [];
   } catch (error: any) {
     logger.warn(`[AgentPrefs] Failed to get preferences:`, error);

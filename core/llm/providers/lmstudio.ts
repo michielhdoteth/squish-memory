@@ -9,6 +9,7 @@ import { config } from '../../../config.js';
 import { logger } from '../../logger.js';
 import { validateOutboundUrl } from '../../lib/url-validator.js';
 import type { LLMProvider, LLMCallOptions } from '../types.js';
+import { reportLLMTokenUsage } from '../usage.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -16,17 +17,21 @@ export const lmstudioProvider: LLMProvider = {
   name: 'lmstudio',
 
   isAvailable(): boolean {
-    return config.llmEnabled && Boolean(config.lmStudioUrl);
+    // "Configured" check only: the master SQUISH_LLM_ENABLED switch lives in
+    // the client router (getActiveProvider), so the decision layer can reuse
+    // this provider with its own independent opt-in.
+    return Boolean(config.lmStudioUrl);
   },
 
   async call(options: LLMCallOptions): Promise<string | null> {
     if (!this.isAvailable()) return null;
 
     const baseUrl = config.lmStudioUrl || 'http://localhost:1234';
-    const model = config.llmExtractionModel;
+    const model = options.model ?? config.llmExtractionModel;
     if (!model) return null;
 
     const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
     const timeout = setTimeout(
       () => controller.abort(),
       options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -61,7 +66,7 @@ export const lmstudioProvider: LLMProvider = {
           temperature: options.temperature ?? 0.1,
           max_tokens: options.maxTokens ?? 300,
         }),
-        signal: controller.signal,
+        signal,
       });
 
       clearTimeout(timeout);
@@ -73,7 +78,11 @@ export const lmstudioProvider: LLMProvider = {
 
       const data = (await response.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
+        usage?: unknown;
       };
+      reportLLMTokenUsage(options, data.usage, {
+        inputTokens: 'prompt_tokens', outputTokens: 'completion_tokens', totalTokens: 'total_tokens',
+      });
       return data.choices?.[0]?.message?.content?.trim() ?? null;
     } catch (err: unknown) {
       clearTimeout(timeout);

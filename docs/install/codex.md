@@ -2,32 +2,21 @@
 
 Squish integrates with Codex CLI as an MCP (Model Context Protocol) server that provides persistent memory capabilities for your coding sessions.
 
+> **Release status (2026-10-20): Squish 2.2.0 is an unpublished source candidate.** npm currently
+> resolves to 1.9.0, which has not been validated with this host guide. Do not install that package
+> or run setup commands from this page until a matching release and Codex compatibility are
+> announced. The configuration notes below are target-version reference material only.
+
 ## Prerequisites
 
 - Codex CLI (OpenAI) latest version
-- Node.js 18.0.0 or later
-- Squish memory server (installed via npm)
+- Node.js 20.0.0 or later for the 2.2.0 source candidate
+- A published Squish release explicitly validated for Codex
 
-## Installation Methods
+## Installation
 
-### Method 1: squish install (Recommended)
-
-```bash
-# Install Squish globally
-npm install -g squish-memory
-
-# Install Squish MCP for Codex
-squish install --clients=codex
-
-# Or install for all detected clients
-squish install --all
-```
-
-The installer will automatically detect your Codex CLI installation and configure Squish MCP.
-
-### Method 2: Manual MCP Configuration
-
-If you prefer manual setup, see the [MCP Configuration](#mcp-configuration) section below.
+Install commands are intentionally withheld until the current package version and this host path
+are validated. Use the MCP configuration reference below only after a matching release is announced.
 
 ## What Gets Installed
 
@@ -56,18 +45,19 @@ Once installed, Squish provides:
 
 ## MCP Configuration
 
-Codex uses a standard MCP configuration file. If you need to configure Squish manually, add the following to `~/.codex/mcp.json`:
+Codex uses TOML configuration. If you need to configure Squish manually, add this block to `~/.codex/config.toml`:
 
-```json
-{
-  "mcpServers": {
-    "squish-memory": {
-      "command": "squish-mcp",
-      "args": ["--stdio"]
-    }
-  }
-}
+```toml
+[mcp_servers.squish-memory]
+command = "squish-mcp"
+args = ["--stdio"]
+enabled = true
+
+[mcp_servers.squish-memory.env]
+SQUISH_MODE = "local"
 ```
+
+On Windows, use `squish-mcp.cmd` as the `command`; the installer selects that shim on Windows.
 
 ## Usage
 
@@ -96,7 +86,7 @@ Once installed, Squish works automatically with Codex:
 ### Environment Variables
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SQUISH_DATA_DIR` | Data directory for Squish | `~/.squish/codex` |
+| `SQUISH_DATA_DIR` | Optional override for the shared Squish data directory | `~/.squish` |
 | `SQUISH_COMMAND` | Command to start Squish MCP | `squish-mcp` |
 
 ### Configuration Options
@@ -108,10 +98,9 @@ The MCP server configuration supports:
 ## Troubleshooting
 
 ### Server Not Starting
-1. Verify installation: `squish install --clients=codex --verify`
-2. Check that `~/.codex/mcp.json` contains valid JSON
-3. Test Squish MCP directly: `squish-mcp --stdio`
-4. Check Codex logs for MCP connection errors
+1. Check the Codex MCP configuration for valid TOML
+2. Test Squish MCP directly: `squish-mcp --stdio`
+3. Check Codex logs for MCP connection errors
 
 ### Memory Tools Not Available
 1. Verify Squish MCP server is running and responsive
@@ -126,23 +115,17 @@ The MCP server configuration supports:
 
 ## Uninstallation
 
-To remove Squish from Codex:
-
-```bash
-# Remove MCP server config
-rm ~/.codex/mcp.json
-
-# Or use the uninstaller
-npx squish-memory uninstall-plugin --client=codex
-```
+To remove Squish, remove only its MCP entry from Codex configuration. Do not delete an entire
+configuration file, because it can contain settings for other tools. A validated uninstaller path
+will be documented with a matching Squish release.
 
 Your Squish data and memories in `~/.squish/` are preserved.
 
 ## Compatibility
 
 - Codex CLI: Latest version
-- Node.js: 18.0.0+
-- Squish: v1.0.0+
+- Node.js: 20.0.0+
+- Squish: 2.2.0 source candidate (unpublished; host compatibility pending)
 - Operating System: Linux, macOS, Windows
 
 ## See Also

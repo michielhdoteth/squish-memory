@@ -1,0 +1,4076 @@
+{
+  "meta": {
+    "generatedAt": "2026-10-14T21:33:39.143Z",
+    "gitSha": "3eed5a1a",
+    "gitDirty": true,
+    "corpusSize": 60,
+    "queryCount": 46,
+    "topK": 10,
+    "embeddingsProvider": "local",
+    "bundledModel": "off",
+    "retrievalProfile": "high-recall",
+    "retrievalProfileSource": "environment",
+    "modelDownloadsAllowed": false,
+    "precisionStack": {
+      "reranker": true,
+      "queryExpansion": true,
+      "graphExpansion": true,
+      "contextualEnrichment": true,
+      "graphBoostLegacy": false,
+      "temporalValidity": true,
+      "scoringServeV2": true
+    },
+    "envPinned": false,
+    "durationMs": 47079,
+    "deterministic": true
+  },
+  "thresholds": {
+    "recallAt5": 0.85,
+    "mrr": 0.82,
+    "hitAt1": 0.78,
+    "maxEce": 0.15
+  },
+  "overall": {
+    "count": 46,
+    "recallAt5": 0.9456521739130435,
+    "mrr": 0.931159420289855,
+    "hitAt1": 0.9130434782608695
+  },
+  "byCategory": {
+    "paraphrase": {
+      "count": 9,
+      "recallAt5": 0.8888888888888888,
+      "mrr": 0.8333333333333334,
+      "hitAt1": 0.7777777777777778
+    },
+    "entity": {
+      "count": 9,
+      "recallAt5": 1,
+      "mrr": 1,
+      "hitAt1": 1
+    },
+    "temporal": {
+      "count": 8,
+      "recallAt5": 1,
+      "mrr": 1,
+      "hitAt1": 1
+    },
+    "negation": {
+      "count": 8,
+      "recallAt5": 0.9375,
+      "mrr": 0.9166666666666667,
+      "hitAt1": 0.875
+    },
+    "procedural": {
+      "count": 8,
+      "recallAt5": 0.875,
+      "mrr": 0.875,
+      "hitAt1": 0.875
+    },
+    "multi-hop": {
+      "count": 4,
+      "recallAt5": 1,
+      "mrr": 1,
+      "hitAt1": 1
+    }
+  },
+  "calibration": {
+    "ece": 0.13182334246960023,
+    "brier": 0.10462365934896437,
+    "count": 46,
+    "maxEceThreshold": 0.15,
+    "reliability": [
+      {
+        "band": 2,
+        "low": 0.2,
+        "high": 0.3,
+        "count": 1,
+        "avgConfidence": 0.21502131936329963,
+        "hitRate": 1
+      },
+      {
+        "band": 8,
+        "low": 0.8,
+        "high": 0.9,
+        "count": 35,
+        "avgConfidence": 0.8346276718532539,
+        "hitRate": 0.9428571428571428
+      },
+      {
+        "band": 9,
+        "low": 0.9,
+        "high": 1,
+        "count": 10,
+        "avgConfidence": 0.9490863587828798,
+        "hitRate": 0.8
+      }
+    ],
+    "selective": [
+      {
+        "threshold": 0.5,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.9111111111111111
+      },
+      {
+        "threshold": 0.55,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.9111111111111111
+      },
+      {
+        "threshold": 0.6,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.9111111111111111
+      },
+      {
+        "threshold": 0.65,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.9111111111111111
+      },
+      {
+        "threshold": 0.7,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.9111111111111111
+      },
+      {
+        "threshold": 0.75,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.9111111111111111
+      },
+      {
+        "threshold": 0.8,
+        "coverage": 0.9782608695652174,
+        "accuracy": 0.9111111111111111
+      },
+      {
+        "threshold": 0.85,
+        "coverage": 0.21739130434782608,
+        "accuracy": 0.8
+      },
+      {
+        "threshold": 0.9,
+        "coverage": 0.21739130434782608,
+        "accuracy": 0.8
+      },
+      {
+        "threshold": 0.95,
+        "coverage": 0.06521739130434782,
+        "accuracy": 0.6666666666666666
+      }
+    ],
+    "precisionAtConf90": 0.8,
+    "freshnessAblation": {
+      "signal": "SQUISH_EVIDENCE_FRESHNESS",
+      "on": {
+        "ece": 0.13182334246960023,
+        "brier": 0.10462365934896437,
+        "count": 46
+      },
+      "off": {
+        "ece": 0.1195538043478258,
+        "brier": 0.10173649240489124,
+        "count": 46
+      },
+      "note": "canonical metrics gate on the freshness-on run; off-run reruns identical deterministic retrieval with the signal nulled"
+    }
+  },
+  "efficiency": {
+    "retrievalLatencyMs": {
+      "p50": 120.196,
+      "p95": 163.824,
+      "count": 46
+    },
+    "returnedTokens": {
+      "total": 17436,
+      "meanPerQuery": 379.04347826086956,
+      "source": "estimated tokens in top-k retrieved memory content"
+    },
+    "modelTokens": 0,
+    "providerCostUsd": 0,
+    "networkEgressBytes": 0,
+    "rerankerAppliedQueries": 0,
+    "rerankerSkippedQueries": 46,
+    "rerankerSkipReasons": [
+      "@huggingface/transformers unavailable or model load timed out/failed"
+    ],
+    "note": "Offline retrieval benchmark; no answer model or remote provider configured."
+  },
+  "queries": [
+    {
+      "id": "q_paraphrase_01",
+      "category": "paraphrase",
+      "query": "Why did we pick a relational database over a document store for experiment metadata?",
+      "retrievalLatencyMs": 9104.313,
+      "returnedTokens": 327,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_001"
+      ],
+      "mayHit": [
+        "golden_040"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_001",
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.9032,
+          "recallConfidence": 0.649,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.8735,
+          "recallConfidence": 0.8016,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8679,
+          "recallConfidence": 0.6036,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.8507,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8098,
+          "recallConfidence": 0.5836,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.8084,
+          "recallConfidence": 0.583,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.7997,
+          "recallConfidence": 0.7619,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.7903,
+          "recallConfidence": 0.7679,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.849,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_02",
+      "category": "paraphrase",
+      "query": "Which package manager won out and what was the reason?",
+      "retrievalLatencyMs": 119.919,
+      "returnedTokens": 421,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_002"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_013",
+          "score": 1,
+          "recallConfidence": 0.9642,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.5159,
+          "recallConfidence": 0.4184,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.5076,
+          "recallConfidence": 0.3973,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_031",
+          "score": 0.4995,
+          "recallConfidence": 0.4909,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.4917,
+          "recallConfidence": 0.4755,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_049",
+          "score": 0.4768,
+          "recallConfidence": 0.4463,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.4697,
+          "recallConfidence": 0.4239,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.4628,
+          "recallConfidence": 0.4192,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.4561,
+          "recallConfidence": 0.3861,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4496,
+          "recallConfidence": 0.3966,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9642,
+      "recallAtK": 0,
+      "rr": 0,
+      "hitAt1": false
+    },
+    {
+      "id": "q_paraphrase_03",
+      "category": "paraphrase",
+      "query": "What framework ended up powering the labeling backend?",
+      "retrievalLatencyMs": 160.167,
+      "returnedTokens": 377,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_003"
+      ],
+      "mayHit": [
+        "golden_019"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_003",
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.9685,
+          "recallConfidence": 0.8238,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.898,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.8963,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4841,
+          "recallConfidence": 0.387,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.4766,
+          "recallConfidence": 0.3822,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.4692,
+          "recallConfidence": 0.3725,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.4692,
+          "recallConfidence": 0.37,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_049",
+          "score": 0.4621,
+          "recallConfidence": 0.3582,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.4552,
+          "recallConfidence": 0.34,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.849,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_04",
+      "category": "paraphrase",
+      "query": "How do events move between ingestion services?",
+      "retrievalLatencyMs": 136.206,
+      "returnedTokens": 381,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_004"
+      ],
+      "mayHit": [
+        "golden_041"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_004",
+          "score": 1,
+          "recallConfidence": 0.9434,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.9186,
+          "recallConfidence": 0.9114,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.9077,
+          "recallConfidence": 0.7268,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.8963,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8598,
+          "recallConfidence": 0.6956,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8535,
+          "recallConfidence": 0.8406,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_045",
+          "score": 0.8485,
+          "recallConfidence": 0.8826,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_041",
+          "score": 0.8367,
+          "recallConfidence": 0.8339,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.8308,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.8206,
+          "recallConfidence": 0.7008,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9434,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_05",
+      "category": "paraphrase",
+      "query": "Do embeddings get recomputed on every lookup?",
+      "retrievalLatencyMs": 154.67,
+      "returnedTokens": 360,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_035",
+        "golden_036"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_036",
+          "score": 1,
+          "recallConfidence": 0.8012,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.9961,
+          "recallConfidence": 0.8265,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9135,
+          "recallConfidence": 0.8134,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.8944,
+          "recallConfidence": 0.7871,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_009",
+          "score": 0.8591,
+          "recallConfidence": 0.7962,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.8095,
+          "recallConfidence": 0.7728,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.4804,
+          "recallConfidence": 0.3914,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4731,
+          "recallConfidence": 0.3789,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.4659,
+          "recallConfidence": 0.3644,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8012,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_06",
+      "category": "paraphrase",
+      "query": "What is the team's stance on Python code linting tools?",
+      "retrievalLatencyMs": 97.907,
+      "returnedTokens": 384,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_008"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_008",
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.9961,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.9818,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9252,
+          "recallConfidence": 0.816,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.9075,
+          "recallConfidence": 0.812,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.8814,
+          "recallConfidence": 0.8051,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.8044,
+          "recallConfidence": 0.7807,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.7901,
+          "recallConfidence": 0.7526,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.5041,
+          "recallConfidence": 0.336,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4804,
+          "recallConfidence": 0.3914,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.849,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_07",
+      "category": "paraphrase",
+      "query": "What format do status summaries need to follow?",
+      "retrievalLatencyMs": 93.637,
+      "returnedTokens": 452,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_007"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_001",
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.9521,
+          "recallConfidence": 0.8265,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.9133,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.8367,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.5081,
+          "recallConfidence": 0.3506,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.4919,
+          "recallConfidence": 0.4755,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4843,
+          "recallConfidence": 0.3872,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4768,
+          "recallConfidence": 0.3852,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4696,
+          "recallConfidence": 0.3632,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.849,
+      "recallAtK": 1,
+      "rr": 0.5,
+      "hitAt1": false
+    },
+    {
+      "id": "q_paraphrase_08",
+      "category": "paraphrase",
+      "query": "What happens to the staging database overnight?",
+      "retrievalLatencyMs": 189.571,
+      "returnedTokens": 367,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_054",
+        "golden_055"
+      ],
+      "mayHit": [
+        "golden_056"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_055",
+          "score": 1,
+          "recallConfidence": 0.8013,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_054",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9587,
+          "recallConfidence": 0.8187,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.9587,
+          "recallConfidence": 0.8187,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9534,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9462,
+          "recallConfidence": 0.8,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_031",
+          "score": 0.8814,
+          "recallConfidence": 0.8051,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8765,
+          "recallConfidence": 0.7575,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.8546,
+          "recallConfidence": 0.7944,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4552,
+          "recallConfidence": 0.3493,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8013,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_01",
+      "category": "entity",
+      "query": "Who leads Project Aurora?",
+      "retrievalLatencyMs": 135.393,
+      "returnedTokens": 386,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_024",
+        "golden_048"
+      ],
+      "mayHit": [
+        "golden_058"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_024",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.9961,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.9961,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.9731,
+          "recallConfidence": 0.8213,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.9107,
+          "recallConfidence": 0.8184,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.8367,
+          "recallConfidence": 0.2028,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.4692,
+          "recallConfidence": 0.3725,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4621,
+          "recallConfidence": 0.3511,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4552,
+          "recallConfidence": 0.34,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.442,
+          "recallConfidence": 0.3278,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_02",
+      "category": "entity",
+      "query": "Who is Elena Vasquez?",
+      "retrievalLatencyMs": 116.95,
+      "returnedTokens": 409,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_026"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_026",
+          "score": 1,
+          "recallConfidence": 0.9837,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4919,
+          "recallConfidence": 0.4666,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4841,
+          "recallConfidence": 0.4516,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_054",
+          "score": 0.4766,
+          "recallConfidence": 0.1137,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_045",
+          "score": 0.4692,
+          "recallConfidence": 0.1101,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4621,
+          "recallConfidence": 0.4096,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4552,
+          "recallConfidence": 0.3967,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 0.4485,
+          "recallConfidence": 0.1,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.442,
+          "recallConfidence": 0.0969,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4357,
+          "recallConfidence": 0.3608,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9837,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_03",
+      "category": "entity",
+      "query": "What does Nordwind Energy do for us?",
+      "retrievalLatencyMs": 120.824,
+      "returnedTokens": 415,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_047",
+        "golden_025"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_047",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 1,
+          "recallConfidence": 0.7167,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4841,
+          "recallConfidence": 0.387,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4766,
+          "recallConfidence": 0.1155,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4692,
+          "recallConfidence": 0.1118,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4621,
+          "recallConfidence": 0.1082,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4552,
+          "recallConfidence": 0.34,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4485,
+          "recallConfidence": 0.1015,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.442,
+          "recallConfidence": 0.3278,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4357,
+          "recallConfidence": 0.0953,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_04",
+      "category": "entity",
+      "query": "What is PaperTrail?",
+      "retrievalLatencyMs": 122.971,
+      "returnedTokens": 334,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_029",
+        "golden_058"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_029",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.9845,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4959,
+          "recallConfidence": 0.4065,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.4881,
+          "recallConfidence": 0.3815,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.4731,
+          "recallConfidence": 0.3763,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.4659,
+          "recallConfidence": 0.3644,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.4589,
+          "recallConfidence": 0.3354,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 0.4522,
+          "recallConfidence": 0.3419,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4456,
+          "recallConfidence": 0.3248,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4393,
+          "recallConfidence": 0.3234,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_05",
+      "category": "entity",
+      "query": "What are Tomas Lindqvist's responsibilities?",
+      "retrievalLatencyMs": 128.464,
+      "returnedTokens": 418,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_027",
+        "golden_053"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_053",
+          "score": 1,
+          "recallConfidence": 0.215,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.9273,
+          "recallConfidence": 0.8265,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4881,
+          "recallConfidence": 0.3935,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.4804,
+          "recallConfidence": 0.0991,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4731,
+          "recallConfidence": 0.3689,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4659,
+          "recallConfidence": 0.0929,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.4589,
+          "recallConfidence": 0.346,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.4522,
+          "recallConfidence": 0.0872,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4456,
+          "recallConfidence": 0.0851,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.215,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_06",
+      "category": "entity",
+      "query": "Why did we end up on Qdrant?",
+      "retrievalLatencyMs": 119.823,
+      "returnedTokens": 359,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_030",
+        "golden_017"
+      ],
+      "mayHit": [
+        "golden_042",
+        "golden_016"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_030",
+          "score": 1,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.9405,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4919,
+          "recallConfidence": 0.4565,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.4841,
+          "recallConfidence": 0.4169,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.4841,
+          "recallConfidence": 0.5137,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4766,
+          "recallConfidence": 0.4276,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4692,
+          "recallConfidence": 0.4139,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_037",
+          "score": 0.4621,
+          "recallConfidence": 0.398,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4552,
+          "recallConfidence": 0.3854,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.442,
+          "recallConfidence": 0.3617,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9369,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_07",
+      "category": "entity",
+      "query": "Tell me about Helios Research Lab.",
+      "retrievalLatencyMs": 113.972,
+      "returnedTokens": 316,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_028"
+      ],
+      "mayHit": [
+        "golden_059"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_028",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.9807,
+          "recallConfidence": 0.8226,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 0.9807,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.9612,
+          "recallConfidence": 0.8226,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.9242,
+          "recallConfidence": 0.8168,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 0.4919,
+          "recallConfidence": 0.4755,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4692,
+          "recallConfidence": 0.37,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.4621,
+          "recallConfidence": 0.3582,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.4552,
+          "recallConfidence": 0.3469,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4485,
+          "recallConfidence": 0.3294,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_08",
+      "category": "entity",
+      "query": "What role does MLflow play here?",
+      "retrievalLatencyMs": 157.681,
+      "returnedTokens": 428,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_031"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_031",
+          "score": 1,
+          "recallConfidence": 0.9837,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_041",
+          "score": 0.5234,
+          "recallConfidence": 0.1043,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.515,
+          "recallConfidence": 0.1071,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.5068,
+          "recallConfidence": 0.3962,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4989,
+          "recallConfidence": 0.48,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.4912,
+          "recallConfidence": 0.1219,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4838,
+          "recallConfidence": 0.1181,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4696,
+          "recallConfidence": 0.4237,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.4628,
+          "recallConfidence": 0.1016,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4561,
+          "recallConfidence": 0.3984,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9837,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_01",
+      "category": "temporal",
+      "query": "What did we use for vector search before Qdrant?",
+      "retrievalLatencyMs": 127.784,
+      "returnedTokens": 341,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_017",
+        "golden_016"
+      ],
+      "mayHit": [
+        "golden_042",
+        "golden_030"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_017",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.9825,
+          "recallConfidence": 0.7296,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.8857,
+          "recallConfidence": 0.8119,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.8779,
+          "recallConfidence": 0.8041,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.8759,
+          "recallConfidence": 0.6472,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8674,
+          "recallConfidence": 0.6451,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.8598,
+          "recallConfidence": 0.6431,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8499,
+          "recallConfidence": 0.6402,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_02",
+      "category": "temporal",
+      "query": "Which annotation platform did the team switch away from in spring 2026?",
+      "retrievalLatencyMs": 95.579,
+      "returnedTokens": 295,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_018",
+        "golden_019"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_018",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.9883,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 0.8727,
+          "recallConfidence": 0.8025,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 0.8277,
+          "recallConfidence": 0.7769,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.7937,
+          "recallConfidence": 0.7698,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.79,
+          "recallConfidence": 0.756,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.7749,
+          "recallConfidence": 0.5969,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.7698,
+          "recallConfidence": 0.6047,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.753,
+          "recallConfidence": 0.5958,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_03",
+      "category": "temporal",
+      "query": "When is the weekly sync held now?",
+      "retrievalLatencyMs": 124.925,
+      "returnedTokens": 323,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_021",
+        "golden_020"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_021",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9807,
+          "recallConfidence": 0.8063,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.9734,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.641,
+          "recallConfidence": 0.2486,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_059",
+          "score": 0.6361,
+          "recallConfidence": 0.2418,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.622,
+          "recallConfidence": 0.2228,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 0.5889,
+          "recallConfidence": 0.1822,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4766,
+          "recallConfidence": 0.3746,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4621,
+          "recallConfidence": 0.3607,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_04",
+      "category": "temporal",
+      "query": "How has the GPU cluster size changed this year?",
+      "retrievalLatencyMs": 154.656,
+      "returnedTokens": 319,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_022",
+        "golden_023"
+      ],
+      "mayHit": [
+        "golden_053"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_022",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_023",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 1,
+          "recallConfidence": 0.803,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 0.9685,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.9607,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.8552,
+          "recallConfidence": 0.7967,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.8179,
+          "recallConfidence": 0.7336,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.8126,
+          "recallConfidence": 0.7745,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.7465,
+          "recallConfidence": 0.7402,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4692,
+          "recallConfidence": 0.3627,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_05",
+      "category": "temporal",
+      "query": "Did anything change with documentation hosting?",
+      "retrievalLatencyMs": 163.824,
+      "returnedTokens": 371,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_032"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_032",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.9685,
+          "recallConfidence": 0.7828,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9151,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9061,
+          "recallConfidence": 0.8117,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.9059,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.8038,
+          "recallConfidence": 0.7804,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.5241,
+          "recallConfidence": 0.3428,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4804,
+          "recallConfidence": 0.3914,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4731,
+          "recallConfidence": 0.3789,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.4722,
+          "recallConfidence": 0.3419,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_06",
+      "category": "temporal",
+      "query": "How often are budget reviews held these days?",
+      "retrievalLatencyMs": 114.428,
+      "returnedTokens": 376,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_034"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_034",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.9967,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.5081,
+          "recallConfidence": 0.3413,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.4999,
+          "recallConfidence": 0.413,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_054",
+          "score": 0.4919,
+          "recallConfidence": 0.4755,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.4843,
+          "recallConfidence": 0.3951,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_010",
+          "score": 0.4842,
+          "recallConfidence": 0.3978,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.4696,
+          "recallConfidence": 0.3632,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4626,
+          "recallConfidence": 0.3518,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_041",
+          "score": 0.4558,
+          "recallConfidence": 0.3305,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_07",
+      "category": "temporal",
+      "query": "When did external users start participating in studies?",
+      "retrievalLatencyMs": 120.196,
+      "returnedTokens": 377,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_033"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_033",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.9883,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.6088,
+          "recallConfidence": 0.206,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.5966,
+          "recallConfidence": 0.1911,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4919,
+          "recallConfidence": 0.4108,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.4892,
+          "recallConfidence": 0.3725,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.4766,
+          "recallConfidence": 0.3632,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4621,
+          "recallConfidence": 0.3511,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4552,
+          "recallConfidence": 0.34,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_temporal_08",
+      "category": "temporal",
+      "query": "Where did config files live before the July change?",
+      "retrievalLatencyMs": 120.488,
+      "returnedTokens": 411,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_057"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_057",
+          "score": 1,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 1,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 1,
+          "recallConfidence": 0.9092,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9605,
+          "recallConfidence": 0.892,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.8848,
+          "recallConfidence": 0.8779,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.8578,
+          "recallConfidence": 0.8421,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.8296,
+          "recallConfidence": 0.8803,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.8158,
+          "recallConfidence": 0.8675,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4892,
+          "recallConfidence": 0.4029,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4841,
+          "recallConfidence": 0.4301,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.9369,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_01",
+      "category": "negation",
+      "query": "Do we still use MongoDB anywhere?",
+      "retrievalLatencyMs": 101.009,
+      "returnedTokens": 382,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_040",
+        "golden_001"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_040",
+          "score": 1,
+          "recallConfidence": 0.8012,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.9734,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8857,
+          "recallConfidence": 0.6495,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8848,
+          "recallConfidence": 0.6493,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.8778,
+          "recallConfidence": 0.8096,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.8552,
+          "recallConfidence": 0.8022,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.8099,
+          "recallConfidence": 0.7393,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.7736,
+          "recallConfidence": 0.7205,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.4841,
+          "recallConfidence": 0.3949,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8012,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_02",
+      "category": "negation",
+      "query": "Is FAISS still part of our stack?",
+      "retrievalLatencyMs": 131.849,
+      "returnedTokens": 411,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_042",
+        "golden_017"
+      ],
+      "mayHit": [
+        "golden_016",
+        "golden_030"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_042",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.9961,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.9518,
+          "recallConfidence": 0.8174,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.934,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_047",
+          "score": 0.4841,
+          "recallConfidence": 0.3949,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4766,
+          "recallConfidence": 0.3822,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.4692,
+          "recallConfidence": 0.3725,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4621,
+          "recallConfidence": 0.3511,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4485,
+          "recallConfidence": 0.3294,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4357,
+          "recallConfidence": 0.3093,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_03",
+      "category": "negation",
+      "query": "Are we still considering Kafka?",
+      "retrievalLatencyMs": 101.915,
+      "returnedTokens": 374,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_041",
+        "golden_004"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_041",
+          "score": 1,
+          "recallConfidence": 0.8012,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.9812,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.9683,
+          "recallConfidence": 0.8012,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.9531,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4919,
+          "recallConfidence": 0.3999,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4621,
+          "recallConfidence": 0.3607,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.4552,
+          "recallConfidence": 0.3296,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.4485,
+          "recallConfidence": 0.3193,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.442,
+          "recallConfidence": 0.3093,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.4357,
+          "recallConfidence": 0.3177,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8012,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_04",
+      "category": "negation",
+      "query": "Does the team still meet Thursday mornings?",
+      "retrievalLatencyMs": 127.478,
+      "returnedTokens": 332,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_020",
+        "golden_021"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_010",
+          "score": 1,
+          "recallConfidence": 0.9434,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.9616,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 0.898,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.8776,
+          "recallConfidence": 0.8845,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.8665,
+          "recallConfidence": 0.9192,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.8551,
+          "recallConfidence": 0.8852,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.5041,
+          "recallConfidence": 0.3809,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4881,
+          "recallConfidence": 0.4492,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4804,
+          "recallConfidence": 0.4233,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.4731,
+          "recallConfidence": 0.421,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9434,
+      "recallAtK": 0.5,
+      "rr": 0.3333333333333333,
+      "hitAt1": false
+    },
+    {
+      "id": "q_negation_05",
+      "category": "negation",
+      "query": "Is Label Studio deprecated?",
+      "retrievalLatencyMs": 116.664,
+      "returnedTokens": 344,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_018",
+        "golden_019"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_019",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.9685,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_043",
+          "score": 0.4881,
+          "recallConfidence": 0.4043,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4731,
+          "recallConfidence": 0.3689,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_049",
+          "score": 0.4659,
+          "recallConfidence": 0.3644,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_033",
+          "score": 0.4589,
+          "recallConfidence": 0.353,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.4522,
+          "recallConfidence": 0.3419,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.4456,
+          "recallConfidence": 0.3336,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.4393,
+          "recallConfidence": 0.3211,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_06",
+      "category": "negation",
+      "query": "Was Redis rejected for anything?",
+      "retrievalLatencyMs": 100.117,
+      "returnedTokens": 378,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_039"
+      ],
+      "mayHit": [
+        "golden_035",
+        "golden_036"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_039",
+          "score": 1,
+          "recallConfidence": 0.8012,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 1,
+          "recallConfidence": 0.8012,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_036",
+          "score": 0.9261,
+          "recallConfidence": 0.7713,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.925,
+          "recallConfidence": 0.817,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.9219,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.4841,
+          "recallConfidence": 0.3949,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.4766,
+          "recallConfidence": 0.3822,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4692,
+          "recallConfidence": 0.3725,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.4621,
+          "recallConfidence": 0.3607,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4552,
+          "recallConfidence": 0.34,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8012,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_01",
+      "category": "procedural",
+      "query": "How do we deploy a service to production?",
+      "retrievalLatencyMs": 93.162,
+      "returnedTokens": 394,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_011"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_011",
+          "score": 1,
+          "recallConfidence": 0.8265,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 0.9839,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.9462,
+          "recallConfidence": 0.7756,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.9385,
+          "recallConfidence": 0.8187,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.9318,
+          "recallConfidence": 0.8174,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9251,
+          "recallConfidence": 0.816,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_037",
+          "score": 0.9117,
+          "recallConfidence": 0.808,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.9107,
+          "recallConfidence": 0.8184,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.8856,
+          "recallConfidence": 0.6446,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8535,
+          "recallConfidence": 0.6243,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8265,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_02",
+      "category": "procedural",
+      "query": "What are the steps for onboarding a new dataset?",
+      "retrievalLatencyMs": 122.794,
+      "returnedTokens": 439,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_012"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_012",
+          "score": 1,
+          "recallConfidence": 0.8265,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9761,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9607,
+          "recallConfidence": 0.8063,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.4919,
+          "recallConfidence": 0.4788,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_055",
+          "score": 0.4766,
+          "recallConfidence": 0.3632,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4692,
+          "recallConfidence": 0.3626,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4621,
+          "recallConfidence": 0.3607,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4552,
+          "recallConfidence": 0.3469,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.4485,
+          "recallConfidence": 0.336,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.442,
+          "recallConfidence": 0.3191,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.8265,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_03",
+      "category": "procedural",
+      "query": "Walk me through rotating API credentials.",
+      "retrievalLatencyMs": 132.217,
+      "returnedTokens": 427,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_013"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_013",
+          "score": 1,
+          "recallConfidence": 0.9183,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_045",
+          "score": 0.954,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4919,
+          "recallConfidence": 0.4565,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4841,
+          "recallConfidence": 0.4418,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4766,
+          "recallConfidence": 0.4162,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4692,
+          "recallConfidence": 0.4139,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.4621,
+          "recallConfidence": 0.398,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4552,
+          "recallConfidence": 0.3854,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_046",
+          "score": 0.4485,
+          "recallConfidence": 0.3759,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4357,
+          "recallConfidence": 0.3437,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9183,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_04",
+      "category": "procedural",
+      "query": "What is the protocol during a production outage?",
+      "retrievalLatencyMs": 103.505,
+      "returnedTokens": 312,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_014"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_033",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 1,
+          "recallConfidence": 0.8424,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_056",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.993,
+          "recallConfidence": 0.8108,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.7095,
+          "recallConfidence": 0.3539,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.6358,
+          "recallConfidence": 0.2413,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.6265,
+          "recallConfidence": 0.2287,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.6176,
+          "recallConfidence": 0.2171,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_031",
+          "score": 0.6092,
+          "recallConfidence": 0.2064,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 0,
+      "rr": 0,
+      "hitAt1": false
+    },
+    {
+      "id": "q_procedural_05",
+      "category": "procedural",
+      "query": "What needs checking before submitting a paper?",
+      "retrievalLatencyMs": 121.318,
+      "returnedTokens": 419,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_015"
+      ],
+      "mayHit": [
+        "golden_043"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_015",
+          "score": 1,
+          "recallConfidence": 0.8265,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9607,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.9472,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9458,
+          "recallConfidence": 0.8038,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.6461,
+          "recallConfidence": 0.2558,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.622,
+          "recallConfidence": 0.2228,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_032",
+          "score": 0.6175,
+          "recallConfidence": 0.2169,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.4919,
+          "recallConfidence": 0.3999,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4841,
+          "recallConfidence": 0.3976,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4621,
+          "recallConfidence": 0.3511,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "temporal_validity",
+      "top1RecallConfidence": 0.8265,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_06",
+      "category": "procedural",
+      "query": "How do we release a new SDK version?",
+      "retrievalLatencyMs": 95.609,
+      "returnedTokens": 478,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_051"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_051",
+          "score": 1,
+          "recallConfidence": 0.8266,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.9761,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.9761,
+          "recallConfidence": 0.8265,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.9458,
+          "recallConfidence": 0.8038,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.9242,
+          "recallConfidence": 0.7951,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.8412,
+          "recallConfidence": 0.7759,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.4766,
+          "recallConfidence": 0.3848,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.4621,
+          "recallConfidence": 0.3404,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4552,
+          "recallConfidence": 0.3493,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4485,
+          "recallConfidence": 0.3383,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8266,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_01",
+      "category": "multi-hop",
+      "query": "Which project depends on PaperTrail and why?",
+      "retrievalLatencyMs": 91.516,
+      "returnedTokens": 374,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_058",
+        "golden_029"
+      ],
+      "mayHit": [
+        "golden_024"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_058",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.9812,
+          "recallConfidence": 0.8226,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9462,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.9298,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.8676,
+          "recallConfidence": 0.8064,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.8552,
+          "recallConfidence": 0.8022,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.8341,
+          "recallConfidence": 0.78,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.8168,
+          "recallConfidence": 0.2006,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4841,
+          "recallConfidence": 0.387,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4766,
+          "recallConfidence": 0.3746,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_02",
+      "category": "multi-hop",
+      "query": "Who maintains the machines our training runs depend on?",
+      "retrievalLatencyMs": 112.013,
+      "returnedTokens": 402,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_053",
+        "golden_027"
+      ],
+      "mayHit": [
+        "golden_022",
+        "golden_023"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_053",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_027",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_058",
+          "score": 0.9776,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.9165,
+          "recallConfidence": 0.6384,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9062,
+          "recallConfidence": 0.6496,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.8991,
+          "recallConfidence": 0.6352,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_060",
+          "score": 0.8577,
+          "recallConfidence": 0.8371,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.8548,
+          "recallConfidence": 0.8021,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.8378,
+          "recallConfidence": 0.6196,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.8295,
+          "recallConfidence": 0.7778,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_03",
+      "category": "multi-hop",
+      "query": "How does Nordwind Energy connect to our forecasting benchmark?",
+      "retrievalLatencyMs": 125.013,
+      "returnedTokens": 360,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_025",
+        "golden_047"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_047",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.9607,
+          "recallConfidence": 0.7816,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9458,
+          "recallConfidence": 0.82,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_037",
+          "score": 0.8347,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4692,
+          "recallConfidence": 0.3725,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_002",
+          "score": 0.4621,
+          "recallConfidence": 0.3607,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_014",
+          "score": 0.4552,
+          "recallConfidence": 0.34,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.4485,
+          "recallConfidence": 0.336,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.442,
+          "recallConfidence": 0.3278,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "multi_hop",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_multihop_04",
+      "category": "multi-hop",
+      "query": "Which vector store backs Project Aurora's retrieval index, and what preceded it?",
+      "retrievalLatencyMs": 139.354,
+      "returnedTokens": 312,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_058",
+        "golden_017"
+      ],
+      "mayHit": [
+        "golden_030",
+        "golden_016"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_058",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_016",
+          "score": 0.9794,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_017",
+          "score": 0.9714,
+          "recallConfidence": 0.215,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_048",
+          "score": 0.9663,
+          "recallConfidence": 0.8201,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.9188,
+          "recallConfidence": 0.157,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_025",
+          "score": 0.9043,
+          "recallConfidence": 0.8059,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.8716,
+          "recallConfidence": 0.8022,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.8674,
+          "recallConfidence": 0.761,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_035",
+          "score": 0.8624,
+          "recallConfidence": 0.7975,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8432,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_paraphrase_09",
+      "category": "paraphrase",
+      "query": "Why is there a cap on database connections per service?",
+      "retrievalLatencyMs": 105.432,
+      "returnedTokens": 382,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_037",
+        "golden_038"
+      ],
+      "mayHit": [
+        "golden_001"
+      ],
+      "retrieved": [
+        {
+          "goldenId": "golden_038",
+          "score": 1,
+          "recallConfidence": 0.8012,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_037",
+          "score": 1,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.9961,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_030",
+          "score": 0.9594,
+          "recallConfidence": 0.8188,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.9461,
+          "recallConfidence": 0.8257,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8849,
+          "recallConfidence": 0.8117,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_057",
+          "score": 0.8801,
+          "recallConfidence": 0.6438,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8759,
+          "recallConfidence": 0.63,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_019",
+          "score": 0.8723,
+          "recallConfidence": 0.8024,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_041",
+          "score": 0.8465,
+          "recallConfidence": 0.7541,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8012,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_entity_09",
+      "category": "entity",
+      "query": "What do we use for tracing across services?",
+      "retrievalLatencyMs": 134.996,
+      "returnedTokens": 421,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_046"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_046",
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.9534,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.9144,
+          "recallConfidence": 0.8087,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.8676,
+          "recallConfidence": 0.6451,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.8634,
+          "recallConfidence": 0.6441,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.8513,
+          "recallConfidence": 0.6237,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.8417,
+          "recallConfidence": 0.6378,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_038",
+          "score": 0.8116,
+          "recallConfidence": 0.7401,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_037",
+          "score": 0.8044,
+          "recallConfidence": 0.7753,
+          "confidenceTier": "QUALIFIED"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.849,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_07",
+      "category": "negation",
+      "query": "Are we still on Confluence for the wiki?",
+      "retrievalLatencyMs": 113.085,
+      "returnedTokens": 396,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_049"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_049",
+          "score": 1,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_042",
+          "score": 0.8399,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4919,
+          "recallConfidence": 0.4565,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_052",
+          "score": 0.4841,
+          "recallConfidence": 0.4418,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_040",
+          "score": 0.4766,
+          "recallConfidence": 0.4035,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4692,
+          "recallConfidence": 0.4139,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4621,
+          "recallConfidence": 0.4008,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4552,
+          "recallConfidence": 0.3778,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_005",
+          "score": 0.4485,
+          "recallConfidence": 0.3759,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_050",
+          "score": 0.442,
+          "recallConfidence": 0.3642,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9369,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_negation_08",
+      "category": "negation",
+      "query": "Do we send customer text to GPT-4 for classification?",
+      "retrievalLatencyMs": 119.577,
+      "returnedTokens": 418,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_005"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_005",
+          "score": 1,
+          "recallConfidence": 0.9434,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.8908,
+          "recallConfidence": 0.9369,
+          "confidenceTier": "HIGH"
+        },
+        {
+          "goldenId": "golden_010",
+          "score": 0.5119,
+          "recallConfidence": 0.5319,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_015",
+          "score": 0.4919,
+          "recallConfidence": 0.4444,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.4841,
+          "recallConfidence": 0.4418,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_004",
+          "score": 0.4766,
+          "recallConfidence": 0.4276,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.4692,
+          "recallConfidence": 0.3906,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_006",
+          "score": 0.4621,
+          "recallConfidence": 0.4008,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_008",
+          "score": 0.4552,
+          "recallConfidence": 0.3881,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_001",
+          "score": 0.4485,
+          "recallConfidence": 0.3759,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.9434,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_07",
+      "category": "procedural",
+      "query": "How does the weekly model evaluation work?",
+      "retrievalLatencyMs": 112.235,
+      "returnedTokens": 324,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_044"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_044",
+          "score": 1,
+          "recallConfidence": 0.8265,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_021",
+          "score": 0.9734,
+          "recallConfidence": 0.8214,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_020",
+          "score": 0.9518,
+          "recallConfidence": 0.8174,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_007",
+          "score": 0.9307,
+          "recallConfidence": 0.8184,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.9156,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_039",
+          "score": 0.9042,
+          "recallConfidence": 0.7708,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_026",
+          "score": 0.8761,
+          "recallConfidence": 0.8432,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_024",
+          "score": 0.8742,
+          "recallConfidence": 0.7964,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_028",
+          "score": 0.8258,
+          "recallConfidence": 0.776,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_013",
+          "score": 0.4919,
+          "recallConfidence": 0.3999,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "graph_expanded",
+      "top1RecallConfidence": 0.8265,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    },
+    {
+      "id": "q_procedural_08",
+      "category": "procedural",
+      "query": "What are the rules for reviewing pull requests?",
+      "retrievalLatencyMs": 118.457,
+      "returnedTokens": 410,
+      "reranker": {
+        "applied": false,
+        "skipped": 10,
+        "reason": "@huggingface/transformers unavailable or model load timed out/failed"
+      },
+      "mustHit": [
+        "golden_050"
+      ],
+      "mayHit": [],
+      "retrieved": [
+        {
+          "goldenId": "golden_050",
+          "score": 1,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_044",
+          "score": 0.9731,
+          "recallConfidence": 0.8051,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_003",
+          "score": 0.9137,
+          "recallConfidence": 0.849,
+          "confidenceTier": "QUALIFIED"
+        },
+        {
+          "goldenId": "golden_012",
+          "score": 0.4919,
+          "recallConfidence": 0.3999,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_034",
+          "score": 0.4919,
+          "recallConfidence": 0.4755,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_051",
+          "score": 0.4841,
+          "recallConfidence": 0.3871,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_053",
+          "score": 0.4692,
+          "recallConfidence": 0.37,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_018",
+          "score": 0.4621,
+          "recallConfidence": 0.3582,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_011",
+          "score": 0.4552,
+          "recallConfidence": 0.34,
+          "confidenceTier": "LOW"
+        },
+        {
+          "goldenId": "golden_029",
+          "score": 0.4485,
+          "recallConfidence": 0.336,
+          "confidenceTier": "LOW"
+        }
+      ],
+      "recallStrategy": "hybrid_search",
+      "top1RecallConfidence": 0.849,
+      "recallAtK": 1,
+      "rr": 1,
+      "hitAt1": true
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
-import { join } from 'path';
-import { mkdirSync, existsSync, rmSync } from 'fs';
+import { join, resolve } from 'path';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
 
 let testDataDir: string;
 let savedDataDir: string | undefined;
@@ -27,10 +28,9 @@ describe('Project Resolution Helpers', () => {
   beforeAll(async () => {
     savedDataDir = process.env.SQUISH_DATA_DIR;
     savedDatabaseUrl = process.env.DATABASE_URL;
-    testDataDir = join(process.cwd(), '.test-data');
+    testDataDir = mkdtempSync(join(tmpdir(), 'squish-projects-test-'));
     process.env.SQUISH_DATA_DIR = testDataDir;
     process.env.DATABASE_URL = '';
-    if (!existsSync(testDataDir)) mkdirSync(testDataDir, { recursive: true });
 
     const projectsMod = await import('../../core/projects.js');
     const dbMod = await import('../../db/index.js');
@@ -44,7 +44,8 @@ describe('Project Resolution Helpers', () => {
     resetDb();
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    await (await import('../../db/index.js')).closeAllDbs();
     if (savedDataDir === undefined) delete process.env.SQUISH_DATA_DIR;
     else process.env.SQUISH_DATA_DIR = savedDataDir;
     if (savedDatabaseUrl === undefined) delete process.env.DATABASE_URL;
@@ -77,12 +78,14 @@ describe('Project Resolution Helpers', () => {
     test('should return project when it exists', async () => {
       const existing = await getOrCreateProject('/existing/project');
       if (!existing) throw new Error('Failed to create project');
-      expect(existing.path).toBe('/existing/project');
+      // createProject() normalises before insert, so the stored path is the
+      // absolute form of whatever the caller passed.
+      expect(existing.path).toBe(resolve('/existing/project'));
 
       const required = await requireProject('/existing/project');
       expect(required).toBeDefined();
       expect(required.id).toBe(existing.id);
-      expect(required.path).toBe('/existing/project');
+      expect(required.path).toBe(resolve('/existing/project'));
     });
   });
 
@@ -90,7 +93,7 @@ describe('Project Resolution Helpers', () => {
     test('should return existing project when it exists', async () => {
       const first = await getOrCreateProject('/test/project');
       if (!first) throw new Error('Failed to create project');
-      expect(first.path).toBe('/test/project');
+      expect(first.path).toBe(resolve('/test/project'));
 
       const second = await getOrCreateProject('/test/project');
       if (!second) throw new Error('Failed to get existing project');
@@ -101,7 +104,7 @@ describe('Project Resolution Helpers', () => {
       const result = await getOrCreateProject('/new/project');
       if (!result) throw new Error('Failed to create project');
       expect(result.id).toBeTypeOf('string');
-      expect(result.path).toBe('/new/project');
+      expect(result.path).toBe(resolve('/new/project'));
       expect(result.name).toBe('project');
     });
 
@@ -122,7 +125,7 @@ describe('Project Resolution Helpers', () => {
       await getOrCreateProject('/find/me');
       const found = await getProjectByPath('/find/me');
       expect(found).not.toBeNull();
-      expect(found?.path).toBe('/find/me');
+      expect(found?.path).toBe(resolve('/find/me'));
     });
 
     test('getProjectByPath should return null for non-existent project', async () => {

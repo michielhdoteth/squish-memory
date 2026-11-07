@@ -9,8 +9,8 @@ Any AI Agent
      ↓
 MCP (stdio/Streamable HTTP) / CLI
      ↓
-packages/mcp/src/index.ts
-   ├─ MCP Tools (16 tools incl. gated maintenance)
+mcp/index.ts
+   ├─ MCP Tools (19 registered by default; 20 with gated maintenance)
    ├─ Core Services
    │   ├─ Signal Engine
    │   ├─ Session Working Set
@@ -29,28 +29,29 @@ packages/mcp/src/index.ts
 
 ## Package Structure
 
-The repository is organized as a Bun workspace:
+This repository is a single Bun package (no nested `packages/` workspace):
 
 ```
 squish/
-├── packages/
-│   ├── mcp/                 # MCP server package
-│   │   ├── src/
-│   │   │   ├── index.ts      # Main MCP entry point (16 tools incl. gated maintenance)
-│   │   │   ├── multimodal-tools.ts   # Multimodal ingestion tools
-│   │   │   └── consolidation-tools.ts # LLM consolidation tools
-│   │   └── package.json
-│   └── cli/                  # CLI package
-│       ├── src/
-│       │   └── index.ts     # CLI entry point
-│       └── package.json
+├── mcp/                    # MCP server (single entry point, no src/ layer)
+│   ├── index.ts            # Main MCP entry point: 19 tools by default (20 with gated maintenance)
+│   ├── tools/              # Tool registration modules (memory, team, skill, extras, dedup, edits)
+│   ├── multimodal-utils.ts # File-ingestion helpers used by squish_remember
+│   └── consolidation-utils.ts # LLM-consolidation helpers used by squish_stats
+├── cli/                    # CLI implementation (index.ts, client.ts, program.ts)
 ├── bin/
 │   ├── squish-mcp.mjs       # MCP server binary
 │   └── squish.mjs           # CLI binary
-├── core/                    # Core library
-│   ├── memory/              # Memory management
+├── core/                    # Core library (no services/ directory)
+│   ├── memory/              # Memory management (memory-crud, memory-write, memory-search,
+│   │                        # hybrid-search, vector-search, keyword-search, belief-search,
+│   │                        # search-scoring, importance)
+│   ├── retrieval/           # Query routing (decision-model-aware autoRoute), rerankers,
+│   │                        # query expansion, entity-aware retrieval, temporal validity
+│   ├── scoring/             # Three-field scoring, recall confidence, topical alignment
+│   ├── decision-model/      # Pluggable decision backends (llm / systemone / off)
 │   ├── graph/               # Knowledge graph
-│   ├── search/             # Search algorithms
+│   ├── search/              # Search algorithms (graph boost, QMD wrapper)
 │   ├── multimodal/          # Multimodal ingestion pipeline
 │   │   ├── types.ts         # Media type definitions
 │   │   ├── mime-detector.ts # MIME type detection (27+ types)
@@ -67,15 +68,15 @@ squish/
 │   └── ...
 ├── docs/                   # Documentation
 ├── config.ts              # Configuration with multimodal/consolidation options
-├── package.json           # Root workspace
+├── package.json           # Single-package manifest
 └── bun.lock                # Lock file
 ```
 
 ## Architecture Layers
 
-### 1. MCP Server (15 Tools + 1 gated)
+### 1. MCP Server (19 tools by default, 20 with gated maintenance)
 
-The main entry point (`packages/mcp/src/index.ts`) defines 15 MCP tools by default, with a 16th (squish_maintenance) gated behind `SQUISH_ENABLE_MAINTENANCE_TOOLS=true`. Tools cover memory management, recall, graph linking, context, inspection, multimodal ingestion, and LLM consolidation.
+The main entry point (`mcp/index.ts`) registers 19 tools by default, plus a 20th (`squish_maintenance`) gated behind `SQUISH_ENABLE_MAINTENANCE_TOOLS=true` (returns 0 when unset). Tools cover memory management, recall, graph linking, context, inspection, stats, team/loadout/compile, skill/extract/feedback, places/sessions/tier/stale-report, dedup, and edits. Registration is split across `mcp/tools/` (memory, team, skill, extras, dedup, edits) and counted at the call sites there. `squish_sessions` also exposes `recover`, which retrieves only captured memories tagged to a session under an approximate output-token budget.
 
 - **remember** - Store memories with auto-detection (supports multimodal file ingestion via `filePath`)
 - **recall** - Query memories or get a specific memory by ID
@@ -85,41 +86,32 @@ The main entry point (`packages/mcp/src/index.ts`) defines 15 MCP tools by defau
 - **stats** - Get memory statistics, system health, watcher control, and consolidation trigger (via `action` param)
 - **inspect** - Explain why a memory was retained
 
-### 2. Services Layer
+### 2. Core Modules (no services/ directory)
 
-Business logic is separated into focused services:
+Business logic lives in focused `core/` modules (this repo has no `services/` layer):
 
-**Memory Management** (`services/memories.ts`)
+**Memory Management** (`core/memory/memory-crud.ts`, `core/memory/memory-write.ts`, `core/memory/memory-search.ts`)
 - Store and retrieve memories
-- Handle embeddings
-- Privacy filtering
+- Importance scoring on the write path (`core/memory/importance.ts`)
 
-**Search** (`services/conversations.ts`)
-- Search conversations
-- Full-text search
-- Semantic search
+**Hybrid Search / Retrieval** (`core/memory/hybrid-search.ts` + `vector-search.ts` / `keyword-search.ts` / `belief-search.ts` / `search-scoring.ts`, `core/retrieval/*`, `core/scoring/*`)
+- Full-text (FTS5) + vector (cosine) + beliefs legs, RRF fusion
+- Query routing via the decision-model-aware `autoRoute` (`core/retrieval/query-router.ts`)
+- Three-field scoring (semantic / boost / final) in `core/scoring/three-field.ts`
 
-**Observations** (`services/observations.ts`)
-- Track tool usage
-- Record observations
-
-**Embeddings** (`services/embeddings.ts`)
+**Embeddings** (`core/embeddings.ts`, `core/embeddings/*`)
 - OpenAI embeddings provider
 - Ollama provider
-- TF-IDF fallback
+- TF-IDF / transformers local fallback, QMD client
 
-**Database** (`services/database.ts`)
+**Database** (`core/lib/db-client.ts`, `db/*`)
 - Query builder utilities
 - Connection management
 
-**Cache** (`services/cache.ts`)
-- Redis cache layer
-- Memory cache fallback
-
-**Privacy** (`services/privacy.ts`)
+**Privacy / Security** (`core/security/privacy.ts`, `core/security/secret-detector.ts`, `core/security/encrypt.ts`)
 - Secret detection
 - Private tag filtering
-- PII filtering
+- PII filtering and at-rest encryption
 
 ### 3. Signal Engine
 
@@ -184,7 +176,9 @@ Enabled via `SQUISH_LLM_CONSOLIDATION_ENABLED=true` and requires an LLM API key.
 
 Squish implements multi-layer storage for optimal performance:
 
-**QMD Fast Search**
+**Optional QMD Fast Search**
+- QMD subprocess access is disabled by default; set `SQUISH_QMD_ENABLED=true` to opt in.
+- First use may download local GGUF models, so enabling QMD can use the network.
 - Quick Markdown Search provides hybrid BM25 + vector search
 - Automatic indexing of memory files as markdown
 - Sub-second search response times
@@ -220,16 +214,16 @@ Squish implements multi-layer storage for optimal performance:
 
 ## Plugin System
 
-Squish integrates with Claude Code via plugin hooks:
+Squish integrates with agent runtimes via plugin hooks (per-runtime folders under `plugin/`):
 
-**Hooks** (`plugin/plugin-wrapper.ts`)
+**Hooks** (`plugin/claude-code/hooks/hooks.json` + `plugin/claude-code/scripts/session-*.sh`, `plugin/codex/hooks.json`, `plugin/opencode/index.ts`, `plugin/openclaw/index.ts`)
 - `onInstall` - Initialize on first run
 - `onSessionStart` - Start auto-capture
 - `onUserPromptSubmit` - Capture user input
 - `onPostToolUse` - Capture tool results
 - `onSessionStop` - Save state on exit
 
-**Auto-Capture** (`plugin/capture.ts`)
+**Auto-Capture** (`core/ingestion/signal-engine.ts`, driven by the runtime plugins above)
 - Debounced capture (2 seconds)
 - Distillation and suppression before durable writes
 - Session working-set updates
@@ -237,7 +231,7 @@ Squish integrates with Claude Code via plugin hooks:
 - Incremental graph enrichment for durable writes
 - Raw fallback snapshotting for nuance-sensitive events
 
-**Context Injection** (`plugin/injection.ts`)
+**Context Injection** (`plugin/opencode/index.ts` and `plugin/openclaw/index.ts`, reading `core/context/context-window.ts`)
 - Generate CLAUDE.md files
 - Project context extraction
 
@@ -314,10 +308,7 @@ Query → Normalize → Split into:
 
 ## Performance Characteristics
 
-- **Memory operations**: ~2.6M ops/sec
-- **FTS5 queries**: ~10,000 ops/sec
-- **pgvector search**: 5k-50k ops/sec
-- **Web UI**: Real-time updates
+Performance depends on corpus size, database backend, hardware, and enabled retrieval paths. The project does not publish a general-purpose latency or throughput guarantee. See [`BENCHMARK.md`](BENCHMARK.md) for the scope and limitations of the reproducible retrieval diagnostics.
 
 ## Environment Variables
 
@@ -335,7 +326,7 @@ REDIS_URL=redis://localhost:6379
 SQUISH_WEB_PORT=37777
 
 # Memory
-SQUISH_MAX_MEMORIES=10000
+# Local memory count has no product-imposed cap; storage is bounded by available device space.
 SQUISH_CACHE_TTL=300
 
 # Multimodal Ingestion
@@ -353,9 +344,9 @@ SQUISH_LLM_CONSOLIDATION_MIN_CONNECTIONS=2
 
 ## Debugging
 
-Enable debug logs:
+Enable debug logs (no build step; the server runs from source):
 ```bash
-DEBUG=squish:* node dist/src/index.js
+DEBUG=squish:* bun mcp/index.ts   # or: npm run mcp
 ```
 
 ## Contributing

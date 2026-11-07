@@ -33,7 +33,7 @@ const waitModelSec = Math.max(0, parseInt(argFlag('--wait-model', '30'), 10) || 
 delete process.env.SQUISH_VECTOR_SCAN; // irrelevant for writes
 
 async function main(): Promise<void> {
-  const { getEmbedding, activeEmbeddingModel, ensureLocalModelReady, embeddingDim } =
+  const { getEmbedding, embeddingModelFor, activeEmbeddingModel, ensureLocalModelReady, embeddingDim } =
     await import('../core/embeddings/embeddings.js');
   const { enrichContent } = await import('../core/retrieval/contextual-enrichment.js');
   const { prepareEmbedding } = await import('../core/lib/utils.js');
@@ -109,7 +109,7 @@ async function main(): Promise<void> {
           failed += 1;
           continue;
         }
-        const values = prepareEmbedding(vector, { model: currentModel });
+        const values = prepareEmbedding(vector, { model: embeddingModelFor(vector) ?? currentModel });
         updateStmt.run(values.embeddingJson, values.embeddingBlob, values.embeddingModel, values.embeddingDim, row.id);
         processed += 1;
       } catch (error) {

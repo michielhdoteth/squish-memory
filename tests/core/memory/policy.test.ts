@@ -4,6 +4,7 @@
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { mkdirSync, existsSync, rmSync } from 'fs';
+import { createHash } from 'node:crypto';
 import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
 
 let testDataDir: string;
@@ -58,7 +59,6 @@ describe('Memory Policy', () => {
     const db = await getDb();
     const sqlite = (db as any).$client;
     if (sqlite && typeof sqlite.exec === 'function') {
-      sqlite.exec('DELETE FROM memory_associations;');
       sqlite.exec('DELETE FROM memories;');
       sqlite.exec('DELETE FROM places;');
     }
@@ -167,6 +167,45 @@ describe('Memory Policy', () => {
   test('promoteMemoryVisibility returns null for non-existent memory', async () => {
     const result = await promoteMemoryVisibility('00000000-0000-0000-0000-000000000000', 'project', 'test');
     expect(result).toBeNull();
+  });
+
+  test('promoteMemoryVisibility fails closed under strict trust and writes a hashed denial', async () => {
+    const previousPolicy = process.env.SQUISH_TRUST_POLICY;
+    const previousCaller = process.env.SQUISH_TRUSTED_CALLER_ID;
+    const caller = `policy-promoter-${Date.now()}`;
+    try {
+      const memory = await rememberMemory({
+        content: 'Visibility stays private until an authorized writer is available',
+        type: 'fact',
+        project: '/test-strict-promote',
+        user: caller,
+      });
+      const db = await getDb();
+      const sqlite = (db as { $client?: { prepare(sql: string): { get(...params: unknown[]): Record<string, unknown> | undefined } } }).$client;
+      if (!sqlite) throw new Error('Expected isolated SQLite database');
+      const before = sqlite.prepare('SELECT visibility_scope FROM memories WHERE id=?').get(memory.id);
+      if (!before) throw new Error('Expected persisted memory before strict visibility update');
+
+      process.env.SQUISH_TRUST_POLICY = 'strict';
+      process.env.SQUISH_TRUSTED_CALLER_ID = caller;
+      await expect(promoteMemoryVisibility(memory.id, 'team', 'strict promotion test'))
+        .rejects.toThrow('disabled under strict trust');
+
+      expect(sqlite.prepare('SELECT visibility_scope FROM memories WHERE id=?').get(memory.id))
+        .toMatchObject({ visibility_scope: before.visibility_scope });
+      const audit = sqlite.prepare(`SELECT actor_hash, resource_hash, asset_type, decision, reason
+        FROM trust_audit_log WHERE resource_hash=? ORDER BY created_at DESC LIMIT 1`)
+        .get(createHash('sha256').update(`memory_visibility:${memory.id}`).digest('hex'));
+      expect(audit).toMatchObject({
+        actor_hash: createHash('sha256').update(caller).digest('hex'),
+        asset_type: 'memory', decision: 'deny', reason: 'strict_surface',
+      });
+    } finally {
+      if (previousPolicy === undefined) delete process.env.SQUISH_TRUST_POLICY;
+      else process.env.SQUISH_TRUST_POLICY = previousPolicy;
+      if (previousCaller === undefined) delete process.env.SQUISH_TRUSTED_CALLER_ID;
+      else process.env.SQUISH_TRUSTED_CALLER_ID = previousCaller;
+    }
   });
 
   test('buildMemoryPolicy respects explicit visibility scope', () => {

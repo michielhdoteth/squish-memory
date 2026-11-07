@@ -11,8 +11,10 @@
 
 import { readFile, stat } from 'fs/promises';
 import { basename } from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { logger } from '../logger.js';
+import { config } from '../../config.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
 import { assertPathAllowed } from './path-validator.js';
 import { detectMimeType, isKnownMediaType } from './mime-detector.js';
 import { audioExtractor } from './extractors/audio-extractor.js';
@@ -42,6 +44,8 @@ function getExtractor(mimeType: string): MediaExtractor | null {
 export interface IngestInput {
   filePath: string;
   projectId?: string;
+  /** Authenticated MCP principal; required when strict trust is enabled. */
+  userId?: string;
   /** Optional override for MIME type (auto-detected if omitted) */
   mimeTypeOverride?: string;
   /** Optional tags to attach to the resulting memory */
@@ -62,9 +66,24 @@ export interface IngestInput {
  */
 export async function ingestMediaFile(input: IngestInput): Promise<IngestResult> {
   const { filePath, projectId, mimeTypeOverride, tags = [], source } = input;
+  const strict = isStrictTrustPolicy();
+  if (strict && !input.userId?.trim()) {
+    throw new Error('Strict file ingestion requires an authenticated caller');
+  }
 
   // 0. Path traversal guard -- reject paths outside allowed directories
   assertPathAllowed(filePath);
+
+  let fileSize = 0;
+  try {
+    fileSize = (await stat(filePath)).size;
+  } catch {
+    if (strict) throw new Error('Strict file ingestion could not validate the source file');
+  }
+  if (fileSize > config.multimodalMaxFileSizeBytes) {
+    throw new Error('File exceeds the configured multimodal size limit');
+  }
+  const sourceHashBefore = strict ? createHash('sha256').update(await readFile(filePath)).digest('hex') : undefined;
 
   // 1. Detect MIME type
   const { mime: mimeType, category } = mimeTypeOverride
@@ -127,13 +146,11 @@ export async function ingestMediaFile(input: IngestInput): Promise<IngestResult>
     };
   }
 
-  // 5. Get file stats
-  let fileSize = 0;
-  try {
-    const stats = await stat(filePath);
-    fileSize = stats.size;
-  } catch {
-    // ignore
+  if (strict && sourceHashBefore !== createHash('sha256').update(await readFile(filePath)).digest('hex')) {
+    throw new Error('Strict file ingestion source changed during extraction');
+  }
+  if (fileSize > config.multimodalMaxFileSizeBytes) {
+    throw new Error('File exceeds the configured multimodal size limit');
   }
 
   // 6. Build memory content - use description if no text, otherwise combine
@@ -152,11 +169,17 @@ export async function ingestMediaFile(input: IngestInput): Promise<IngestResult>
   // 8. Build metadata with media-specific info
   const metadata: Record<string, unknown> = {
     mediaType: category,
-    mediaPath: filePath,
     mediaMimeType: mimeType,
     mediaFileSize: fileSize,
     ...processed.metadata,
   };
+  if (strict) {
+    delete metadata.mediaPath;
+    delete metadata.filePath;
+    metadata.sourceId = `sha256:${sourceHashBefore}`;
+  } else {
+    metadata.mediaPath = filePath;
+  }
   if (processed.transcript) {
     metadata.transcript = processed.transcript;
   }
@@ -171,6 +194,7 @@ export async function ingestMediaFile(input: IngestInput): Promise<IngestResult>
       project: projectId,
       metadata,
       source: source ?? `multimodal:${category}`,
+      user: input.userId,
     });
 
     return {

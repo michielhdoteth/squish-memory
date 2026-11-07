@@ -10,6 +10,7 @@ import { createDatabaseClient } from '../../../core/storage/database.js';
 import { eq } from 'drizzle-orm';
 import { calculateProjectTokenSavings, formatTokenCount } from '../analytics/token-estimator.js';
 import type { Memory, MemoryMergeHistory } from '../../../db/drizzle/schema.js';
+import { assertMergeWorkflowAvailable } from './strict-trust-guard.js';
 
 interface GetMergeStatsInput {
   projectId: string;
@@ -47,6 +48,7 @@ interface GetMergeStatsResponse {
  */
 export async function handleGetMergeStats(input: GetMergeStatsInput): Promise<GetMergeStatsResponse> {
   try {
+    assertMergeWorkflowAvailable();
     const { projectId } = input;
 
     if (!projectId) {

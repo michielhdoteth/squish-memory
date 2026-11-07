@@ -49,4 +49,46 @@ describe('UAM Adapter Layer', () => {
     expect(bootstrap).toContain('tool_name');
     expect(bootstrap).toContain('session_id');
   });
+
+  test('strict adapters bind reads and withhold unprovenanced observation writes', async () => {
+    const priorPolicy = process.env.SQUISH_TRUST_POLICY;
+    const priorCaller = process.env.SQUISH_TRUSTED_CALLER_ID;
+    process.env.SQUISH_TRUST_POLICY = 'strict';
+    delete process.env.SQUISH_TRUSTED_CALLER_ID;
+    try {
+      const [claude, opencode, cursor, windsurf] = await Promise.all([
+        import('../../core/adapters/config/claude-code.js'),
+        import('../../core/adapters/config/opencode.js'),
+        import('../../core/adapters/config/cursor.js'),
+        import('../../core/adapters/config/windsurf.js'),
+      ]);
+      const adapters: import('../../core/adapters/types.js').AgentAdapter[] = [];
+      const captureAdapter = (adapter: import('../../core/adapters/types.js').AgentAdapter) => adapters.push(adapter);
+      claude.registerClaudeCodeAdapter(captureAdapter);
+      opencode.registerOpenCodeAdapter(captureAdapter);
+      cursor.registerCursorAdapter(captureAdapter);
+      windsurf.registerWindsurfAdapter(captureAdapter);
+      expect(adapters).toHaveLength(4);
+      for (const adapter of adapters) {
+        await expect(adapter.getSessionContext({ project: process.cwd(), mode: 'startup' }))
+          .rejects.toThrow('SQUISH_TRUSTED_CALLER_ID');
+        await expect(adapter.getTimeline('private memory', 'detail', 5))
+          .rejects.toThrow('SQUISH_TRUSTED_CALLER_ID');
+        await expect(adapter.recordObservation({
+          toolName: 'Read', toolInput: {}, toolResult: null, project: process.cwd(),
+        })).rejects.toThrow('SQUISH_TRUSTED_CALLER_ID');
+      }
+
+      const timeline = await import('../../core/adapters/timeline.js');
+      await expect(timeline.getTimeline('private memory', 'detail', 5))
+        .rejects.toThrow('SQUISH_TRUSTED_CALLER_ID');
+      await expect(timeline.getMemoryTimeline('guessed-memory-id', 'detail'))
+        .rejects.toThrow('SQUISH_TRUSTED_CALLER_ID');
+    } finally {
+      if (priorPolicy === undefined) delete process.env.SQUISH_TRUST_POLICY;
+      else process.env.SQUISH_TRUST_POLICY = priorPolicy;
+      if (priorCaller === undefined) delete process.env.SQUISH_TRUSTED_CALLER_ID;
+      else process.env.SQUISH_TRUSTED_CALLER_ID = priorCaller;
+    }
+  });
 });

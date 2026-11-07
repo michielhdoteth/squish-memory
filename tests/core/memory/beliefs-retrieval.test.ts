@@ -9,7 +9,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const tempDir = mkdtempSync(join(tmpdir(), 'squish-beliefs-recall-'));
 process.env.SQUISH_DATA_DIR = tempDir;
@@ -55,7 +55,8 @@ describe('beliefs join retrieval (Batch 6b)', () => {
 
     const db = await getDb();
     const sqlite = (db as any).$client;
-    const projRow = sqlite.prepare('SELECT id FROM projects WHERE path = ?').get('/proj/beliefs-test');
+    // The row is stored in the normalised form the write side produces.
+    const projRow = sqlite.prepare('SELECT id FROM projects WHERE path = ?').get(resolve('/proj/beliefs-test'));
     projectId = projRow?.id;
 
     // Sanity: the decision memory must have produced a knowledge belief row.
@@ -71,6 +72,37 @@ describe('beliefs join retrieval (Batch 6b)', () => {
     expect(memRow.sector).toBe('semantic'); // decision type routes semantic
     expect(memRow.valid_from).not.toBeNull();
     expect(memRow.recorded_at).not.toBeNull();
+
+    const projectionRow = sqlite.prepare(
+      `SELECT valid_from, valid_to, recorded_at FROM knowledge
+       WHERE knowledge_kind = 'memory' AND json_extract(metadata, '$.sourceMemoryId') = ?`
+    ).get(decision.id);
+    expect(projectionRow).toBeDefined();
+    expect(projectionRow.valid_from).toBe(memRow.valid_from);
+    expect(projectionRow.valid_to).toBeNull();
+    expect(projectionRow.recorded_at).not.toBeNull();
+  });
+
+  test('memory knowledge projection preserves an explicitly observed valid start', async () => {
+    const observedAt = new Date('2022-04-03T12:30:00.000Z');
+    const captured = await rememberMemory({
+      content: 'The archival service used a local index during the 2022 migration window.',
+      type: 'fact',
+      project: '/proj/beliefs-test',
+      validFrom: observedAt,
+    });
+    const db = await getDb();
+    const sqlite = (db as any).$client;
+    const rows = sqlite.prepare(
+      `SELECT m.valid_from AS memory_valid_from, k.valid_from AS knowledge_valid_from
+       FROM memories m
+       JOIN knowledge k ON json_extract(k.metadata, '$.sourceMemoryId') = m.id
+       WHERE m.id = ? AND k.knowledge_kind = 'memory'`
+    ).get(captured.id);
+
+    expect(rows).toBeDefined();
+    expect(rows.knowledge_valid_from).toBe(rows.memory_valid_from);
+    expect(Number(rows.knowledge_valid_from) * 1000).toBe(observedAt.getTime());
   });
 
   afterAll(() => {

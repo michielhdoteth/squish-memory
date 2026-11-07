@@ -2,21 +2,25 @@
 
 Squish integrates with Windsurf IDE as an MCP (Model Context Protocol) server that provides persistent memory capabilities for your coding sessions.
 
+> **Release status (2026-10-20): Squish 2.2.0 is an unpublished source candidate.** npm currently
+> resolves to 1.9.0, which has not been validated with this host guide. Do not install that package
+> or run setup commands from this page until a matching release and Windsurf compatibility are
+> announced. The configuration notes below are target-version reference material only.
+
 ## Prerequisites
 
 - Windsurf IDE latest version
-- Node.js 18.0.0 or later
-- Squish memory server (installed via npm)
+- Node.js 20.0.0 or later for the 2.2.0 source candidate
+- A published Squish release explicitly validated for Windsurf
 
 ## Installation
 
 Windsurf uses MCP-only integration. You need to manually configure the MCP server.
 
-### Step 1: Install Squish Globally
+### Step 1: Install a validated Squish release
 
-```bash
-npm install -g squish-memory
-```
+No install command is provided while the current source candidate is unpublished. Wait for a
+matching release announcement before continuing with the configuration reference below.
 
 ### Step 2: Configure MCP in Windsurf
 
@@ -104,7 +108,7 @@ Once installed, Squish works automatically with Windsurf:
 ### Environment Variables
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SQUISH_DATA_DIR` | Data directory for Squish | `~/.squish/windsurf` |
+| `SQUISH_DATA_DIR` | Optional override for the shared Squish data directory | `~/.squish` |
 | `SQUISH_COMMAND` | Command to start Squish MCP | `squish-mcp` |
 
 ### Configuration Options
@@ -134,20 +138,17 @@ The MCP server configuration supports:
 
 ## Uninstallation
 
-To remove Squish from Windsurf:
-
-```bash
-# Remove MCP server config
-rm ~/.windsurf/mcp.json
-```
+To remove Squish, remove only its MCP entry from Windsurf's configuration. Do not delete the whole
+configuration file, because it can contain settings for other tools. A validated uninstaller path
+will be documented with a matching Squish release.
 
 Your Squish data and memories in `~/.squish/` are preserved.
 
 ## Compatibility
 
 - Windsurf IDE: Latest version
-- Node.js: 18.0.0+
-- Squish: v1.0.0+
+- Node.js: 20.0.0+
+- Squish: 2.2.0 source candidate (unpublished; host compatibility pending)
 - Operating System: Linux, macOS, Windows
 
 ## See Also

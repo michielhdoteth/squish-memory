@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '../../db/index.js';
 import { getSchema } from '../../db/schema.js';
 import { config } from '../../config.js';
-import { getEmbedding } from '../embeddings.js';
+import { getEmbedding, embeddingModelFor, activeEmbeddingModel } from '../embeddings.js';
 import { logger } from '../logger.js';
 import { annotateMemoryMetadata, buildMemoryPolicy, buildVisibilityScopes, serializeVisibilityScopes } from '../memory/policy.js';
 
@@ -78,6 +78,8 @@ export async function storeAgentMemory(
       tags: options.tags || [],
       metadata: serializeMemoryMetadata(annotateMemoryMetadata(options.metadata || null, memoryPolicy)),
       embedding: embedding || null,
+      embeddingModel: embeddingModelFor(embedding) ?? activeEmbeddingModel(),
+      embeddingDim: embedding?.length ?? null,
       confidence: 100,
       relevanceScore: 50,
       createdAt: new Date(),
@@ -120,6 +122,8 @@ async function storeStandardMemory(
     tags: options.tags || [],
     metadata: options.metadata || null,
     embedding: embedding || null,
+    embeddingModel: embeddingModelFor(embedding) ?? activeEmbeddingModel(),
+    embeddingDim: embedding?.length ?? null,
     confidence: 100,
     relevanceScore: 50,
     createdAt: new Date(),

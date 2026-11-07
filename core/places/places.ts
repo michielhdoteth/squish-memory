@@ -12,15 +12,23 @@
  */
 
 import { randomUUID } from 'crypto';
+import { sqlLifecycleBound } from '../lib/timestamps.js';
 import { eq, and, isNull, or, desc } from 'drizzle-orm';
 import { getDbClient } from '../lib/db-client.js';
 import { logger } from '../logger.js';
+import { GLOBAL_PROJECT_PATH } from '../../config.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyUnscopedPlaceOperation } from './strict-gates.js';
+import { closeKnowledgeEdge } from '../knowledge/knowledge-edges.js';
 
 /**
  * Well-known project path for global scope
  * Used for places and rules that are global (not per-project)
+ *
+ * Defined in config.ts so `normalizeProjectPath()` can leave it alone, and
+ * re-exported here because this module is where callers import it from.
  */
-export const GLOBAL_PROJECT_PATH = '__squish_global__';
+export { GLOBAL_PROJECT_PATH };
 
 /**
  * Ensure the global project record exists
@@ -104,6 +112,7 @@ export const DEFAULT_PLACES: Omit<PlaceCreateInput, 'projectId'>[] = [
  * If no projectId provided, uses the global project scope.
  */
 export async function createPlace(input: PlaceCreateInput): Promise<Place> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('create', input.projectId ?? 'global');
   const { db, schema } = await getDbClient();
   const id = randomUUID();
 
@@ -163,6 +172,7 @@ export async function createPlace(input: PlaceCreateInput): Promise<Place> {
  * Get a place by ID
  */
 export async function getPlace(id: string): Promise<Place | null> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('read', id);
   const { db, schema } = await getDbClient();
 
   const result = await db.select()
@@ -195,6 +205,7 @@ export async function getPlace(id: string): Promise<Place | null> {
  * If no projectId is provided, returns global places.
  */
 export async function getProjectPlaces(projectId?: string): Promise<Place[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('list', projectId ?? 'global');
   const { db, schema } = await getDbClient();
 
   let results;
@@ -233,6 +244,7 @@ export async function getProjectPlaces(projectId?: string): Promise<Place[]> {
  * Get place by type for a project or global scope.
  */
 export async function getPlaceByType(projectId: string | undefined, placeType: PlaceType): Promise<Place | null> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('read_by_type', `${projectId ?? 'global'}:${placeType}`);
   const { db, schema } = await getDbClient();
 
   // Resolve project ID
@@ -270,6 +282,7 @@ export async function getPlaceByType(projectId: string | undefined, placeType: P
  * Update a place
  */
 export async function updatePlace(id: string, input: PlaceUpdateInput): Promise<Place | null> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('update', id);
   const { db, schema } = await getDbClient();
 
   const updateData: any = {};
@@ -295,9 +308,57 @@ export async function updatePlace(id: string, input: PlaceUpdateInput): Promise<
  * Delete a place
  */
 export async function deletePlace(id: string): Promise<boolean> {
-  const { db, schema } = await getDbClient();
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('delete', id);
+  const { db, schema, raw } = await getDbClient();
+  const sqlite = raw?.$client;
+  if (!sqlite?.prepare || !sqlite?.exec) {
+    // Preserve the existing adapter behavior outside the SQLite runtime. The
+    // source-backed temporal cleanup below requires SQLite's shared connection.
+    await db.delete(schema.places).where(eq(schema.places.id, id));
+    logger.info(`[Places] Deleted place: ${id}`);
+    return true;
+  }
 
-  await db.delete(schema.places).where(eq(schema.places.id, id));
+  sqlite.exec('BEGIN IMMEDIATE');
+  try {
+    const place = sqlite.prepare('SELECT project_id, place_type FROM places WHERE id = ?').get(id) as
+      { project_id: string; place_type: string } | undefined;
+    if (!place) {
+      sqlite.exec('COMMIT');
+      return true;
+    }
+
+    // Place assignments are temporal edges keyed by place type rather than a
+    // foreign key to the catalog row. Close only this project's current edges
+    // so removing one project's place cannot change another project's routing.
+    const now = Date.now();
+    const assignments = sqlite.prepare(`
+      SELECT e.id, e.valid_from
+      FROM knowledge_edges e
+      JOIN memories m ON m.id = e.from_id
+      WHERE e.from_kind = 'knowledge' AND e.to_kind = 'place'
+        AND e.edge_type = 'placed_in' AND e.to_id = ?
+        AND e.valid_from <= ? AND (e.valid_to IS NULL OR e.valid_to > ?)
+        AND e.recorded_at <= ? AND (e.recorded_to IS NULL OR e.recorded_to > ?)
+        AND (m.project_id = ? OR (m.project_id IS NULL AND EXISTS (
+          SELECT 1 FROM projects g WHERE g.id = ? AND g.path = ?
+        )))
+    `).all(
+      place.place_type, now, now, now, now,
+      place.project_id, place.project_id, GLOBAL_PROJECT_PATH,
+    ) as Array<{ id: string; valid_from: number }>;
+
+    for (const assignment of assignments) {
+      const validTo = Math.max(now, assignment.valid_from + 1);
+      const closed = await closeKnowledgeEdge(assignment.id, new Date(validTo));
+      if (!closed) throw new Error(`Place assignment changed during deletion: ${assignment.id}`);
+    }
+    sqlite.prepare('DELETE FROM places WHERE id = ?').run(id);
+    sqlite.exec('COMMIT');
+  } catch (error) {
+    sqlite.exec('ROLLBACK');
+    throw error;
+  }
   logger.info(`[Places] Deleted place: ${id}`);
 
   return true;
@@ -308,6 +369,7 @@ export async function deletePlace(id: string): Promise<boolean> {
  * These places are shared across all projects/profiles
  */
 export async function initializeGlobalPlaces(): Promise<Place[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('initialize', 'global');
   const global = await ensureGlobalProject();
   return initializeDefaultPlaces(global.id);
 }
@@ -316,6 +378,7 @@ export async function initializeGlobalPlaces(): Promise<Place[]> {
  * Get places in the global scope
  */
 export async function getGlobalPlaces(): Promise<Place[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('list', 'global');
   const global = await ensureGlobalProject();
   return getProjectPlaces(global.id);
 }
@@ -325,6 +388,7 @@ export async function getGlobalPlaces(): Promise<Place[]> {
  * If no projectId is provided, initializes global places.
  */
 export async function initializeDefaultPlaces(projectId?: string): Promise<Place[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('initialize', projectId ?? 'global');
   const created: Place[] = [];
 
   for (const placeConfig of DEFAULT_PLACES) {
@@ -361,6 +425,7 @@ export async function initializeDefaultPlaces(projectId?: string): Promise<Place
  * Get place by loci index
  */
 export async function getPlaceByLociIndex(projectId: string | undefined, sortOrder: number): Promise<Place | null> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('read_loci', `${projectId ?? 'global'}:${sortOrder}`);
   const { db, schema } = await getDbClient();
 
   const resolvedProjectId = projectId || (await ensureGlobalProject()).id;
@@ -398,20 +463,20 @@ export async function getPlaceByLociIndex(projectId: string | undefined, sortOrd
  * Counts placed_in edges from knowledge_edges for the place's type.
  */
 export async function updatePlaceMemoryCount(placeId: string): Promise<void> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('update_count', placeId);
   const { db, schema } = await getDbClient();
 
-  // Resolve placeId to placeType
-  let placeType: string | null = null;
+  // Resolve the place type and project together to keep counts isolated.
+  let placeRow: { place_type: string; project_id: string } | undefined;
   try {
-    const placeRow = (db as any).$client.prepare(
-      'SELECT place_type FROM places WHERE id = ? LIMIT 1'
-    ).get(placeId) as { place_type: string } | undefined;
-    placeType = placeRow?.place_type ?? null;
+    placeRow = (db as any).$client.prepare(
+      'SELECT place_type, project_id FROM places WHERE id = ? LIMIT 1'
+    ).get(placeId) as { place_type: string; project_id: string } | undefined;
   } catch {
     // Ignore
   }
 
-  if (!placeType) {
+  if (!placeRow?.place_type || !placeRow.project_id) {
     logger.warn(`[Places] Could not resolve place type for place ${placeId}`);
     return;
   }
@@ -420,10 +485,27 @@ export async function updatePlaceMemoryCount(placeId: string): Promise<void> {
   let count = 0;
   try {
     const sqlite = (db as any).$client || db;
+    const now = Date.now();
+    const nowSeconds = Math.floor(now / 1000);
     const row = sqlite.prepare(
-      `SELECT COUNT(*) as cnt FROM knowledge_edges
-       WHERE to_id = ? AND to_kind = 'place' AND edge_type = 'placed_in'`
-    ).get(placeType) as { cnt: number } | undefined;
+      `SELECT COUNT(DISTINCT e.from_id) as cnt
+       FROM knowledge_edges e
+       JOIN memories m ON m.id = e.from_id
+       WHERE e.from_kind = 'knowledge' AND e.to_id = ?
+         AND e.to_kind = 'place' AND e.edge_type = 'placed_in'
+         AND e.valid_from <= ? AND (e.valid_to IS NULL OR e.valid_to > ?)
+         AND e.recorded_at <= ? AND (e.recorded_to IS NULL OR e.recorded_to > ?)
+         AND m.status = 'active' AND m.is_active = 1
+          AND ${sqlLifecycleBound('m.valid_from', '<=')}
+          AND ${sqlLifecycleBound('m.valid_to', '>')}
+          AND ${sqlLifecycleBound('m.expires_at', '>')}
+         AND (m.project_id = ? OR (m.project_id IS NULL AND EXISTS (
+           SELECT 1 FROM projects g WHERE g.id = ? AND g.path = ?
+         )))`
+    ).get(
+      placeRow.place_type, now, now, now, now, nowSeconds, nowSeconds, nowSeconds,
+      placeRow.project_id, placeRow.project_id, GLOBAL_PROJECT_PATH,
+    ) as { cnt: number } | undefined;
     count = row?.cnt ?? 0;
   } catch {
     // knowledge_edges table may not exist on very old installs
@@ -439,6 +521,7 @@ export async function updatePlaceMemoryCount(placeId: string): Promise<void> {
  * Useful for fixing counts after bulk operations or data recovery
  */
 export async function syncAllPlaceMemoryCounts(projectId?: string): Promise<void> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('sync_counts', projectId ?? 'global');
   const { db, schema } = await getDbClient();
 
   const resolvedProjectId = projectId || (await ensureGlobalProject()).id;

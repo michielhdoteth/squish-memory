@@ -2,7 +2,7 @@
   "$schema": "./settings.schema.json",
   "version": "1.9.0",
   "data": {
-    "dir": ".squish"
+    "dir": "~/.squish"
   },
   "mcp": {
     "serverPort": 8767,
@@ -37,7 +37,8 @@
         "model": ""
       },
       "transformers": {
-        "model": ""
+        "model": "",
+        "device": "cpu"
       }
     }
   },
@@ -68,7 +69,10 @@
     "sessionAutoLoadEnabled": true,
     "queryRewritingEnabled": true,
     "queryRewritingFallbackEnabled": true,
-    "feedbackTrackingEnabled": true
+    "feedbackTrackingEnabled": true,
+    "writeDedup": "off",
+    "writeDedupThreshold": 0.85,
+    "writeDedupTopK": 5
   },
   "llm": {
     "enabled": false,
@@ -79,6 +83,25 @@
       "reasoning": ""
     }
   },
+  "decisionModel": {
+    "layerEnabled": false,
+    "modelEnabled": false,
+    "backend": "llm",
+    "provider": "auto",
+    "systemone": {
+      "provider": "ollaya",
+      "baseUrl": "",
+      "model": ""
+    },
+    "confidenceThreshold": 0.7,
+    "routeTimeoutMs": 300,
+    "classifyTimeoutMs": 1000
+  },
+  "promptGate": {
+    "enabled": true,
+    "modelEscalation": false,
+    "timeoutMs": 300
+  },
   "graph": {
     "autoBuild": true,
     "extractionMethod": "auto",
@@ -88,7 +111,7 @@
     "weights": {
       "recency": 0.5,
       "relevance": 3,
-      "importance": 2,
+      "importance": 0,
       "vectorSim": 3,
       "graphBoost": 0.10
     }

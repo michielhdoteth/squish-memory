@@ -6,10 +6,14 @@
  */
 
 import { getDb } from '../../db/index.js';
+import { getDataDir } from '../../config.js';
 import { ensureProject } from '../projects.js';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { logger } from '../logger.js';
+import { getMemoryAssociationRows } from '../associations.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyUnscopedGraphOperation } from './strict-gates.js';
 
 export interface GraphExportResult {
   htmlPath: string;
@@ -20,17 +24,22 @@ export interface GraphExportResult {
 
 /**
  * Generate a standalone HTML knowledge graph visualization.
- * Writes to .squish/graph.html and .squish/graph.json
+ * Writes to <dataDir>/graph/graph.html and <dataDir>/graph/graph.json so no
+ * code path ever creates a .squish folder inside the project directory.
  */
 export async function exportGraphVisualization(
   projectPath: string = process.cwd()
 ): Promise<GraphExportResult> {
+  if (isStrictTrustPolicy()) {
+    await denyUnscopedGraphOperation('export_graph', projectPath);
+  }
+
   const drizzle = await getDb();
   const db: any = (drizzle as any).$client ?? drizzle;
   const project = await ensureProject(projectPath);
   if (!project) throw new Error(`Project not found: ${projectPath}`);
 
-  const outputDir = join(process.cwd(), '.squish');
+  const outputDir = join(getDataDir(), 'graph');
   await mkdir(outputDir, { recursive: true });
 
   const nodes: any[] = [];
@@ -70,27 +79,33 @@ export async function exportGraphVisualization(
       }
     } catch { /* no entities table */ }
 
-    // Fetch memory associations
-    try {
-      const assocs = db.prepare(`
-        SELECT from_memory_id, to_memory_id, association_type, weight FROM memory_associations
-      `).all() as any[];
-      for (const a of assocs) {
-        if (nodeIds.has(a.from_memory_id) && nodeIds.has(a.to_memory_id)) {
-          edges.push({ source: a.from_memory_id, target: a.to_memory_id, label: a.association_type || 'related', weight: a.weight || 1 });
-        }
+    // Read active memory relationships through the temporal association adapter.
+    for (const association of await getMemoryAssociationRows()) {
+      if (nodeIds.has(association.fromMemoryId) && nodeIds.has(association.toMemoryId)) {
+        edges.push({
+          source: association.fromMemoryId,
+          target: association.toMemoryId,
+          label: association.associationType || 'related',
+          weight: association.weight || 1,
+        });
       }
-    } catch { /* no associations table */ }
+    }
 
-    // Fetch entity relations
+    // Fetch active canonical entity relations
     try {
-      const rels = db.prepare(`SELECT from_entity_id, to_entity_id, type, weight FROM entity_relations`).all() as any[];
+      const now = Date.now();
+      const rels = db.prepare(`
+        SELECT from_id, to_id, edge_type, weight FROM knowledge_edges
+        WHERE from_kind = 'entity' AND to_kind = 'entity'
+          AND valid_from <= ? AND (valid_to IS NULL OR valid_to > ?)
+          AND recorded_at <= ? AND (recorded_to IS NULL OR recorded_to > ?)
+      `).all(now, now, now, now) as any[];
       for (const r of rels) {
-        if (nodeIds.has(`e:${r.from_entity_id}`) && nodeIds.has(`e:${r.to_entity_id}`)) {
-          edges.push({ source: `e:${r.from_entity_id}`, target: `e:${r.to_entity_id}`, label: r.type || 'relates', weight: r.weight || 1 });
+        if (nodeIds.has(`e:${r.from_id}`) && nodeIds.has(`e:${r.to_id}`)) {
+          edges.push({ source: `e:${r.from_id}`, target: `e:${r.to_id}`, label: r.edge_type || 'relates', weight: r.weight || 1 });
         }
       }
-    } catch { /* no entity_relations table */ }
+    } catch { /* no knowledge_edges table */ }
 
   } catch (error) {
     logger.error('Graph export failed:', error);

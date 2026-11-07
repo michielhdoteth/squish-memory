@@ -13,6 +13,7 @@ import type {
   KnowledgeEdge,
   EdgeNodeKind,
 } from './types.js';
+import { deserializeTags } from '../memory/serialization.js';
 
 // ─── Serialization ───────────────────────────────────────────────────────────
 
@@ -24,6 +25,15 @@ export function serializeJson(obj: Record<string, unknown> | null | undefined): 
 export function deserializeJson<T>(str: string | null | undefined): T | null {
   if (!str) return null;
   try { return JSON.parse(str) as T; } catch { return null; }
+}
+
+function toDate(value: unknown): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return new Date(numeric < 100_000_000_000 ? numeric * 1000 : numeric);
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 // ─── Row Mappers ─────────────────────────────────────────────────────────────
@@ -74,28 +84,41 @@ export function toKnowledge(row: any): Knowledge {
     supersededBy: value('superseded_by', 'supersededBy') ?? null,
     contradictsId: value('contradicts_id', 'contradictsId') ?? null,
     informedById: value('informed_by_id', 'informedById') ?? null,
-    tags: row.tags ?? null,
+    // tags is a TEXT column holding a JSON array; parse at the boundary so
+    // consumers see string[] (null stays null - absent means absent).
+    tags: row.tags == null ? null : deserializeTags(row.tags),
     metadata: parseMetadata(metadata),
     placeId: value('place_id', 'placeId') ?? null,
     primaryPlace: value('primary_place', 'primaryPlace') ?? null,
     sector: row.sector ?? 'general',
     tier: row.tier ?? 'episodic',
     isActive: value('is_active', 'isActive') ?? 1,
+    validFrom: toDate(value('valid_from', 'validFrom')),
+    validTo: toDate(value('valid_to', 'validTo')),
+    recordedAt: toDate(value('recorded_at', 'recordedAt')),
     createdAt: createdAt instanceof Date ? createdAt : new Date(Number(createdAt ?? 0) * 1000),
     updatedAt: updatedAt instanceof Date ? updatedAt : new Date(Number(updatedAt ?? 0) * 1000),
   };
 }
 
 export function toKnowledgeEdge(row: any): KnowledgeEdge {
+  const rawMetadata = row.metadata;
+  const metadata = rawMetadata && typeof rawMetadata === 'object' && !Array.isArray(rawMetadata)
+    ? rawMetadata as Record<string, unknown>
+    : deserializeJson<Record<string, unknown>>(rawMetadata);
   return {
     id: row.id,
-    fromId: row.from_id,
-    fromKind: row.from_kind as EdgeNodeKind,
-    toId: row.to_id,
-    toKind: row.to_kind as EdgeNodeKind,
-    edgeType: row.edge_type,
+    fromId: row.from_id ?? row.fromId,
+    fromKind: (row.from_kind ?? row.fromKind) as EdgeNodeKind,
+    toId: row.to_id ?? row.toId,
+    toKind: (row.to_kind ?? row.toKind) as EdgeNodeKind,
+    edgeType: row.edge_type ?? row.edgeType,
     weight: row.weight ?? 1.0,
-    metadata: deserializeJson(row.metadata),
-    createdAt: new Date((row.created_at ?? 0) * 1000),
+    metadata,
+    createdAt: toDate(row.created_at ?? row.createdAt) ?? new Date(0),
+    validFrom: toDate(row.valid_from ?? row.validFrom),
+    validTo: toDate(row.valid_to ?? row.validTo),
+    recordedAt: toDate(row.recorded_at ?? row.recordedAt),
+    recordedTo: toDate(row.recorded_to ?? row.recordedTo),
   };
 }

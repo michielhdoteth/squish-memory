@@ -5,7 +5,7 @@
  */
 
 export { callLLM, callLLMWithContent, registerProvider, getActiveProviderName } from './client.js';
-export type { LLMCallOptions, LLMContentPart, LLMProvider } from './types.js';
+export type { LLMCallOptions, LLMContentPart, LLMProvider, LLMTokenUsage } from './types.js';
 
 // Auto-register all providers
 import { registerProvider } from './client.js';

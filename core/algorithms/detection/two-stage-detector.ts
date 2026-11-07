@@ -6,12 +6,13 @@
  */
 
 import type { Memory, MemoryType } from '../../../db/drizzle/schema.js';
-import { getEmbedding, getBatchEmbeddings } from '../../../core/embeddings.js';
+import { getEmbedding, getBatchEmbeddings, embeddingModelFor } from '../../../core/embeddings.js';
 import { SimHashFilter, MinHashFilter, findCandidatePairs } from './hash-filters.js';
 import { rankCandidates, analyzePair } from './semantic-ranker.js';
 import { eq, and } from 'drizzle-orm';
 import * as crypto from 'crypto';
 import { getDbClient } from '../../../core/lib/db-client.js';
+import { deserializeTags, deserializeMetadata } from '../../memory/serialization.js';
 
 export interface MemoryPair {
   memory1: Memory;
@@ -68,7 +69,18 @@ export async function detectDuplicates(options: DetectionOptions): Promise<Detec
     )
   );
 
-  const memories: Memory[] = await query.execute();
+  const rawRows: Memory[] = await query.execute();
+  // Boundary normalization: tags/metadata are TEXT columns typed as
+  // string[]/Record on the schema. Parse them here so every downstream
+  // consumer of these candidate rows - token estimation, pair analysis, and
+  // especially mergeMemories (whose mergeTags would otherwise iterate a JSON
+  // string character-by-character and persist a corrupted tag array) - sees
+  // the shapes its type promises.
+  const memories: Memory[] = rawRows.map((row) => ({
+    ...row,
+    tags: deserializeTags(row.tags),
+    metadata: deserializeMetadata(row.metadata),
+  }));
 
   if (memories.length < 2) {
     return {
@@ -229,6 +241,8 @@ export async function detectDuplicates(options: DetectionOptions): Promise<Detec
       const embedding = generatedEmbeddings[i];
       if (embedding) {
         embeddings.set(memoriesWithoutEmbedding[i].id, embedding);
+        const model = embeddingModelFor(embedding);
+        if (model) memoriesWithoutEmbedding[i].embeddingModel = model;
       }
     }
   }
@@ -356,6 +370,10 @@ export async function analyzeMergePair(
   if (!embedding1 || !embedding2 || embedding1.length === 0 || embedding2.length === 0) {
     return null;
   }
+
+  const model1 = embeddingModelFor(embedding1 as number[]) ?? memory1.embeddingModel ?? null;
+  const model2 = embeddingModelFor(embedding2 as number[]) ?? memory2.embeddingModel ?? null;
+  if (model1 && model2 && model1 !== model2) return null;
 
   const analysis = analyzePair(
     memory1,

@@ -4,24 +4,16 @@
 import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import { toSqliteJson } from '../memory/serialization.js';
 import { encodeEmbeddingBlob, normalizeForStorage } from './embedding-codec.js';
+import { normalizeTimestampLadder } from './timestamps.js';
 
 export function normalizeTimestamp(value: any): string | null {
   if (!value) return null;
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'number') {
     try {
-      // Handle different timestamp formats using magnitude thresholds
-      // Microseconds: > 100000000000000 (e.g., 1700000000000000)
-      // Milliseconds: > 1000000000000 (e.g., 1700000000000)
-      // Seconds: <= 1000000000000 (e.g., 1700000000)
-      if (value > 100000000000000) {
-        return new Date(value / 1000).toISOString();
-      } else if (value > 1000000000000) {
-        return new Date(value).toISOString();
-      } else if (value >= 0) {
-        return new Date(value * 1000).toISOString();
-      }
-      return null;
+      // Magnitude ladder (micro/milli/seconds) lives in ./timestamps.js
+      const date = normalizeTimestampLadder(value);
+      return date ? date.toISOString() : null;
     } catch {
       return null;
     }

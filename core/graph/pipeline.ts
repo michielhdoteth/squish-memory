@@ -12,8 +12,13 @@ import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
 import { config } from '../../config.js';
 import { extractAndStoreRelations } from './relationship-extractor.js';
+import { extractEntitiesAndRelations } from './llm-entity-extractor.js';
+import { publishProjectGraphSnapshot } from './snapshot-publisher.js';
 import { deduplicateProjectEntities } from './entity-deduplicator.js';
 import { getGraphStats } from './graph-builder.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyUnscopedGraphOperation } from './strict-gates.js';
+import { filterGraphSourceMemories } from './memory-lifecycle.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -107,6 +112,7 @@ export async function buildProjectGraph(
   projectPath: string,
   options?: PipelineOptions
 ): Promise<PipelineStats> {
+  if (isStrictTrustPolicy()) await denyUnscopedGraphOperation('project_graph_pipeline', projectPath);
   const startTime = Date.now();
   const {
     clearExisting = false,
@@ -135,35 +141,65 @@ export async function buildProjectGraph(
   const db = await getDb();
   const schema = await getSchema();
 
-  // Clear existing graph if requested
-  if (clearExisting) {
-    const { clearProjectGraph } = await import('./relationship-extractor.js');
-    await clearProjectGraph(projectId);
-    logger.info('Cleared existing graph for pipeline', { projectId });
-  }
-
   // Fetch all memories for the project (bounded to prevent OOM)
-  const memories = await (db as any)
+  const projectMemories = await (db as any)
     .select()
     .from(schema.memories)
     .where(eq(schema.memories.projectId, projectId))
     .limit(maxMemories);
+  const memories = await filterGraphSourceMemories((db as any).$client, projectId, projectMemories);
 
   const totalMemories = memories.length;
+
+  // Preflight every extraction before clearing the currently published graph.
+  // An extraction failure therefore leaves the old graph available.
+  const stagedExtractions: Awaited<ReturnType<typeof extractEntitiesAndRelations>>[] | null = clearExisting ? [] : null;
+  let stagedEntityCount = 0;
+  let stagedRelationCount = 0;
+  if (stagedExtractions) {
+    for (let index = 0; index < memories.length; index++) {
+      const memory = memories[index];
+      try {
+        const extraction = await extractEntitiesAndRelations(memory.content, { preferLLM });
+        stagedExtractions.push(extraction);
+        stagedEntityCount += extraction.entities.length;
+        stagedRelationCount += extraction.relations.length;
+        onProgress?.({
+          phase: 'extract',
+          processed: index + 1,
+          total: totalMemories,
+          entitiesCreated: stagedEntityCount,
+          relationsCreated: stagedRelationCount,
+        });
+      } catch (error) {
+        logger.error('Pipeline rebuild extraction failed before publish', {
+          memoryId: memory.id,
+          error: error as Error,
+        });
+        throw new Error(`Graph pipeline extraction failed for memory ${memory.id}; existing graph was preserved`, { cause: error });
+      }
+    }
+
+  }
+
+  const stagedStats = stagedExtractions
+    ? await publishProjectGraphSnapshot((db as any).$client, projectId, memories, stagedExtractions)
+    : null;
 
   if (totalMemories === 0) {
     logger.info('No memories to process for graph pipeline', { projectPath });
     return emptyStats(Date.now() - startTime);
   }
 
-  let entitiesCreated = 0;
-  let relationsCreated = 0;
+  let entitiesCreated = stagedStats?.entitiesCreated ?? 0;
+  let relationsCreated = stagedStats?.relationsCreated ?? 0;
   let errors = 0;
   const sources: Array<'llm' | 'regex' | 'fallback' | 'none'> = [];
+  if (stagedExtractions) sources.push(...stagedExtractions.map((extraction) => extraction.source));
 
   // ── Phase: Extract + Store ──────────────────────────────────────────
 
-  for (let i = 0; i < totalMemories; i += batchSize) {
+  for (let i = 0; stagedExtractions === null && i < totalMemories; i += batchSize) {
     const batch = memories.slice(i, i + batchSize);
 
     for (const memory of batch) {
@@ -178,12 +214,7 @@ export async function buildProjectGraph(
       });
 
       try {
-        const result = await extractAndStoreRelations(
-          memory.id,
-          memory.content,
-          projectId,
-          { preferLLM }
-        );
+        const result = await extractAndStoreRelations(memory.id, memory.content, projectId, { preferLLM });
 
         entitiesCreated += result.entities;
         relationsCreated += result.relations;
@@ -290,6 +321,7 @@ export async function buildMemoryGraph(
   memoryId: string,
   options?: { preferLLM?: boolean }
 ): Promise<PipelineResult> {
+  if (isStrictTrustPolicy()) await denyUnscopedGraphOperation('memory_graph_pipeline', memoryId);
   const startTime = Date.now();
   const preferLLM = options?.preferLLM ?? config.llmEnabled;
 

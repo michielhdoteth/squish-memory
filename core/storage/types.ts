@@ -42,6 +42,11 @@ export interface RecallOptions {
   sessionId?: string;
   strategy?: RetrievalStrategy;
   trace?: boolean;
+  referenceDate?: string | Date;
+  timeZone?: string;
+  latestOnly?: boolean;
+  validTimeFrom?: string | Date;
+  validTimeTo?: string | Date;
 }
 
 export interface FacadeOptions {

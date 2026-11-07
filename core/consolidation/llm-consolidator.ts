@@ -23,6 +23,7 @@ import { getDbClient } from '../lib/db-client.js';
 import { createKnowledge } from '../knowledge/knowledge-crud.js';
 import { createKnowledgeEdge } from '../knowledge/knowledge-edges.js';
 import type { KnowledgeEdgeType } from '../knowledge/types.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,14 @@ export async function runLLMConsolidation(
     memoriesProcessed: 0,
     errors: [],
   };
+
+  // Cross-memory insights currently lack a verified multi-source lineage
+  // signature. Do not spend model calls or persist unsigned derived knowledge
+  // when strict trust is selected; reads would quarantine these rows anyway.
+  if (isStrictTrustPolicy()) {
+    result.errors.push('Strict trust disabled LLM consolidation until derived insights have signed source lineage');
+    return result;
+  }
 
   const effectiveLlmEnabled = options?.llmEnabled ?? config.llmEnabled;
   if (!effectiveLlmEnabled) {

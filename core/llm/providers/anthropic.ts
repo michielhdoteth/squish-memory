@@ -9,6 +9,7 @@ import { config } from '../../../config.js';
 import { logger } from '../../logger.js';
 import { validateOutboundUrl } from '../../lib/url-validator.js';
 import type { LLMProvider, LLMCallOptions, LLMContentPart } from '../types.js';
+import { reportLLMTokenUsage } from '../usage.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -44,14 +45,18 @@ export const anthropicProvider: LLMProvider = {
   name: 'anthropic',
 
   isAvailable(): boolean {
-    return config.llmEnabled && Boolean(config.anthropicApiKey);
+    // "Configured" check only: the master SQUISH_LLM_ENABLED switch lives in
+    // the client router (getActiveProvider), so the decision layer can reuse
+    // this provider with its own independent opt-in.
+    return Boolean(config.anthropicApiKey);
   },
 
   async call(options: LLMCallOptions): Promise<string | null> {
     if (!this.isAvailable()) return null;
 
-    const model = config.llmExtractionModel || config.anthropicModel;
+    const model = options.model ?? (config.llmExtractionModel || config.anthropicModel);
     const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
     const timeout = setTimeout(
       () => controller.abort(),
       options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -82,7 +87,7 @@ export const anthropicProvider: LLMProvider = {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal,
       });
 
       clearTimeout(timeout);
@@ -94,7 +99,9 @@ export const anthropicProvider: LLMProvider = {
 
       const data = (await response.json()) as {
         content?: Array<{ text?: string }>;
+        usage?: unknown;
       };
+      reportLLMTokenUsage(options, data.usage, { inputTokens: 'input_tokens', outputTokens: 'output_tokens' });
       return data.content?.[0]?.text?.trim() ?? null;
     } catch (err: unknown) {
       clearTimeout(timeout);

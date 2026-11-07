@@ -10,6 +10,14 @@ import { config } from '../../config.js';
 import { getDbClient } from '../lib/db-client.js';
 import { logger } from '../logger.js';
 import { serializeJson, toKnowledge } from './helpers.js';
+import { logAuditEntry } from './audit.js';
+import { isStrictTrustPolicy, TrustBoundaryError } from '../acl/trust-policy.js';
+import { denyStrictSurface } from '../acl/trust-audit.js';
+import { signMemoryProvenance, verifyMemoryProvenance, verifySignedBeliefProjection } from '../acl/provenance.js';
+import { decrypt } from '../security/encrypt.js';
+import type { DrizzleExecutor } from '../storage/database.js';
+import { deserializeMetadata } from '../memory/serialization.js';
+import { isGeneratedContextEcho } from '../memory/context-echo.js';
 import type {
   Knowledge,
   KnowledgeKind,
@@ -117,16 +125,40 @@ export async function ensureKnowledgeTables(): Promise<void> {
           edge_type TEXT NOT NULL,
           weight REAL DEFAULT 1.0,
           metadata TEXT,
-          created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL
+          created_at INTEGER DEFAULT (strftime('%s','now')) NOT NULL,
+          valid_from INTEGER,
+          valid_to INTEGER,
+          recorded_at INTEGER,
+          recorded_to INTEGER
         )
       `);
       sqlite.exec(`CREATE INDEX IF NOT EXISTS knowledge_edges_from_idx ON knowledge_edges(from_id, from_kind)`);
       sqlite.exec(`CREATE INDEX IF NOT EXISTS knowledge_edges_to_idx ON knowledge_edges(to_id, to_kind)`);
       sqlite.exec(`CREATE INDEX IF NOT EXISTS knowledge_edges_type_idx ON knowledge_edges(edge_type)`);
-      sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS knowledge_edges_unique ON knowledge_edges(from_id, from_kind, to_id, to_kind, edge_type)`);
+      // Declared in db/bootstrap.ts and db/drizzle/schema-sqlite.ts:987,989 but
+      // previously missing here, so this copy of the DDL created the table with
+      // four indexes where the other definitions create six. Bootstrap's replay
+      // masked it on every normal connect; the gap only showed when this
+      // fallback was the sole creator. Keep all knowledge_edges definitions in
+      // agreement - tests/db/knowledge-edges-ddl-parity.test.ts enforces it.
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS knowledge_edges_from_kind_idx ON knowledge_edges(from_kind)`);
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS knowledge_edges_to_kind_idx ON knowledge_edges(to_kind)`);
+      sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS knowledge_edges_unique ON knowledge_edges(from_id, from_kind, to_id, to_kind, edge_type, valid_from, recorded_at)`);
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS knowledge_edges_valid_time_idx ON knowledge_edges(valid_from, valid_to, recorded_at, recorded_to)`);
     } catch (error) {
       logger.warn(`Migration: Could not create knowledge_edges table: ${error}`);
     }
+  }
+}
+
+async function authorizeStrictSourceRead(sourceId: string, executor?: DrizzleExecutor): Promise<void> {
+  if (!isStrictTrustPolicy()) return;
+  const { resolveTrustedCallerId } = await import('../acl/trust-policy.js');
+  const callerId = resolveTrustedCallerId();
+  if (!callerId) throw new TrustBoundaryError('Source memory access requires a bound caller');
+  const { preauthorizeStrictMemoryReadBeforeDecrypt } = await import('../acl/read-gate.js');
+  if (!await preauthorizeStrictMemoryReadBeforeDecrypt(sourceId, callerId, executor)) {
+    throw new TrustBoundaryError('Source memory is not readable by the authenticated principal');
   }
 }
 
@@ -135,12 +167,141 @@ export async function ensureKnowledgeTables(): Promise<void> {
 /**
  * Insert a new knowledge record.
  */
-export async function createKnowledge(input: CreateKnowledgeInput): Promise<Knowledge> {
+export async function createKnowledge(input: CreateKnowledgeInput, executor?: DrizzleExecutor): Promise<Knowledge> {
+  if (isStrictTrustPolicy() && input.knowledgeKind !== 'memory' && input.knowledgeKind !== 'belief') {
+    throw new TrustBoundaryError('Strict trust requires source-verified knowledge derivation');
+  }
+  if (input.knowledgeKind === 'memory' && !input.sourceMemoryId) {
+    if (isStrictTrustPolicy()) throw new TrustBoundaryError('Strict trust requires source-linked memory projections');
+  }
+  if (isGeneratedContextEcho(input.content)) {
+    throw new Error('Generated context cannot be stored as new knowledge');
+  }
+  let metadata = input.metadata ?? null;
+  let encryptedProjection: { ciphertext: string; nonce: string } | null = null;
+  if (input.knowledgeKind === 'memory') {
+    if (!input.sourceMemoryId) {
+      if (isStrictTrustPolicy()) throw new TrustBoundaryError('Strict trust requires source-linked memory projections');
+    } else {
+      if (metadata?.sourceMemoryId !== input.sourceMemoryId) {
+        throw new TrustBoundaryError('Memory projection source lineage does not match its metadata');
+      }
+      const encryptedSourceMetadata = metadata?.encrypted === true;
+      const provenance = encryptedSourceMetadata ? null : signMemoryProvenance({
+        content: input.content,
+        projectId: input.projectId ?? null,
+        type: input.knowledgeType,
+        ownerId: input.ownerId ?? null,
+        teamId: input.teamId ?? null,
+        sourceMemoryId: input.sourceMemoryId,
+        metadata,
+      });
+      if (!encryptedSourceMetadata && !provenance && isStrictTrustPolicy()) {
+        throw new TrustBoundaryError('Strict trust requires provenance signing keys for memory projections');
+      }
+      if (provenance) metadata = { ...metadata, __squishProvenance: provenance };
+    }
+  }
   await ensureKnowledgeTables();
   const { getDb } = await import('../../db/index.js');
   const { getSchema } = await import('../../db/schema.js');
-  const db = await getDb();
+  const db = executor ?? await getDb();
   const schema = await getSchema();
+  if (isStrictTrustPolicy() && input.knowledgeKind === 'belief') {
+    const sourceMemoryId = typeof metadata?.sourceMemoryId === 'string' ? metadata.sourceMemoryId : null;
+    if (!sourceMemoryId) {
+      throw new TrustBoundaryError('Strict belief creation requires a signed source memory');
+    }
+    const { eq } = await import('drizzle-orm');
+    const [source] = await (db as any).select().from(schema.memories)
+      .where(eq(schema.memories.id, sourceMemoryId)).limit(1);
+    if (!source || (input.projectId && source.projectId !== input.projectId)) {
+      throw new TrustBoundaryError('Strict belief source is unavailable in the requested project');
+    }
+    if (Boolean(source.isEncrypted ?? source.is_encrypted)) {
+      if (!source.encryptedContent || !source.encryptionNonce) {
+        throw new TrustBoundaryError('Encrypted belief source is missing ciphertext metadata');
+      }
+      await authorizeStrictSourceRead(source.id);
+    }
+    const sourceContent = source.isEncrypted
+      ? decrypt(source.encryptedContent, source.encryptionNonce)
+      : source.content;
+    const sourceMetadata = deserializeMetadata(source.metadata) ?? null;
+    if (!verifyMemoryProvenance({
+      content: sourceContent, projectId: source.projectId ?? null, type: source.type,
+      ownerId: source.userId ?? null, teamId: source.teamId ?? null,
+      sourceMemoryId: source.id, metadata: sourceMetadata,
+    })) {
+      throw new TrustBoundaryError('Strict belief source provenance is invalid');
+    }
+    const { resolveTrustedCallerId } = await import('../acl/trust-policy.js');
+    const callerId = resolveTrustedCallerId();
+    if (!callerId) throw new TrustBoundaryError('Strict belief creation requires a bound caller');
+    const { applyAclReadGate } = await import('../acl/read-gate.js');
+    const readable = await applyAclReadGate([{
+      id: source.id, projectId: source.projectId ?? null, content: sourceContent,
+      type: source.type, userId: source.userId ?? null, teamId: source.teamId ?? null,
+      status: source.status, isActive: source.isActive, expiresAt: source.expiresAt ?? null,
+      metadata: sourceMetadata,
+    }], { userId: callerId }, () => 'memory');
+    if (readable.length !== 1) throw new TrustBoundaryError('Strict belief source is not readable by the authenticated principal');
+    if (!verifySignedBeliefProjection({
+      content: input.content, projectId: source.projectId ?? null, type: input.knowledgeType,
+      ownerId: source.userId ?? null, teamId: source.teamId ?? null, sourceMemoryId: source.id,
+      metadata: metadata ?? {}, confidence: input.confidence ?? 0.5,
+      status: input.status ?? 'active', reason: input.reason ?? null,
+      evidenceSummary: input.evidenceSummary ?? null,
+    })) {
+      throw new TrustBoundaryError('Strict belief creation requires a valid signed single-source projection');
+    }
+  }
+  if (input.knowledgeKind === 'memory' && input.sourceMemoryId) {
+    const { eq } = await import('drizzle-orm');
+    const [source] = await (db as any).select().from(schema.memories)
+      .where(eq(schema.memories.id, input.sourceMemoryId)).limit(1);
+    const encryptedSource = Boolean(source?.isEncrypted ?? source?.is_encrypted);
+    const sourceCiphertext = source?.encryptedContent ?? source?.encrypted_content;
+    const sourceNonce = source?.encryptionNonce ?? source?.encryption_nonce;
+    if (source && encryptedSource) {
+      if (!sourceCiphertext || !sourceNonce) {
+        throw new TrustBoundaryError('Encrypted memory projection source is missing ciphertext metadata');
+      }
+    }
+    // Strict projection creation is caller-bound even for plaintext
+    // sources. A valid signature proves origin and integrity, not permission
+    // for this caller to derive and receive a projection from that source.
+    if (source && isStrictTrustPolicy()) await authorizeStrictSourceRead(source.id, executor);
+    const sourceContent = encryptedSource
+      ? decrypt(sourceCiphertext, sourceNonce)
+      : source?.content;
+    if (encryptedSource) {
+      encryptedProjection = { ciphertext: sourceCiphertext, nonce: sourceNonce };
+    }
+    if (!source || sourceContent !== input.content || (source.projectId ?? null) !== (input.projectId ?? null)
+      || source.type !== input.knowledgeType || (source.userId ?? null) !== (input.ownerId ?? null)
+      || (source.teamId ?? null) !== (input.teamId ?? null)) {
+      throw new TrustBoundaryError(`Memory projection source mismatch: ${JSON.stringify({
+        exists: Boolean(source), content: sourceContent === input.content,
+        project: (source?.projectId ?? null) === (input.projectId ?? null),
+        type: source?.type === input.knowledgeType,
+        owner: (source?.userId ?? null) === (input.ownerId ?? null),
+        team: (source?.teamId ?? null) === (input.teamId ?? null),
+      })}`);
+    }
+    const sourceMetadata = deserializeMetadata(source.metadata) ?? null;
+    if (isStrictTrustPolicy() && !verifyMemoryProvenance({
+      content: sourceContent,
+      projectId: source.projectId ?? null,
+      type: source.type,
+      ownerId: source.userId ?? null,
+      teamId: source.teamId ?? null,
+      sourceMemoryId: input.sourceMemoryId,
+      metadata: sourceMetadata,
+    })) {
+      throw new TrustBoundaryError('Strict trust requires a provenance-verified memory projection source');
+    }
+  }
   const id = randomUUID();
   const now = new Date();
   const [row] = await (db as any).insert(schema.knowledge).values({
@@ -151,8 +312,11 @@ export async function createKnowledge(input: CreateKnowledgeInput): Promise<Know
     sessionId: input.sessionId ?? null,
     knowledgeKind: input.knowledgeKind,
     knowledgeType: input.knowledgeType,
-    content: input.content,
-    summary: input.summary ?? null,
+    content: encryptedProjection ? '' : input.content,
+    encryptedContent: encryptedProjection?.ciphertext ?? null,
+    encryptionNonce: encryptedProjection?.nonce ?? null,
+    isEncrypted: Boolean(encryptedProjection),
+    summary: encryptedProjection ? null : input.summary ?? null,
     confidence: input.confidence ?? 0.5,
     confidenceLevel: input.confidenceLevel ?? 'certain',
     importanceScore: input.importanceScore ?? 0.5,
@@ -166,26 +330,41 @@ export async function createKnowledge(input: CreateKnowledgeInput): Promise<Know
     successCriteria: input.successCriteria ?? null,
     failureIndicators: input.failureIndicators ?? null,
     status: input.status ?? 'active',
-    tags: input.tags ? JSON.stringify(input.tags) : null,
+    tags: encryptedProjection ? null : input.tags ? JSON.stringify(input.tags) : null,
     metadata: (await import('../../config.js')).config.mode === 'team'
-      ? input.metadata ?? null
-      : serializeJson(input.metadata ?? null),
+      ? metadata
+      : serializeJson(metadata),
     placeId: input.placeId ?? null,
     primaryPlace: input.primaryPlace ?? null,
     sector: input.sector ?? 'general',
     tier: input.tier ?? 'episodic',
     isActive: input.isActive ?? true,
+    validFrom: input.validFrom ?? null,
+    validTo: input.validTo ?? null,
+    recordedAt: input.recordedAt ?? now,
     createdAt: now,
     updatedAt: now,
   }).returning();
   if (!row) throw new Error(`Failed to create knowledge record with id ${id}`);
-  return toKnowledge(row);
+  const knowledge = toKnowledge(row);
+  await logAuditEntry({
+    knowledgeId: knowledge.id,
+    action: 'create',
+    agentId: input.agentId,
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    details: { kind: input.knowledgeKind, type: input.knowledgeType },
+  }, executor);
+  return knowledge;
 }
 
 /**
  * Get a knowledge record by ID.
  */
 export async function getKnowledgeById(id: string): Promise<Knowledge | null> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(`knowledge_read:${id}`, 'knowledge', 'Unscoped knowledge reads are disabled under strict trust');
+  }
   await ensureKnowledgeTables();
   const { getDb } = await import('../../db/index.js');
   const { getSchema } = await import('../../db/schema.js');
@@ -203,6 +382,12 @@ export async function updateKnowledge(
   id: string,
   updates: Partial<CreateKnowledgeInput>
 ): Promise<Knowledge | null> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(`knowledge_update:${id}`, 'knowledge', 'Unscoped knowledge updates are disabled under strict trust');
+  }
+  if (typeof updates.content === 'string' && isGeneratedContextEcho(updates.content)) {
+    throw new Error('Generated context cannot replace stored knowledge');
+  }
   await ensureKnowledgeTables();
   const { raw } = await getDbClient();
   const sqlite = (raw as any).$client;
@@ -264,20 +449,38 @@ export async function updateKnowledge(
 
   sqlite.prepare(`UPDATE knowledge SET ${setClauses.join(', ')} WHERE id = ?`).run(...values);
 
-  return getKnowledgeById(id);
+  const updated = await getKnowledgeById(id);
+  if (updated) {
+    await logAuditEntry({
+      knowledgeId: id,
+      action: 'update',
+      details: { updatedFields: Object.keys(updates) },
+    });
+  }
+  return updated;
 }
 
 /**
  * Delete a knowledge record by ID.
  */
 export async function deleteKnowledge(id: string): Promise<boolean> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(`knowledge_delete:${id}`, 'knowledge', 'Unscoped knowledge deletion is disabled under strict trust');
+  }
   await ensureKnowledgeTables();
   const { raw } = await getDbClient();
   const sqlite = (raw as any).$client;
   if (!sqlite) return false;
 
   const result = sqlite.prepare('DELETE FROM knowledge WHERE id = ?').run(id);
-  return result.changes > 0;
+  const deleted = result.changes > 0;
+  if (deleted) {
+    await logAuditEntry({
+      knowledgeId: id,
+      action: 'delete',
+    });
+  }
+  return deleted;
 }
 
 // ─── Search & List ───────────────────────────────────────────────────────────
@@ -296,6 +499,9 @@ export async function searchKnowledge(options: {
   limit?: number;
   offset?: number;
 }): Promise<Knowledge[]> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface(`knowledge_search:${options.projectId ?? 'all_projects'}`, 'knowledge', 'Unscoped knowledge search is disabled under strict trust');
+  }
   await ensureKnowledgeTables();
   const { raw } = await getDbClient();
   const sqlite = (raw as any).$client;

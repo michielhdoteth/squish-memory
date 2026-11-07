@@ -11,6 +11,11 @@ type Settings = Record<string, unknown>;
 
 const EMBEDDINGS_PROVIDERS = ['openai', 'ollama', 'lmstudio', 'transformers', 'local', 'none', 'google', 'auto'] as const;
 const LLM_PROVIDERS = ['openai', 'anthropic', 'google', 'ollama', 'lmstudio', 'local'] as const;
+const DECISION_PROVIDERS = ['auto', ...LLM_PROVIDERS] as const;
+/** Which engine executes decision escalation (Phase B4). */
+const DECISION_MODEL_BACKENDS = ['off', 'llm', 'systemone'] as const;
+/** System One providers (presets in core/decision-model/systemone-providers.ts). */
+const SYSTEMONE_PROVIDERS = ['ollaya', 'openrouter', 'typesafe', 'laya', 'cloudflare', 'vercel'] as const;
 const GRAPH_EXTRACTION_METHODS = ['llm', 'regex', 'auto'] as const;
 const SCHEDULER_MODES = ['cron', 'interval', 'heartbeat'] as const;
 const DECAY_ENGINES = ['sector', 'ebbinghaus'] as const;
@@ -22,7 +27,9 @@ const DECAY_ENGINES = ['sector', 'ebbinghaus'] as const;
  * rows - operators of very large corpora should set SQUISH_VECTOR_SCAN=recency.
  * Benchmark: scripts/bench-vector-scan.ts
  */
-const VECTOR_SCAN_DEFAULT: 'recency' | 'full' = 'recency';
+// Prefer recall over bounded recency candidate selection. The latter can be
+// explicitly selected for latency-sensitive deployments with SQUISH_VECTOR_SCAN.
+const VECTOR_SCAN_DEFAULT: 'recency' | 'full' = 'full';
 
 function loadSettings(): Settings {
   const settingsPath = join(__dirname, 'config', 'settings.json');
@@ -95,11 +102,62 @@ function getEnum<T extends readonly string[]>(
  * Detects the current project root directory.
  * Uses a unified WORKING_DIRECTORY approach - all agents set the same thing.
  * Priority: SQUISH_WORKING_DIRECTORY > INIT_CWD > cwd
+ *
+ * The wrappers in bin/ forward their launching cwd as SQUISH_WORKING_DIRECTORY
+ * (see ADR-002), so this is normally already set. The cwd fallback stays for
+ * direct `tsx mcp/index.ts` / `bun mcp/index.ts` launches.
  */
 function detectProjectRoot(): string {
-  return process.env.SQUISH_WORKING_DIRECTORY
-    ?? process.env.INIT_CWD
-    ?? process.cwd();
+  // Blank env vars are a common accident (`SQUISH_WORKING_DIRECTORY=` in a .env
+  // file). `??` does not skip them, and an empty scope makes every tool fall
+  // back to "global". Treat blank as unset.
+  const explicit = [process.env.SQUISH_WORKING_DIRECTORY, process.env.INIT_CWD]
+    .find((value) => typeof value === 'string' && value.trim().length > 0);
+  const root = explicit ?? process.cwd();
+  // Blank must stay blank: `normalizeProjectPath('')` would resolve it to cwd,
+  // and an empty scope is what `detectProjectScope()` reads as "global".
+  if (!root) return root;
+  // Same rule the write side uses, so this value matches the `projects.path`
+  // row `ensureProject()` inserts.
+  return normalizeProjectPath(root);
+}
+
+/**
+ * Sentinel `projects.path` value for the global, non per-project memory scope.
+ *
+ * It is the one `projects.path` value that is not a filesystem path. It lives
+ * here rather than in `core/places/places.ts` because `normalizeProjectPath()`
+ * has to recognise it, and `config.ts` sits below every core module in the
+ * import graph, so this direction cannot form a cycle. `core/places/places.ts`
+ * re-exports it as `GLOBAL_PROJECT_PATH`, which is where callers import it from.
+ */
+export const GLOBAL_PROJECT_PATH = '__squish_global__';
+
+/**
+ * The canonical form of a `projects.path` value.
+ *
+ * Both ends of the `projects.path` contract run through this function: the read
+ * end in `detectProjectRoot()`, and the write end in `core/projects.ts`
+ * `createProject()` before it inserts. They used to disagree, and a row written
+ * by one spelling could never be read back by the other, so the rule lives here
+ * once instead of being restated per call site.
+ *
+ * Filesystem paths become absolute with `~` expanded and no trailing separator
+ * (`resolve` does all three). The one exception is `GLOBAL_PROJECT_PATH`: it
+ * names a scope rather than a directory, so resolving it against cwd would
+ * invent a path that depends on where the process happened to run, and
+ * `requireProject(GLOBAL_PROJECT_PATH)` guards global-memory recall.
+ *
+ * Everything else resolves, including a bare relative name like `my-dir`. A
+ * narrower "no separator means it is an id" rule was tried and rejected: it left
+ * `my-dir` stored verbatim while `my-dir` and `<cwd>/my-dir` are the same
+ * directory, which is the exact read/write disagreement this function exists to
+ * remove.
+ */
+export function normalizeProjectPath(inputPath: string): string {
+  const trimmed = inputPath.trim();
+  if (trimmed === GLOBAL_PROJECT_PATH) return trimmed;
+  return resolve(expandTilde(trimmed));
 }
 
 /**
@@ -143,51 +201,52 @@ export function findSquishDir(_startPath?: string): string {
 }
 
 export function getDataDir(): string {
-  // 1. If SQUISH_DATA_DIR is explicitly set, use it (with ~ expansion)
-  if (process.env.SQUISH_DATA_DIR) {
-    const expanded = expandTilde(process.env.SQUISH_DATA_DIR);
-    const dir = isAbsolute(expanded)
-      ? expanded
-      : resolve(process.cwd(), expanded);
-    if (!existsSync(dir)) {
+  // 1. If SQUISH_DATA_DIR is explicitly set, honor it — but only when it is
+  //    absolute after ~/ expansion. A relative value used to be resolved
+  //    against process.cwd(), creating a per-project ./.squish database that
+  //    split memory across every directory the CLI was launched from.
+  const fromEnv = absoluteDataDir(process.env.SQUISH_DATA_DIR ?? '', 'SQUISH_DATA_DIR');
+  if (fromEnv) {
+    if (!existsSync(fromEnv)) {
       try {
-        mkdirSync(dir, { recursive: true });
-      } catch (err: any) {
-        if (err.code === 'EPERM' || err.code === 'EACCES') {
+        mkdirSync(fromEnv, { recursive: true });
+      } catch (err) {
+        if (isPermissionError(err)) {
           const fallbackDir = globalDataDir();
           if (!existsSync(fallbackDir)) mkdirSync(fallbackDir, { recursive: true });
-          console.warn(`Warning: no permission to create ${dir}, using ${fallbackDir}`);
+          console.warn(`Warning: no permission to create ${fromEnv}, using ${fallbackDir}`);
           return fallbackDir;
         }
         throw err;
       }
     }
-    return dir;
+    return fromEnv;
   }
 
-  // 2. Check settings.json for data.dir (with ~ expansion)
-  const projectRoot = detectProjectRoot();
+  // 2. Check settings.json for data.dir. Same rule: absolute after ~
+  //    expansion, otherwise ignored (with a one-time warning) instead of
+  //    being resolved against the project root.
   const settingsDirRaw = readPath('data.dir');
-  if (typeof settingsDirRaw === 'string' && settingsDirRaw.length > 0) {
-    const settingsDir = expandTilde(settingsDirRaw);
-    const dir = isAbsolute(settingsDir) ? settingsDir : resolve(projectRoot, settingsDir);
-    if (!existsSync(dir)) {
-      try {
-        mkdirSync(dir, { recursive: true });
-      } catch {
-        // fall through to default
-      }
+  const fromSettings = absoluteDataDir(
+    typeof settingsDirRaw === 'string' ? settingsDirRaw : '',
+    'settings.json data.dir',
+  );
+  if (fromSettings) {
+    try {
+      mkdirSync(fromSettings, { recursive: true });
+    } catch {
+      // fall through to the default
     }
-    if (existsSync(dir)) return dir;
+    if (existsSync(fromSettings)) return fromSettings;
   }
 
-  // 4. Default to global ~/.squish/
+  // 3. Default to global ~/.squish/
   const global = globalDataDir();
   if (!existsSync(global)) {
     try {
       mkdirSync(global, { recursive: true });
-    } catch (err: any) {
-      if (err.code === 'EPERM' || err.code === 'EACCES') {
+    } catch (err) {
+      if (isPermissionError(err)) {
         console.warn(`Warning: no permission to create ${global}`);
       }
       throw err;
@@ -196,21 +255,54 @@ export function getDataDir(): string {
   return global;
 }
 
+function isPermissionError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return code === 'EPERM' || code === 'EACCES';
+}
+
+let warnedRelativeDataDir = false;
+
+function warnRelativeDataDirOnce(raw: string, source: string): void {
+  if (warnedRelativeDataDir) return;
+  warnedRelativeDataDir = true;
+  console.warn(
+    `Warning: ${source} "${raw}" is a relative path. Relative data directories ` +
+    `are ignored because they would create a per-project .squish folder; using ` +
+    `${globalDataDir()} instead. Set an absolute path (a leading ~/ is expanded) ` +
+    `for a custom location.`
+  );
+}
+
+/**
+ * Turns a configured data directory value into an absolute path, or null when
+ * the value has to be ignored.
+ *
+ * Absolute paths and `~`-prefixed paths are honored after `~` expansion.
+ * Relative values are NEVER resolved against the process cwd or the project
+ * root: doing so created a per-project `./.squish` database that split memory
+ * across every directory the CLI happened to be launched from, while the
+ * product contract is global-only (see findSquishDir). A relative value warns
+ * once and returns null; callers fall back to the global directory.
+ */
+export function absoluteDataDir(raw: string, source: string): string | null {
+  if (!raw) return null;
+  const expanded = expandTilde(raw);
+  if (isAbsolute(expanded)) return expanded;
+  warnRelativeDataDirOnce(raw, source);
+  return null;
+}
+
 function resolveDataDir(): string {
   // Match the same priority as getDataDir but don't create dirs
-  if (process.env.SQUISH_DATA_DIR) {
-    const expanded = expandTilde(process.env.SQUISH_DATA_DIR);
-    const dir = isAbsolute(expanded)
-      ? expanded
-      : resolve(process.cwd(), expanded);
-    return dir;
-  }
+  const fromEnv = absoluteDataDir(process.env.SQUISH_DATA_DIR ?? '', 'SQUISH_DATA_DIR');
+  if (fromEnv) return fromEnv;
 
   const settingsDirRaw = readPath('data.dir');
-  if (typeof settingsDirRaw === 'string' && settingsDirRaw.length > 0) {
-    const settingsDir = expandTilde(settingsDirRaw);
-    return isAbsolute(settingsDir) ? settingsDir : resolve(process.cwd(), settingsDir);
-  }
+  const fromSettings = absoluteDataDir(
+    typeof settingsDirRaw === 'string' ? settingsDirRaw : '',
+    'settings.json data.dir',
+  );
+  if (fromSettings) return fromSettings;
 
   return globalDataDir();
 }
@@ -233,9 +325,19 @@ function getEnvironmentEnum<T extends readonly string[]>(key: string, allowed: T
 
 function buildScoringWeights() {
   return {
+    // WS1a-T1.3: recency/relevance/importance are now genuinely consumed by
+    // the serving path (core/scoring/three-field.ts applyRetrievalServingWeights
+    // + the heuristic recency boost). Each is a RELATIVE weight around a
+    // neutrality anchor so the shipped defaults leave the ranking untouched:
+    //   recency 0.5 = scale 1x on the itemized heuristicRecency boost,
+    //   relevance 3 = no rescale of the semantic term,
+    //   importance 0 = off. The importance default was 2 while the field was
+    //   dead config; wiring a literal 2 as an additive boost would reshape
+    //   every ranking (surprise recall shift), so it is normalized to the
+    //   neutral 0 and applied only when an operator raises it.
     recency: getNumber('scoring.weights.recency', 'SQUISH_WEIGHT_RECENCY', 0.5),
     relevance: getNumber('scoring.weights.relevance', 'SQUISH_WEIGHT_RELEVANCE', 3),
-    importance: getNumber('scoring.weights.importance', 'SQUISH_WEIGHT_IMPORTANCE', 2),
+    importance: getNumber('scoring.weights.importance', 'SQUISH_WEIGHT_IMPORTANCE', 0),
     vectorSim: getNumber('scoring.weights.vectorSim', 'SQUISH_WEIGHT_VECTOR_SIM', 3),
     // Batch 5: graph boost weight applies to an in-set normalized contribution
     // (0..1), so max absolute delta = weight (0.10). Legacy raw mode
@@ -257,16 +359,6 @@ function buildGraphConfig() {
   const extractionMethod = getEnum('graph.extractionMethod', 'SQUISH_GRAPH_EXTRACTION_METHOD', GRAPH_EXTRACTION_METHODS, 'auto');
   const maxContentLength = getNumber('graph.maxContentLength', 'SQUISH_GRAPH_MAX_CONTENT_LENGTH', 10000);
   return { autoBuild, autoExport, extractionMethod, maxContentLength };
-}
-
-function buildSectorDecayIntervals() {
-  return {
-    episodic: getNumber('lifecycle.decay.episodic', 'SQUISH_DECAY_EPISODIC', 30),
-    semantic: getNumber('lifecycle.decay.semantic', 'SQUISH_DECAY_SEMANTIC', 90),
-    procedural: getNumber('lifecycle.decay.procedural', 'SQUISH_DECAY_PROCEDURAL', 180),
-    autobiographical: getNumber('lifecycle.decay.autobiographical', 'SQUISH_DECAY_AUTOBIOGRAPHICAL', 365),
-    working: getNumber('lifecycle.decay.working', 'SQUISH_DECAY_WORKING', 7),
-  };
 }
 
 function buildDecayConfig() {
@@ -374,6 +466,11 @@ function buildConfig() {
     get transformersLocalModel() {
       return getString('embeddings.models.transformers.model', 'SQUISH_LOCAL_MODEL', '');
     },
+    get localEmbeddingDevice(): 'cpu' | 'webgpu' {
+      const device = getString('embeddings.models.transformers.device', 'SQUISH_LOCAL_EMBEDDING_DEVICE', 'cpu').trim().toLowerCase();
+      if (device === 'cpu' || device === 'webgpu') return device;
+      throw new Error('SQUISH_LOCAL_EMBEDDING_DEVICE must be "cpu" or "webgpu"');
+    },
     /**
      * Bundled local model auto-loaded in the background by the "local"
      * provider (TF-IDF stays the instant boot provider; the real model takes
@@ -395,7 +492,7 @@ function buildConfig() {
     },
 
     get clientEncryptionEnabled() {
-      return getBoolean('security.encryptionEnabled', null, false);
+      return getBoolean('security.encryptionEnabled', 'SQUISH_ENCRYPTION_ENABLED', false);
     },
     get encryptionPassphrase() {
       return process.env.SQUISH_ENCRYPTION_PASSPHRASE || '';
@@ -406,12 +503,6 @@ function buildConfig() {
     },
     get lifecycleInterval() {
       return getNumber('lifecycle.interval', 'SQUISH_LIFECYCLE_INTERVAL', 3600000);
-    },
-    get decayThreshold() {
-      return getNumber('lifecycle.decay.threshold', 'SQUISH_DECAY_THRESHOLD', 0.1);
-    },
-    get sectorDecayIntervals() {
-      return buildSectorDecayIntervals();
     },
     get decay() {
       return buildDecayConfig();
@@ -464,11 +555,42 @@ function buildConfig() {
     get enableV2ContradictionCheck() {
       return getBoolean('features.enableV2ContradictionCheck', 'SQUISH_V2_CONTRADICTION_CHECK', false);
     },
+    // WS2a: write-time near-duplicate detection on the remember path.
+    // 'off' is the shipped default and preserves current behavior + write
+    // latency exactly (no similarity scan runs). 'link' adds a bounded top-K
+    // near-duplicate scan after the store: bidirectional 'near_duplicate'
+    // associations + metadata.dedup, never mutating or dropping either
+    // memory. 'merge' is an explicit opt-in that routes detected
+    // near-duplicates through the existing reversible merge workflow
+    // (proposal -> handleApproveMerge -> reverse-merge undo); it archives the
+    // source rows into a canonical, so it must be enabled deliberately.
+    get writeDedupMode() {
+      return getEnum('features.writeDedup', 'SQUISH_WRITE_DEDUP', ['off', 'link', 'merge'] as const, 'off');
+    },
+    /**
+     * Near-duplicate bar for the write-time stage. DEFAULT REUSES THE
+     * EXISTING DETECTOR BAR (0.85): the semantic threshold `findSimilarMemories`
+     * and the two-stage detector (`DetectionOptions.threshold`) already gate
+     * on. Not a new invented bar; operators may raise it (e.g. 0.9) via env.
+     */
+    get writeDedupThreshold() {
+      return getNumber('features.writeDedupThreshold', 'SQUISH_WRITE_DEDUP_THRESHOLD', 0.85);
+    },
+    /** Max candidates fetched per write-time scan (bounded top-K, never a full-corpus scan). */
+    get writeDedupTopK() {
+      return getNumber('features.writeDedupTopK', 'SQUISH_WRITE_DEDUP_TOP_K', 5);
+    },
     get externalMemoryEnabled() {
       return getBoolean('features.externalMemoryEnabled', 'SQUISH_EXTERNAL_MEMORY_ENABLED', false);
     },
     get externalMemoryPath() {
       return getString('external.memoryPath', 'SQUISH_EXTERNAL_MEMORY_PATH', '');
+    },
+
+    // QMD launches a third-party local subprocess that can download models on
+    // first use. Keep it disabled unless the operator opts in explicitly.
+    get qmdEnabled() {
+      return getBoolean('features.qmdEnabled', 'SQUISH_QMD_ENABLED', false);
     },
 
     get sessionAutoLoadEnabled() {
@@ -588,8 +710,11 @@ function buildConfig() {
     get llmEnabled() {
       return buildLlmConfig().enabled;
     },
+    get factEntailmentCheckEnabled() {
+      return getBoolean('memory.factEntailmentCheckEnabled', 'SQUISH_FACT_ENTAILMENT_CHECK_ENABLED', false);
+    },
     get llmApiKey() {
-      return process.env.SQUISH_LLM_API_KEY || process.env.OPENAI_API_KEY || '';
+      return process.env.SQUISH_LLM_API_KEY || '';
     },
     get llmProvider() {
       return buildLlmConfig().provider;
@@ -614,6 +739,87 @@ function buildConfig() {
     },
     get llm() {
       return buildLlmConfig();
+    },
+
+    // Decision model layer (rules-first with optional model escalation).
+    // SQUISH_DECISION_LAYER_ENABLED is the master kill switch for the whole
+    // layer; every other decision flag only matters while it is true.
+    get decisionLayerEnabled() {
+      return getBoolean('decisionModel.layerEnabled', 'SQUISH_DECISION_LAYER_ENABLED', false);
+    },
+    get decisionModelEnabled() {
+      return getBoolean('decisionModel.modelEnabled', 'SQUISH_DECISION_MODEL_ENABLED', false);
+    },
+    /** Separate consent gate for sending decision content to hosted decision providers. */
+    get decisionHostedEgressEnabled() {
+      return getBoolean('decisionModel.hostedEgressEnabled', 'SQUISH_DECISION_HOSTED_EGRESS_ENABLED', false);
+    },
+    get decisionModelProvider() {
+      const value = getString('decisionModel.provider', 'SQUISH_DECISION_MODEL_PROVIDER', 'auto').toLowerCase();
+      // Keep "auto" as an intentional mode, but never turn an invalid explicit
+      // provider into it: doing so could route a decision to the LLM writer.
+      return DECISION_PROVIDERS.some((provider) => provider === value)
+        ? value as (typeof DECISION_PROVIDERS)[number]
+        : 'invalid';
+    },
+    // Decision backend selector (Phase B4): off = rules only, llm = chat-model
+    // escalation (default: preserves the shipped behavior), systemone = System
+    // One decision models via the provider presets. systemone + ollaya (the
+    // preset default) is the recommended private/calibrated path: localhost
+    // only, no third-party egress. An invalid explicit value fails closed to
+    // off; it must never silently redirect decision prompts to the LLM writer.
+    get decisionModelBackend() {
+      const value = getString('decisionModel.backend', 'SQUISH_DECISION_MODEL_BACKEND', 'llm').toLowerCase();
+      return DECISION_MODEL_BACKENDS.some((backend) => backend === value)
+        ? value as (typeof DECISION_MODEL_BACKENDS)[number]
+        : 'off';
+    },
+    get decisionSystemOneProvider() {
+      const value = getString('decisionModel.systemone.provider', 'SQUISH_DECISION_SYSTEMONE_PROVIDER', 'ollaya').toLowerCase();
+      return SYSTEMONE_PROVIDERS.some((provider) => provider === value)
+        ? value as (typeof SYSTEMONE_PROVIDERS)[number]
+        : 'invalid';
+    },
+    /** Override the provider preset's API root; empty = preset default. */
+    get decisionSystemOneBaseUrl() {
+      return getString('decisionModel.systemone.baseUrl', 'SQUISH_DECISION_SYSTEMONE_BASE_URL', '');
+    },
+    /** Override the provider preset's model id; empty = preset default. */
+    get decisionSystemOneModel() {
+      return getString('decisionModel.systemone.model', 'SQUISH_DECISION_SYSTEMONE_MODEL', '');
+    },
+    // Global confidence floor (Phase B6): wired as the floor of the
+    // risk-tiered bands -- model verdicts below it never beat the rules, and
+    // raising it tightens every site band at once (site risk bases 0.8/0.75/
+    // 0.7/0.7 stay as the lower bound per consequence tier).
+    get decisionConfidenceThreshold() {
+      return getNumber('decisionModel.confidenceThreshold', 'SQUISH_DECISION_CONFIDENCE_THRESHOLD', 0.7);
+    },
+    // Write-site fan-out discard ACTION (Phase B7): with the signal computed,
+    // this flag decides whether the write path may FLAG a high-confidence
+    // discard verdict on the stored record. Default OFF: the extra noul
+    // signal is parsed but never changes persistence; a low-confidence
+    // discard can never drop a write either way (the write path always
+    // stores).
+    get decisionDiscardActionEnabled() {
+      return getBoolean('decisionModel.discardActionEnabled', 'SQUISH_DECISION_DISCARD_ACTION', false);
+    },
+    get decisionRouteTimeoutMs() {
+      return getNumber('decisionModel.routeTimeoutMs', 'SQUISH_DECISION_ROUTE_TIMEOUT_MS', 300);
+    },
+    get decisionClassifyTimeoutMs() {
+      return getNumber('decisionModel.classifyTimeoutMs', 'SQUISH_DECISION_CLASSIFY_TIMEOUT_MS', 1000);
+    },
+
+    // Harness prompt gate (rules-only by default, zero cost, local).
+    get promptGateEnabled() {
+      return getBoolean('promptGate.enabled', 'SQUISH_PROMPT_GATE_ENABLED', true);
+    },
+    get promptGateModelEscalation() {
+      return getBoolean('promptGate.modelEscalation', 'SQUISH_PROMPT_GATE_MODEL_ESCALATION', false);
+    },
+    get promptGateTimeoutMs() {
+      return getNumber('promptGate.timeoutMs', 'SQUISH_PROMPT_GATE_TIMEOUT_MS', 300);
     },
 
     // Anthropic
@@ -680,9 +886,6 @@ function buildConfig() {
     },
 
     // Sync configuration
-    get syncEnabled() {
-      return getBoolean('sync.enabled', 'SQUISH_SYNC_ENABLED', true);
-    },
     get syncLocalPath() {
       return getString('sync.localPath', 'SQUISH_SYNC_LOCAL_PATH', '');
     },

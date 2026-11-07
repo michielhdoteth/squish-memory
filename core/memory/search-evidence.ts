@@ -10,6 +10,7 @@
  */
 
 import type { SearchResult } from './memories.js';
+import { getMemoryAssociationRows } from '../associations.js';
 import { isLikelyStale } from '../retrieval/temporal-validity.js';
 import {
   computeRecallConfidence,
@@ -153,10 +154,12 @@ export function buildEvidence(
   // Batch B1: topical alignment between the query topic and this memory's
   // parsed topic. null whenever either side is unavailable - never a
   // fabricated mismatch. Computed here (post-ranking) so it can never
-  // influence ordering.
+  // influence ordering. Batch WS2b: the raw content is passed too, so the
+  // entity-precedence rule can soften a wrong-subject verdict to partial
+  // when the memory text mentions the queried entity outside the subject.
   const queryTopic = ctx.queryTopic ?? null;
   const topicalAlignmentValue = queryTopic && typeof result.content === 'string' && result.content.trim().length > 0
-    ? topicalAlignment(queryTopic, parseMemoryTopic(result.content))
+    ? topicalAlignment(queryTopic, parseMemoryTopic(result.content), result.content)
     : null;
 
   return {
@@ -181,6 +184,65 @@ export function buildEvidence(
     rerankAgreement: ctx.rerankAgreement ?? null,
     topicalAlignment: topicalAlignmentValue,
   };
+}
+
+/**
+ * Pure association-edge indexer shared by collectDbMeta (WS2b extraction so
+ * the supersession DIRECTION contract is unit-testable without a database).
+ *
+ * Direction convention (from contradiction-resolver applySupersession and
+ * temporal-facts): edges are created FROM the replacing (newer) memory TO
+ * the replaced (older) memory - createAssociation(newMemoryId, oldId,
+ * 'supersedes'|'updates'). Therefore:
+ *  - `supersededBy` belongs on the OLDER endpoint and names the successor
+ *    (see RecallEvidence.temporal: "id of a memory that updates/supersedes
+ *    this one"). The newer endpoint must never receive a self-pointer.
+ *  - BOTH endpoints of a conflict-typed edge count as contradicting (the
+ *    CONFLICT_CAP regime is symmetric by design: two versions of one fact
+ *    cannot both be trusted highly - this mirrors the pre-WS2b behavior).
+ * Non-conflict types are supporting evidence on both endpoints.
+ */
+export function indexAssociationEdges(
+  ids: string[],
+  rows: Array<AssociationEdgeRow>
+): Map<string, { contradictingCount: number; supportingCount: number; supersededBy: string | null }> {
+  const conflictsById = new Map<string, { contradictingCount: number; supportingCount: number; supersededBy: string | null }>();
+  const idSet = new Set(ids);
+  const ensure = (id: string) => {
+    let e = conflictsById.get(id);
+    if (!e) {
+      e = { contradictingCount: 0, supportingCount: 0, supersededBy: null };
+      conflictsById.set(id, e);
+    }
+    return e;
+  };
+
+  for (const e of rows) {
+    const touchesFrom = idSet.has(e.fromMemoryId);
+    const touchesTo = idSet.has(e.toMemoryId);
+    if (!touchesFrom && !touchesTo) continue;
+    const isConflictType = (CONFLICT_ASSOCIATION_TYPES as readonly string[]).includes(e.associationType);
+    const isSupersessionType = e.associationType === 'supersedes' || e.associationType === 'updates';
+
+    if (touchesFrom) {
+      const entry = ensure(e.fromMemoryId);
+      if (isConflictType) entry.contradictingCount += 1;
+      else entry.supportingCount += 1;
+    }
+    if (touchesTo) {
+      const entry = ensure(e.toMemoryId);
+      if (isConflictType) {
+        entry.contradictingCount += 1;
+        // Edge FROM a newer memory TO this one: THIS memory is superseded,
+        // and its successor is the edge's source.
+        if (isSupersessionType) entry.supersededBy ??= e.fromMemoryId;
+      } else {
+        entry.supportingCount += 1;
+      }
+    }
+  }
+
+  return conflictsById;
 }
 
 /**
@@ -259,58 +321,17 @@ export async function collectDbMeta(
       );
     }
 
-    // Association edges touching any final id (both directions), capped scan.
-    // Batch 6b fix: this must go through the DRIZZLE wrapper (`db`), not the
-    // raw $client - .select() is a drizzle builder method. Using the raw
-    // client made collectDbMeta throw on every call, silently disabling all
-    // DB-derived evidence signals (confidence level, conflicts, support).
+    // Association edges touching final IDs now come from the canonical edge
+    // adapter, which maps projection IDs back to source memory IDs and includes
+    // legacy-only rows during the compatibility window.
     const conflictsById = new Map<string, { contradictingCount: number; supportingCount: number; supersededBy: string | null }>();
-    const assocSchema = (schema as any).memoryAssociations;
-    if (assocSchema && typeof (db as any)?.select === 'function') {
-      const edgeRows = (await (db as any)
-        .select({
-          fromMemoryId: assocSchema.fromMemoryId,
-          toMemoryId: assocSchema.toMemoryId,
-          associationType: assocSchema.associationType,
-        })
-        .from(assocSchema)
-        .limit(5000)) as Array<AssociationEdgeRow>;
-
-      const idSet = new Set(ids);
-      const ensure = (id: string) => {
-        let e = conflictsById.get(id);
-        if (!e) {
-          e = { contradictingCount: 0, supportingCount: 0, supersededBy: null };
-          conflictsById.set(id, e);
-        }
-        return e;
-      };
-
-      for (const e of edgeRows) {
-        const touchesFrom = idSet.has(e.fromMemoryId);
-        const touchesTo = idSet.has(e.toMemoryId);
-        if (!touchesFrom && !touchesTo) continue;
-        const isConflictType = (CONFLICT_ASSOCIATION_TYPES as readonly string[]).includes(e.associationType);
-
-        if (touchesFrom) {
-          const entry = ensure(e.fromMemoryId);
-          // Edge FROM a newer memory TO this one means: something supersedes/updates THIS memory.
-          if (isConflictType && touchesTo && (e.associationType === 'supersedes' || e.associationType === 'updates')) {
-            entry.contradictingCount += 1;
-            entry.supersededBy ??= e.fromMemoryId;
-          } else if (isConflictType) {
-            entry.contradictingCount += 1;
-          } else {
-            entry.supportingCount += 1;
-          }
-        }
-        if (touchesTo) {
-          const entry = ensure(e.toMemoryId);
-          if (isConflictType) entry.contradictingCount += 1;
-          else entry.supportingCount += 1;
-        }
-      }
-    }
+    const edgeRows: AssociationEdgeRow[] = (await getMemoryAssociationRows(ids)).map((edge) => ({
+      fromMemoryId: edge.fromMemoryId,
+      toMemoryId: edge.toMemoryId,
+      associationType: edge.associationType,
+    }));
+    const indexed = indexAssociationEdges(ids, edgeRows);
+    for (const [id, entry] of indexed) conflictsById.set(id, entry);
 
     return { metaById: metaMap, conflictsById, retentionById };
   } catch (e) {
@@ -327,9 +348,10 @@ export async function collectDbMeta(
  *   (a) the query attribute parsed to a KNOWN bucket that memory content can
  *       actually carry (never on neutral/null parses, never on 'person'-
  *       style buckets no lexicon entry produces), and
- *   (b) the candidate's parsed entity matches the query entity, and
- *   (c) NO memory among the top-K candidates attributed to that entity
- *       carries that bucket ANYWHERE in its content.
+ *   (b) when a query entity parses, the candidate matches it; when no entity
+ *       parses, the query must still have a recognized, content-detectable
+ *       relation and no returned candidate may carry that relation, and
+ *   (c) NO matching candidate carries that bucket ANYWHERE in its content.
  * This generalizes the Batch B2 topic-absent coverage factor from a
  * whole-set scan to an ENTITY-SCOPED scan: the corpus may know plenty about
  * the entity while remaining silent on precisely the relation the question
@@ -341,7 +363,7 @@ export function findRelationUnstated(
   queryTopic: QueryTopic | null | undefined
 ): boolean[] {
   const flags = contents.map(() => false);
-  if (!queryTopic || !queryTopic.entity || !queryTopic.attribute) return flags;
+  if (!queryTopic || !queryTopic.attribute) return flags;
   if (!(TOPIC_ATTRIBUTE_BUCKETS as readonly string[]).includes(queryTopic.attribute)) return flags;
   // A bucket no content token can produce would fire spuriously on every
   // entity-matching candidate ('person': queries ask for one, nothing maps
@@ -349,6 +371,7 @@ export function findRelationUnstated(
   if (!CONTENT_DETECTABLE_BUCKETS.has(queryTopic.attribute)) return flags;
 
   const entityScoped = contents.map(content => {
+    if (!queryTopic.entity) return typeof content === 'string' && content.trim().length > 0;
     if (typeof content !== 'string' || content.trim().length === 0) return false;
     const parsed = parseMemoryTopic(content);
     return parsed.entity !== null && topicsAboutSameEntity(queryTopic.entity!, parsed.entity);

@@ -177,14 +177,17 @@ export class MinHashFilter {
   }
 
   private hashNgramWithSeed(ngram: string, seed: number): number {
-    let hash = seed;
+    // Use a seeded FNV-1a hash over the complete n-gram. The former
+    // shift/subtract polynomial collapsed many signatures to the same small
+    // values, making unrelated documents appear to have perfect similarity.
+    let hash = (2166136261 ^ Math.imul(seed + 1, 0x9e3779b9)) >>> 0;
 
     for (let i = 0; i < ngram.length; i++) {
-      hash = (hash << 5) - hash + ngram.charCodeAt(i);
-      hash = hash & hash;
+      hash ^= ngram.charCodeAt(i);
+      hash = Math.imul(hash, 16777619) >>> 0;
     }
 
-    return Math.abs(hash);
+    return hash;
   }
 }
 

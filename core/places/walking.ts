@@ -9,6 +9,7 @@
  */
 
 import { getDb } from '../../db/index.js';
+import { estimateTextTokens } from '../lib/tokens.js';
 import { getSchema } from '../../db/schema.js';
 import { getProjectPlaces, type Place, type PlaceType } from './places.js';
 import { getPlaceMemories } from './memory-places.js';
@@ -16,6 +17,8 @@ import { getMemory, getMemoriesByIds } from '../memory/memories.js';
 import { ADJACENT_PLACES, getAdjacentPlaces } from './rules.js';
 import { compressForContext, isCompressed } from '../compression.js';
 import { logger } from '../logger.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyUnscopedPlaceOperation } from './strict-gates.js';
 
 export interface WalkOptions {
   tokenBudget?: number;  // Max tokens (default: 170)
@@ -47,6 +50,7 @@ export async function walkPlace(
   placeType: string,
   options: WalkOptions = {}
 ): Promise<WalkResult | null> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('walk', `${projectId}:${placeType}`);
   const { tokenBudget = 170, maxMemoriesPerPlace = 10, includePurpose = true, compressWithCompression = false } = options;
 
   // Get the place
@@ -59,7 +63,7 @@ export async function walkPlace(
   }
 
   // Get memory IDs for this place (knowledge_edges stores placeType, not UUID)
-  const memoryIds = await getPlaceMemories(place.placeType, maxMemoriesPerPlace);
+  const memoryIds = await getPlaceMemories(place.placeType, maxMemoriesPerPlace, 0, projectId);
 
   // Batch-fetch all memories at once (fixes N+1 query)
   const allMemories = await getMemoriesByIds(memoryIds, false);
@@ -80,7 +84,7 @@ export async function walkPlace(
       content = compressForContext(content);
     }
 
-    const tokenEstimate = Math.ceil(content.length / 4); // rough token estimate
+    const tokenEstimate = estimateTextTokens(content);
     
     if (totalTokens + tokenEstimate > tokenBudget) {
       // Would exceed budget - stop adding
@@ -113,6 +117,7 @@ export async function walkAllPlaces(
   projectId: string,
   options: WalkOptions = {}
 ): Promise<WalkResult[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('walk_all', projectId);
   const places = await getProjectPlaces(projectId);
   const results: WalkResult[] = [];
 
@@ -134,6 +139,7 @@ export async function quickTour(projectId: string): Promise<{
   places: { name: string; purpose: string; memoryCount: number }[];
   totalMemories: number;
 }> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('quick_tour', projectId);
   const places = await getProjectPlaces(projectId);
   
   return {
@@ -154,6 +160,7 @@ export async function getPlaceContext(
   placeType: string,
   maxTokens: number = 50
 ): Promise<string> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('place_context', `${projectId}:${placeType}`);
   const walkResult = await walkPlace(projectId, placeType, {
     tokenBudget: maxTokens,
     compressWithCompression: true,
@@ -178,6 +185,7 @@ export async function getFullWalkingContext(
   projectId: string,
   maxTokens: number = 170
 ): Promise<string> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('full_context', projectId);
   const places = await getProjectPlaces(projectId);
   const nonEmptyPlaces = places.filter(p => p.memoryCount > 0);
   
@@ -223,6 +231,7 @@ export async function walkFrom(
   startPlace: string,
   options: WalkOptions & { maxDepth?: number } = {}
 ): Promise<WalkResult[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('walk_from', `${projectId}:${startPlace}`);
   const { maxDepth = 2, ...walkOptions } = options;
   const results: WalkResult[] = [];
   const visited = new Set<string>();
@@ -272,6 +281,7 @@ export async function getPlacesMap(projectId: string): Promise<{
   }>;
   totalMemories: number;
 }> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('places_map', projectId);
   const places = await getProjectPlaces(projectId);
   
   return {

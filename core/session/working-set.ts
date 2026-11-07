@@ -3,6 +3,9 @@ import { eq } from 'drizzle-orm';
 import { getDbClient } from '../lib/db-client.js';
 import { ensureProject, getProjectByPath } from '../projects.js';
 import { deserializeMetadata, serializeMetadata } from '../memory/serialization.js';
+import { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } from '../acl/trust-policy.js';
+import { writeTrustAudit } from '../acl/trust-audit.js';
+import { getOrCreateUser } from '../memory/memory-crud.js';
 
 export interface WorkingSetCommand {
   command: string;
@@ -93,7 +96,7 @@ function normalizeSessionMetadata(metadata: unknown, sessionId: string, projectP
   };
 }
 
-async function getOrCreateContextSession(sessionId: string, projectPath: string) {
+async function getOrCreateContextSession(sessionId: string, projectPath: string, ownerId?: string | null) {
   const { db, schema, raw } = await getDbClient();
   const project = await ensureProject(projectPath);
 
@@ -103,16 +106,23 @@ async function getOrCreateContextSession(sessionId: string, projectPath: string)
     .where(eq(schema.contextSessions.sessionId, sessionId))
     .limit(1);
 
-  if (existing[0]) return { row: existing[0], projectId: project?.id ?? null, db, schema };
+  if (existing[0]) {
+    if (ownerId && !existing[0].userId) {
+      const claimed = await db.update(schema.contextSessions).set({ userId: ownerId })
+        .where(eq(schema.contextSessions.sessionId, sessionId)).returning();
+      if (claimed[0]) return { row: claimed[0], projectId: project?.id ?? null, db, schema };
+    }
+    return { row: existing[0], projectId: project?.id ?? null, db, schema };
+  }
 
   const sqlite = (raw as any).$client;
   const id = randomUUID();
   const metadata = serializeMetadata(EMPTY_WORKING_SET(sessionId, projectPath) as unknown as Record<string, unknown>);
   sqlite.prepare(`
     INSERT INTO context_sessions (
-      id, session_id, project_id, metadata, token_budget, tokens_used, core_memory_tokens, loaded_memories_tokens, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, 8000, 0, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-  `).run(id, sessionId, project?.id ?? null, metadata);
+      id, session_id, project_id, user_id, metadata, token_budget, tokens_used, core_memory_tokens, loaded_memories_tokens, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 8000, 0, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `).run(id, sessionId, project?.id ?? null, ownerId ?? null, metadata);
 
   const inserted = await db
     .select()
@@ -123,8 +133,32 @@ async function getOrCreateContextSession(sessionId: string, projectPath: string)
   return { row: inserted[0], projectId: project?.id ?? null, db, schema };
 }
 
+async function requireSessionPrincipal(sessionId: string): Promise<string | null> {
+  if (!isStrictTrustPolicy()) return null;
+  let callerId: string | null;
+  try {
+    callerId = resolveTrustedCallerId();
+  } catch {
+    callerId = null;
+  }
+  if (!callerId) {
+    await writeTrustAudit({
+      actorId: 'unbound', resourceId: sessionId, assetType: 'session_working_set',
+      decision: 'deny', reason: 'caller_unbound',
+    });
+    throw new TrustBoundaryError('Strict trust requires a caller-bound session working set');
+  }
+  return callerId;
+}
+
 export async function getSessionWorkingSet(sessionId: string, projectPath?: string): Promise<SessionWorkingSet> {
+  const callerId = await requireSessionPrincipal(sessionId);
   const { db, schema } = await getDbClient();
+  const project = callerId && projectPath?.trim() ? await getProjectByPath(projectPath) : null;
+  if (callerId && !project) {
+    await writeTrustAudit({ actorId: callerId, resourceId: sessionId, assetType: 'session_working_set', decision: 'deny', reason: 'session_scope' });
+    throw new TrustBoundaryError('Strict trust requires a valid project scope for session working-set reads');
+  }
   const rows = await db
     .select()
     .from(schema.contextSessions)
@@ -132,6 +166,13 @@ export async function getSessionWorkingSet(sessionId: string, projectPath?: stri
     .limit(1);
 
   if (!rows[0]) return EMPTY_WORKING_SET(sessionId, projectPath);
+  if (callerId) {
+    const owner = await getOrCreateUser(callerId, db, schema);
+    if (!owner || rows[0].userId !== owner.id || rows[0].projectId !== project?.id) {
+      await writeTrustAudit({ actorId: callerId, resourceId: sessionId, assetType: 'session_working_set', decision: 'deny', reason: 'session_scope' });
+      throw new TrustBoundaryError('Strict trust denied access to a session outside its persisted owner or project scope');
+    }
+  }
   return normalizeSessionMetadata(deserializeMetadata(rows[0].metadata ?? null), sessionId, projectPath);
 }
 
@@ -144,7 +185,20 @@ export async function recordSessionSignal(input: {
   target?: string;
   metadata?: Record<string, unknown>;
 }): Promise<SessionWorkingSet> {
-  const { row, db, schema } = await getOrCreateContextSession(input.sessionId, input.projectPath);
+  const callerId = await requireSessionPrincipal(input.sessionId);
+  if (callerId && !input.projectPath) {
+    throw new TrustBoundaryError('Strict trust requires project scope for session working-set writes');
+  }
+  const { db, schema } = await getDbClient();
+  const persistedOwner = callerId ? await getOrCreateUser(callerId, db, schema) : null;
+  if (callerId && !persistedOwner) throw new TrustBoundaryError('Strict trust could not resolve persisted session owner');
+  const { row, db: sessionDb, schema: sessionSchema } = await getOrCreateContextSession(input.sessionId, input.projectPath, persistedOwner?.id);
+  if (callerId) {
+    if (row.userId && row.userId !== persistedOwner?.id) {
+      await writeTrustAudit({ actorId: callerId, resourceId: input.sessionId, assetType: 'session_working_set', decision: 'deny', reason: 'session_scope' });
+      throw new TrustBoundaryError('Strict trust denied writes to a session owned by another principal');
+    }
+  }
   const current = normalizeSessionMetadata(deserializeMetadata(row.metadata ?? null), input.sessionId, input.projectPath);
   const meta = input.metadata ?? {};
   const now = new Date().toISOString();
@@ -202,7 +256,7 @@ export async function recordSessionSignal(input: {
   next.signalStats.placeRouted += meta.placeRouted ? 1 : 0;
   next.signalStats.graphEnriched += meta.graphEnriched ? 1 : 0;
 
-  await db
+  await sessionDb
     .update(schema.contextSessions)
     .set({
       metadata: serializeMetadata(next as unknown as Record<string, unknown>),
@@ -252,6 +306,7 @@ export async function compactSessionWorkingSet(sessionId: string, projectPath?: 
 }
 
 export async function getProjectSignalStats(projectPath: string) {
+  const callerId = await requireSessionPrincipal(`project-stats:${projectPath}`);
   const { db, schema } = await getDbClient();
   const project = await getProjectByPath(projectPath);
   if (!project) {
@@ -263,7 +318,10 @@ export async function getProjectSignalStats(projectPath: string) {
     .from(schema.contextSessions)
     .where(eq(schema.contextSessions.projectId, project.id));
 
-  return rows.reduce((acc: any, row: any) => {
+  const owner = callerId ? await getOrCreateUser(callerId, db, schema) : null;
+  const scopedRows = callerId ? rows.filter((row: any) => owner && row.userId === owner.id) : rows;
+
+  return scopedRows.reduce((acc: any, row: any) => {
     const workingSet = normalizeSessionMetadata(deserializeMetadata(row.metadata ?? null), row.sessionId, projectPath);
     acc.captured += workingSet.signalStats.captured;
     acc.suppressed += workingSet.signalStats.suppressed;
@@ -276,6 +334,7 @@ export async function getProjectSignalStats(projectPath: string) {
 }
 
 export async function getLatestProjectWorkingSetSummary(projectPath: string): Promise<string> {
+  const callerId = await requireSessionPrincipal(`project-summary:${projectPath}`);
   const { db, schema } = await getDbClient();
   const project = await getProjectByPath(projectPath);
   if (!project) return '';
@@ -284,6 +343,9 @@ export async function getLatestProjectWorkingSetSummary(projectPath: string): Pr
     .select()
     .from(schema.contextSessions)
     .where(eq(schema.contextSessions.projectId, project.id));
+
+  const owner = callerId ? await getOrCreateUser(callerId, db, schema) : null;
+  const scopedRows = callerId ? rows.filter((row: any) => owner && row.userId === owner.id) : rows;
 
   // Batch 7 review (M-2): harness-parsed sessions win wake-up. A burst of
   // remember-writes keeps bumping the `memory-write:<project>` pseudo-
@@ -303,10 +365,10 @@ export async function getLatestProjectWorkingSetSummary(projectPath: string): Pr
     return right - left;
   };
 
-  const realRows = rows.filter((row: any) => !isPseudo(row)).sort(byRecency);
+  const realRows = scopedRows.filter((row: any) => !isPseudo(row)).sort(byRecency);
   const latest =
     realRows[0] ??
-    [...rows].sort(byRecency)[0];
+    [...scopedRows].sort(byRecency)[0];
 
   if (!latest) return '';
   return compactSessionWorkingSet(latest.sessionId, projectPath).then((result) => result.summary);

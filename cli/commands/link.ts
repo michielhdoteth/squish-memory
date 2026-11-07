@@ -5,6 +5,7 @@
  *        squish link add <fromId> <toId> [--type relates_to]
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
 import { createAssociation, getRelatedMemories } from '../../core/associations.js';
 import { remediationFor } from '../errors.js';
@@ -19,10 +20,7 @@ export function registerLinkCommand(program: Command) {
     .option('-w, --weight <number>', 'Association weight', '0.5')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (action: string, args: string[], options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) {
-        process.env.SQUISH_QUIET = '1';
-      }
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         if (action === 'find' && args[0]) {
           const related = await getRelatedMemories(args[0], options.depth * 5);
@@ -74,13 +72,7 @@ export function registerLinkCommand(program: Command) {
         console.error(options.json ? JSON.stringify(payload) : `${colors.red('Error')}: ${error.message}\nHint: ${remediation}`);
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) {
-            delete process.env.SQUISH_QUIET;
-          } else {
-            process.env.SQUISH_QUIET = previousQuiet;
-          }
-        }
+        restoreQuiet();
       }
     });
 }

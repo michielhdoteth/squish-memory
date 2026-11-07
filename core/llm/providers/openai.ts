@@ -10,6 +10,7 @@ import { config } from '../../../config.js';
 import { logger } from '../../logger.js';
 import { validateOutboundUrl } from '../../lib/url-validator.js';
 import type { LLMProvider, LLMCallOptions } from '../types.js';
+import { reportLLMTokenUsage } from '../usage.js';
 
 const DEFAULT_TIMEOUT_MS = 10000;
 
@@ -17,17 +18,28 @@ export const openaiProvider: LLMProvider = {
   name: 'openai',
 
   isAvailable(): boolean {
-    return config.llmEnabled && Boolean(config.openAiApiKey || config.llmEndpoint);
+    // "Configured" check only: the master SQUISH_LLM_ENABLED switch lives in
+    // the client router (getActiveProvider), so the decision layer can reuse
+    // this provider with its own independent opt-in.
+    return Boolean(config.openAiApiKey || config.llmEndpoint);
   },
 
   async call(options: LLMCallOptions): Promise<string | null> {
     if (!this.isAvailable()) return null;
 
-    const endpoint = config.llmEndpoint || 'http://localhost:1234';
-    const model = config.llmExtractionModel || 'gpt-4o-mini';
-    const apiKey = config.openAiApiKey || config.llmApiKey || '';
+    // A first-party OpenAI credential targets OpenAI by default. Generic keys
+    // are only sent to an explicitly configured compatible endpoint.
+    const endpoint = config.llmEndpoint || (config.openAiApiKey ? 'https://api.openai.com/v1' : '');
+    if (!endpoint) return null;
+    const model = options.model ?? (config.llmExtractionModel || 'gpt-4o-mini');
+    // When a compatible endpoint is explicit, its generic credential takes
+    // precedence over ambient OpenAI credentials. This lets one process use
+    // OPENAI_API_KEY for embeddings while routing language calls to a separate
+    // compatible service with SQUISH_LLM_API_KEY.
+    const apiKey = config.llmEndpoint ? config.llmApiKey : config.openAiApiKey;
 
     const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
     const timeout = setTimeout(
       () => controller.abort(),
       options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -37,7 +49,11 @@ export const openaiProvider: LLMProvider = {
       // Normalize endpoint — add /v1 path if not present
       const baseUrl = endpoint.endsWith('/v1') ? endpoint : `${endpoint}/v1`;
 
-      validateOutboundUrl(`${baseUrl}/chat/completions`);
+      // Local compatible endpoints are supported only without credentials.
+      // Never forward a configured key to loopback or an insecure HTTP URL.
+      validateOutboundUrl(`${baseUrl}/chat/completions`, apiKey
+        ? {}
+        : { allowLocalhost: true, allowHttp: true });
 
       // Build messages array
       const messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> = [];
@@ -75,7 +91,7 @@ export const openaiProvider: LLMProvider = {
           temperature: options.temperature ?? 0.1,
           max_tokens: options.maxTokens ?? 300,
         }),
-        signal: controller.signal,
+        signal,
       });
 
       clearTimeout(timeout);
@@ -87,7 +103,11 @@ export const openaiProvider: LLMProvider = {
 
       const data = (await response.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
+        usage?: unknown;
       };
+      reportLLMTokenUsage(options, data.usage, {
+        inputTokens: 'prompt_tokens', outputTokens: 'completion_tokens', totalTokens: 'total_tokens',
+      });
       return data.choices?.[0]?.message?.content?.trim() ?? null;
     } catch (err: unknown) {
       clearTimeout(timeout);

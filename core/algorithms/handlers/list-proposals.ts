@@ -10,6 +10,7 @@ import { getSchema } from '../../../db/schema.js';
 import { createDatabaseClient } from '../../../core/storage/database.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { asArray, toIsoString } from '../utils/json-fields.js';
+import { assertMergeWorkflowAvailable } from './strict-trust-guard.js';
 
 interface ListProposalsInput {
   projectId: string;
@@ -53,6 +54,7 @@ interface ListProposalsResponse {
  */
 export async function handleListProposals(input: ListProposalsInput): Promise<ListProposalsResponse> {
   try {
+    assertMergeWorkflowAvailable();
     const { projectId, status, limit = 20 } = input;
 
     if (!projectId) {

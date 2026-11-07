@@ -22,6 +22,8 @@ import { runTeamsMigrations } from './teams.js';
 import { runTeamMemoryMigration } from './team-memory.js';
 import { runKnowledgeMigrations } from './knowledge.js';
 import { runMemoryAnalysisJobsMigrations } from './memory-analysis-jobs.js';
+import { runTrustAuditMigrations } from './trust-audit.js';
+import { runEncryptedCorrectionSnapshotMigration } from './encrypted-correction-snapshots.js';
 
 /**
  * Run all v1.2.0 migrations in order
@@ -41,8 +43,10 @@ export async function runAllMigrations(sqlite: Database): Promise<void> {
   await runMaintenanceMigrations(sqlite);
   await runTeamsMigrations(sqlite);
   await runTeamMemoryMigration(sqlite);
+  runEncryptedCorrectionSnapshotMigration(sqlite);
   await runKnowledgeMigrations(sqlite);
   await runMemoryAnalysisJobsMigrations(sqlite);
+  await runTrustAuditMigrations(sqlite);
 }
 
 // Re-export for direct usage if needed
@@ -60,3 +64,5 @@ export { runEntitiesMigrations } from './entities.js';
 export { runTeamsMigrations } from './teams.js';
 export { runTeamMemoryMigration } from './team-memory.js';
 export { runKnowledgeMigrations } from './knowledge.js';
+export { runTrustAuditMigrations } from './trust-audit.js';
+export { runEncryptedCorrectionSnapshotMigration } from './encrypted-correction-snapshots.js';

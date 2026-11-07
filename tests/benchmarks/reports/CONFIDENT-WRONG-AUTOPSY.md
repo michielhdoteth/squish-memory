@@ -1,5 +1,13 @@
 # Confident-Wrong Autopsy
 
+## Current WS2b run (2026-10-14)
+
+The current 215-query run records **1 wrong result**, macro penalty **0.5844**, and micro penalty **0.7884**. The baseline reproduction check passes for both wrong count and macro score. The remaining miss is `fu_9_q_past`: “How did Juno handle styling before Tailwind?” The current Tailwind version ranks first; the required earlier Sass version ranks fifth, outside the accepted top three. The query parser returns no entity or attribute, so historical context is not applied.
+
+Full current evidence: `tests/benchmarks/reports/confident-wrong-autopsy.json`.
+
+## Historical 2026-08-25 run (135 queries)
+
 Task B12-2. Generated 2026-08-25 from `tests/benchmarks/reports/confident-wrong-autopsy.json`
 (git `87df1fc`, same sha as baseline). Reproduction check against
 `tests/benchmarks/reports/baseline.json`: queries=135, confidentWrong=5 (countMatch PASS),

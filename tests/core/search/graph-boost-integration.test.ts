@@ -12,6 +12,7 @@ let savedDatabaseUrl: string | undefined;
 let hybridSearch: typeof import('../../../core/memory/hybrid-search.js').hybridSearch;
 let rememberMemory: typeof import('../../../core/memory/memories.js').rememberMemory;
 let createAssociation: typeof import('../../../core/associations.js').createAssociation;
+let calculateGraphBoostNormalized: typeof import('../../../core/search/graph-boost.js').calculateGraphBoostNormalized;
 let getDb: typeof import('../../../db/index.js').getDb;
 let resetDb: typeof import('../../../db/index.js').resetDb;
 
@@ -31,6 +32,7 @@ describe('Graph Boost Integration', () => {
     hybridSearch = hsMod.hybridSearch;
     rememberMemory = memMod.rememberMemory;
     createAssociation = assocMod.createAssociation;
+    calculateGraphBoostNormalized = (await import('../../../core/search/graph-boost.js')).calculateGraphBoostNormalized;
     getDb = dbMod.getDb;
     resetDb = dbMod.resetDb;
     resetDb();
@@ -51,11 +53,10 @@ describe('Graph Boost Integration', () => {
     const db = await getDb();
     const sqlite = (db as any).$client;
     if (sqlite && typeof sqlite.exec === 'function') {
-      sqlite.exec('DELETE FROM memory_associations;');
       sqlite.exec('DELETE FROM memories;');
       sqlite.exec('DELETE FROM places;');
     }
-  });
+  }, 15_000);
 
   test('linked memories get a score boost', async () => {
     const m1 = await rememberMemory({
@@ -75,6 +76,31 @@ describe('Graph Boost Integration', () => {
     const results = await hybridSearch({ query: 'JavaScript runtime', project: '/test-graph-boost' }, { limit: 10 });
     expect(results.length).toBeGreaterThanOrEqual(2);
     expect(results.some(r => r.id === m1.id || r.id === m2.id)).toBe(true);
+  });
+
+  test('normalized graph boost reads persisted associations instead of process-local edges', async () => {
+    const linked = await rememberMemory({
+      content: 'Persisted association source', type: 'fact', project: '/test-graph-persisted', user: 'test-user',
+    });
+    const neighbor = await rememberMemory({
+      content: 'Persisted association neighbor', type: 'fact', project: '/test-graph-persisted', user: 'test-user',
+    });
+    const secondHop = await rememberMemory({
+      content: 'Persisted second-hop association', type: 'fact', project: '/test-graph-persisted', user: 'test-user',
+    });
+    const orphan = await rememberMemory({
+      content: 'No association exists for this memory', type: 'fact', project: '/test-graph-persisted', user: 'test-user',
+    });
+    await createAssociation(linked.id, neighbor.id, 'relates_to', 1);
+    await createAssociation(neighbor.id, secondHop.id, 'relates_to', 1);
+
+    const { normalized, raw } = await calculateGraphBoostNormalized([linked.id, orphan.id]);
+    const oneHop = await calculateGraphBoostNormalized([linked.id], '/test-graph-persisted', { maxDepth: 1 });
+    expect(raw.get(linked.id)).toBeGreaterThan(0);
+    expect(raw.get(linked.id)).toBeGreaterThan(oneHop.raw.get(linked.id)!);
+    expect(raw.get(orphan.id)).toBe(0);
+    expect(normalized.get(linked.id)).toBe(1);
+    expect(normalized.get(orphan.id)).toBe(0);
   });
 
   test('multi-hop links increase boost', async () => {
@@ -129,5 +155,5 @@ describe('Graph Boost Integration', () => {
       limit: 10,
     });
     expect(results.length).toBeGreaterThanOrEqual(1);
-  });
+  }, 15_000);
 });

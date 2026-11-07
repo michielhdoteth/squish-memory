@@ -3,17 +3,144 @@
 // Team management, agent loadouts / visibility, and team memory compiler.
 // All business logic lives in @squish/core-sdk / core / db adapters.
 
+import { jsonResult } from './shared.js';
 import { z } from "zod";
-import type { ToolCtx } from "./extras.js";
+import type { ToolCtx } from './shared.js';
+import { getRequestPrincipal } from '../../core/acl/request-principal.js';
+import { isStrictTrustPolicy, resolveTrustedCallerId } from '../../core/acl/trust-policy.js';
+import { requireTeamRole, TeamAuthorizationError, writeTeamAuditEvent } from '../../core/acl/team-authorization.js';
+import { writeTrustAudit } from '../../core/acl/trust-audit.js';
+import { verifyMemoryProvenance, signedEvidenceContext } from '../../core/acl/provenance.js';
+import { runInTransaction } from '../../core/storage/database.js';
+import { getDbClient } from '../../core/lib/db-client.js';
+import { config } from '../../config.js';
+import { getDb } from '../../db/index.js';
+import type { DrizzleExecutor } from '../../core/storage/database.js';
 
-function jsonResult(payload: unknown, version?: string) {
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(version ? { ...(payload as Record<string, unknown>), version } : payload, null, 2),
-    }],
-  };
+async function mutateTeamWithAudit<T>(
+  strict: boolean,
+  mutation: (executor?: DrizzleExecutor) => Promise<T>,
+  audit: (value: T, executor?: DrizzleExecutor) => Promise<void>,
+): Promise<T> {
+  if (!strict) {
+    const value = await mutation();
+    await audit(value);
+    return value;
+  }
+  const db = await getDb();
+  if (config.mode === 'team') {
+    const postgresDb = db as unknown as { transaction: <R>(callback: (tx: unknown) => Promise<R>) => Promise<R> };
+    if (typeof postgresDb?.transaction !== 'function') throw new Error('Strict team mutation requires PostgreSQL transaction support');
+    return postgresDb.transaction(async (tx) => {
+      const executor = tx as DrizzleExecutor;
+      const value = await mutation(executor);
+      await audit(value, executor);
+      return value;
+    });
+  }
+  const { raw } = await getDbClient();
+  const sqlite = (raw as { $client?: { exec?: unknown; prepare?: unknown } }).$client;
+  if (typeof sqlite?.exec !== 'function' || typeof sqlite.prepare !== 'function') {
+    throw new Error('Strict team mutation requires transactional SQLite audit storage');
+  }
+  return runInTransaction(db, async (tx) => {
+    const value = await mutation(tx);
+    await audit(value, tx);
+    return value;
+  });
 }
+
+type TeamMutationResult<T> = { value: T } | { deniedReason: string };
+
+/** Recheck strict team roles inside the transaction that performs a mutation. */
+async function mutateWithTeamRole<T>(input: {
+  strict: boolean;
+  actorId: string;
+  teamId: string;
+  action: 'invite' | 'delete' | 'remove_member' | 'share_memory' | 'unshare_memory' | 'promote_memory';
+  roles: readonly ('owner' | 'admin' | 'member')[];
+  targetId?: string;
+  successReason: string;
+  mutate: (executor: DrizzleExecutor | undefined, role: 'owner' | 'admin' | 'member') => Promise<TeamMutationResult<T>>;
+}): Promise<T> {
+  const teamAdapter = await import('../../db/team-adapter.js');
+  if (!input.strict) {
+    const role = await requireTeamRole({
+      actorId: input.actorId,
+      teamId: input.teamId,
+      action: input.action,
+      roles: input.roles,
+    });
+    const outcome = await input.mutate(undefined, role);
+    if ('deniedReason' in outcome) {
+      await writeTeamAuditEvent({
+        actorId: input.actorId, teamId: input.teamId, action: input.action,
+        decision: 'deny', reason: outcome.deniedReason, targetId: input.targetId,
+      });
+      throw new TeamAuthorizationError();
+    }
+    return outcome.value;
+  }
+
+  const outcome = await mutateTeamWithAudit(true, async (tx) => {
+    const membership = await teamAdapter.getTeamMembership(input.teamId, input.actorId, tx);
+    if (!membership) return { authorized: false as const, reason: 'membership_required' };
+    const role = membership.role as 'owner' | 'admin' | 'member';
+    if (!input.roles.includes(role)) return { authorized: false as const, reason: 'role_required' };
+    const result = await input.mutate(tx, role);
+    return 'deniedReason' in result
+      ? { authorized: false as const, reason: result.deniedReason }
+      : { authorized: true as const, value: result.value };
+  }, (result, tx) => writeTeamAuditEvent({
+    actorId: input.actorId,
+    teamId: input.teamId,
+    action: input.action,
+    decision: result.authorized ? 'allow' : 'deny',
+    reason: result.authorized ? input.successReason : result.reason,
+    targetId: input.targetId,
+  }, tx));
+  if (!outcome.authorized) throw new TeamAuthorizationError('Team role or target authorization changed before the mutation committed');
+  return outcome.value;
+}
+
+async function mutateLoadoutWithAudit<T>(
+  actorId: string,
+  resourceId: string,
+  mutation: (executor: DrizzleExecutor) => Promise<{ value: T; changed: boolean } | { deniedReason: string }>,
+): Promise<T> {
+  const { db, raw } = await getDbClient();
+  const sqlite = (raw as { $client?: { exec?: unknown; prepare?: unknown } }).$client;
+  if (typeof sqlite?.exec !== 'function' || typeof sqlite.prepare !== 'function') {
+    throw new Error('Strict loadout mutation requires transactional SQLite audit storage');
+  }
+  const outcome = await runInTransaction(db, async (tx) => {
+    const result = await mutation(tx);
+    if ('deniedReason' in result) {
+      await writeTrustAudit({
+        actorId,
+        resourceId,
+        assetType: 'loadout',
+        decision: 'deny',
+        reason: 'strict_write',
+      }, tx);
+      return { denied: true as const };
+    }
+    if (result.changed) {
+      await writeTrustAudit({
+        actorId,
+        resourceId,
+        assetType: 'loadout',
+        decision: 'allow',
+        reason: 'loadout_change',
+      }, tx);
+    }
+    return { denied: false as const, value: result.value };
+  });
+  if (outcome.denied) throw new TeamAuthorizationError('Memory access changed before the loadout was written');
+  return outcome.value;
+}
+
+
 
 export function registerTeamTools(ctx: ToolCtx): number {
   const { register, server, sdkClient, resolveProjectPath, errorResponse, SERVER_VERSION } = ctx;
@@ -24,10 +151,10 @@ export function registerTeamTools(ctx: ToolCtx): number {
     server,
     "squish_team",
     {
-      description: "Manage teams for shared memory. Actions: create (new team), list (user's teams), info (team details), invite (add member by email), members (list members), remove_member (drop member), share_memory (explicitly share a memory to team), unshare_memory (remove team share), promote_memory (compiler: move personal memory to team scope).",
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      description: "Manage teams for shared memory. Actions: create, list, info, invite, members, remove_member, delete (permanently delete a team; owner only), share_memory, unshare_memory, promote_memory.",
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       inputSchema: z.object({
-        action: z.enum(["create", "list", "info", "invite", "members", "remove_member", "share_memory", "unshare_memory", "promote_memory"]).describe("Action to perform"),
+        action: z.enum(["create", "list", "info", "invite", "members", "remove_member", "delete", "share_memory", "unshare_memory", "promote_memory"]).describe("Action to perform"),
         teamId: z.string().optional().describe("Team ID (required for most actions)"),
         name: z.string().optional().describe("Team name (required for create)"),
         slug: z.string().optional().describe("Team slug (optional for create, auto-generated if omitted)"),
@@ -42,17 +169,20 @@ export function registerTeamTools(ctx: ToolCtx): number {
     async (input: any) => {
       try {
         const teamAdapter = await import('../../db/team-adapter.js');
-        const user = input.user || 'local-agent';
+        const user = isStrictTrustPolicy()
+          ? resolveTrustedCallerId(input.user)!
+          : getRequestPrincipal() ?? input.user?.trim() ?? 'local-agent';
 
         switch (input.action) {
           case "create": {
             if (!input.name) return errorResponse("missing_param", "name is required for create");
-            const team = await teamAdapter.createTeam({
+            const strict = isStrictTrustPolicy();
+            const team = await mutateTeamWithAudit(strict, (tx) => teamAdapter.createTeam({
               name: input.name,
               slug: input.slug,
               description: input.description,
               ownerId: user,
-            });
+            }, tx), (created, tx) => writeTeamAuditEvent({ actorId: user, teamId: created.id, action: 'create', decision: 'allow', reason: 'team_created' }, tx));
             return { content: [{ type: "text", text: JSON.stringify({ ok: true, team }, null, 2) }] };
           }
           case "list": {
@@ -61,6 +191,7 @@ export function registerTeamTools(ctx: ToolCtx): number {
           }
           case "info": {
             if (!input.teamId) return errorResponse("missing_param", "teamId is required");
+            await requireTeamRole({ actorId: user, teamId: input.teamId, action: 'info', roles: ['owner', 'admin', 'member'] });
             const team = await teamAdapter.getTeam(input.teamId);
             if (!team) return errorResponse("not_found", "Team not found");
             const members = await teamAdapter.getTeamMembers(input.teamId);
@@ -69,67 +200,178 @@ export function registerTeamTools(ctx: ToolCtx): number {
           case "invite": {
             if (!input.teamId) return errorResponse("missing_param", "teamId is required");
             if (!input.email) return errorResponse("missing_param", "email is required for invite");
-            const invitation = await teamAdapter.inviteTeamMember({
-              teamId: input.teamId,
-              email: input.email,
-              role: input.role ?? 'member',
-              invitedBy: user,
+            const strict = isStrictTrustPolicy();
+            const invitation = await mutateWithTeamRole({
+              strict, actorId: user, teamId: input.teamId, action: 'invite',
+              roles: ['owner', 'admin'], targetId: input.email, successReason: 'invitation_created',
+              mutate: async (tx) => input.role === 'owner'
+                ? { deniedReason: 'owner_role_not_invitable' }
+                : { value: await teamAdapter.inviteTeamMember({
+                  teamId: input.teamId!, email: input.email!, role: input.role ?? 'member', invitedBy: user,
+                }, tx) },
             });
             return { content: [{ type: "text", text: JSON.stringify({ ok: true, invitation }, null, 2) }] };
           }
           case "members": {
             if (!input.teamId) return errorResponse("missing_param", "teamId is required");
+            await requireTeamRole({ actorId: user, teamId: input.teamId, action: 'members', roles: ['owner', 'admin', 'member'] });
             const members = await teamAdapter.getTeamMembers(input.teamId);
             return { content: [{ type: "text", text: JSON.stringify({ ok: true, members, count: members.length }, null, 2) }] };
+          }
+          case "delete": {
+            if (!input.teamId) return errorResponse("missing_param", "teamId is required");
+            const deleted = await mutateWithTeamRole({
+              strict: isStrictTrustPolicy(), actorId: user, teamId: input.teamId,
+              action: 'delete', roles: ['owner'], successReason: 'team_owner_deleted',
+              mutate: async (tx) => ({ value: await teamAdapter.deleteTeam(input.teamId!, tx) }),
+            });
+            return { content: [{ type: "text", text: JSON.stringify({ ok: true, deleted }, null, 2) }] };
           }
           case "remove_member": {
             if (!input.teamId) return errorResponse("missing_param", "teamId is required");
             if (!input.userId) return errorResponse("missing_param", "userId is required");
-            const removed = await teamAdapter.removeTeamMember(input.teamId, input.userId);
+            const strict = isStrictTrustPolicy();
+            const removed = await mutateWithTeamRole({
+              strict, actorId: user, teamId: input.teamId, action: 'remove_member',
+              roles: ['owner', 'admin'], targetId: input.userId, successReason: 'member_removed',
+              mutate: async (tx, actorRole) => {
+                const target = await teamAdapter.getTeamMembership(input.teamId!, input.userId!, tx);
+                if (!target || target.role === 'owner' || (actorRole === 'admin' && target.role === 'admin')) {
+                  return { deniedReason: 'protected_member' };
+                }
+                return { value: await teamAdapter.removeTeamMember(input.teamId!, input.userId!, tx) };
+              },
+            });
             return { content: [{ type: "text", text: JSON.stringify({ ok: true, removed }, null, 2) }] };
           }
           case "share_memory": {
             if (!input.teamId) return errorResponse("missing_param", "teamId is required");
             if (!input.memoryId) return errorResponse("missing_param", "memoryId is required");
-            const share = await teamAdapter.shareMemoryWithTeam(
-              input.memoryId,
-              input.teamId,
-              user,
-              input.permission ?? 'read',
-            );
+            if (isStrictTrustPolicy()) {
+              const [ownerId, actorId] = await Promise.all([
+                teamAdapter.getMemoryOwnerId(input.memoryId),
+                teamAdapter.resolvePersistedUserId(user),
+              ]);
+              const readable = await sdkClient.getById(input.memoryId, { userId: user });
+              if (!actorId || !ownerId || ownerId !== actorId || !readable) {
+                await writeTeamAuditEvent({ actorId: user, teamId: input.teamId, action: 'share_memory', decision: 'deny', reason: 'source_owner_and_trust_required', targetId: input.memoryId });
+                throw new TeamAuthorizationError('Strict sharing requires the persisted source owner and a trusted readable memory');
+              }
+            }
+            const strict = isStrictTrustPolicy();
+            const share = await mutateWithTeamRole({
+              strict, actorId: user, teamId: input.teamId, action: 'share_memory',
+              roles: ['owner', 'admin'], targetId: input.memoryId,
+              successReason: 'source_owner_and_team_role',
+              mutate: async (tx) => ({ value: await teamAdapter.shareMemoryWithTeam(
+                input.memoryId!, input.teamId!, user, input.permission ?? 'read', tx,
+              ) }),
+            });
             return { content: [{ type: "text", text: JSON.stringify({ ok: true, share }, null, 2) }] };
           }
           case "unshare_memory": {
             if (!input.teamId) return errorResponse("missing_param", "teamId is required");
             if (!input.memoryId) return errorResponse("missing_param", "memoryId is required");
-            const removed = await teamAdapter.unshareMemory(input.memoryId, input.teamId);
+            const strict = isStrictTrustPolicy();
+            const removed = await mutateWithTeamRole({
+              strict, actorId: user, teamId: input.teamId, action: 'unshare_memory',
+              roles: ['owner', 'admin'], targetId: input.memoryId, successReason: 'team_admin_revocation',
+              mutate: async (tx) => ({ value: await teamAdapter.unshareMemory(input.memoryId!, input.teamId!, tx) }),
+            });
             return { content: [{ type: "text", text: JSON.stringify({ ok: true, removed }, null, 2) }] };
           }
           case "promote_memory": {
             if (!input.memoryId) return errorResponse("missing_param", "memoryId is required");
-            const { rememberMemory } = await import('../../core/memory/memory-write.js');
+            if (!input.teamId) return errorResponse("missing_param", "teamId is required");
+            const strict = isStrictTrustPolicy();
+            const teamAdapter = await import('../../db/team-adapter.js');
+            const [ownerId, persistedActorId] = strict ? await Promise.all([
+              teamAdapter.getMemoryOwnerId(input.memoryId),
+              teamAdapter.resolvePersistedUserId(user),
+            ]) : [null, null];
+            const readable = strict ? await sdkClient.getById(input.memoryId, { userId: user }) : null;
+            if (strict && (!persistedActorId || ownerId !== persistedActorId || !readable)) {
+              await writeTrustAudit({ actorId: user, resourceId: input.memoryId, assetType: 'memory', decision: 'deny', reason: 'private_default' });
+              throw new TeamAuthorizationError('Strict promotion requires a provenance-verified memory owned by the requesting principal');
+            }
+            const { rememberMemory, rememberMemoryWithAudit } = await import('../../core/memory/memory-write.js');
             const { getMemory } = await import('../../core/memory/memory-crud.js');
-            const mem = await getMemory(input.memoryId);
+            const mem = strict ? readable : await getMemory(input.memoryId);
             if (!mem) return errorResponse("not_found", "Memory not found");
+            const memTeamId = strict ? await teamAdapter.getMemoryTeamId(input.memoryId) : null;
+            const sourceMetadata = typeof mem.metadata === 'string' ? JSON.parse(mem.metadata) as Record<string, unknown> : mem.metadata ?? {};
+            if (strict && memTeamId) throw new TeamAuthorizationError('Only caller-owned personal memories can be promoted');
+            if (strict && !verifyMemoryProvenance({
+              content: mem.content,
+              projectId: mem.projectId ?? null,
+              type: mem.type,
+              ownerId,
+              teamId: memTeamId,
+              sourceMemoryId: typeof sourceMetadata.sourceMemoryId === 'string' ? sourceMetadata.sourceMemoryId : input.memoryId,
+              metadata: sourceMetadata,
+            })) {
+              await writeTrustAudit({ actorId: user, resourceId: input.memoryId, assetType: 'memory', decision: 'deny', reason: 'invalid_signature' });
+              throw new TeamAuthorizationError('Promotion source changed or failed its provenance signature check');
+            }
             // Promote: re-remember the same content as team-scoped
-            const promoteTeamId = (mem as any).teamId || input.teamId;
+            const promoteTeamId = input.teamId;
             if (!promoteTeamId) return errorResponse("missing_param", "teamId is required (memory has no teamId and none provided)");
-            const promoted = await rememberMemory({
+            const promotionInput = {
               content: mem.content,
               type: mem.type as any,
               tags: mem.tags ?? [],
               project: mem.projectId ?? undefined,
               user,
               teamId: promoteTeamId,
-              metadata: { ...((typeof mem.metadata === 'string' ? JSON.parse(mem.metadata) : mem.metadata) ?? {}), promotedFrom: input.memoryId, promotedAt: new Date().toISOString() },
-            });
+              metadata: { ...(strict ? signedEvidenceContext(sourceMetadata) : sourceMetadata), promotedFrom: input.memoryId, promotionSourceId: input.memoryId, promotedAt: new Date().toISOString() },
+            };
+            let promoted;
+            if (strict) {
+              try {
+                promoted = await rememberMemoryWithAudit(promotionInput, {
+                  actorId: user,
+                  teamId: input.teamId!,
+                  action: 'promote_memory',
+                  decision: 'allow',
+                  reason: 'owned_verified_source',
+                  targetId: input.memoryId!,
+                }, {
+                  id: input.memoryId!,
+                  content: mem.content,
+                  projectId: mem.projectId ?? null,
+                  type: mem.type,
+                  ownerId: ownerId!,
+                }, {
+                  persistedUserId: persistedActorId!,
+                  teamId: input.teamId!,
+                  roles: ['owner', 'admin'],
+                });
+              } catch (error) {
+                if (error instanceof Error && error.message === 'Team role was revoked before promotion could commit') {
+                  await writeTeamAuditEvent({
+                    actorId: user,
+                    teamId: input.teamId,
+                    action: 'promote_memory',
+                    decision: 'deny',
+                    reason: 'role_revoked_before_mutation',
+                    targetId: input.memoryId,
+                  });
+                  throw new TeamAuthorizationError('Team membership was revoked before the promotion could be committed');
+                }
+                throw error;
+              }
+            } else {
+              promoted = await rememberMemory(promotionInput);
+            }
             return { content: [{ type: "text", text: JSON.stringify({ ok: true, promoted, message: `Memory promoted to team scope (${promoteTeamId})` }, null, 2) }] };
           }
           default:
             return errorResponse("invalid_action", `Unknown action: ${input.action}`);
         }
-      } catch (error: any) {
-        return errorResponse("team_error", error.message);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown team error';
+        const code = error instanceof TeamAuthorizationError ? 'team_denied' : 'team_error';
+        return errorResponse(code, message);
       }
     }
   )) count++;
@@ -160,26 +402,68 @@ export function registerTeamTools(ctx: ToolCtx): number {
       const { addLoadout, removeLoadout, getAgentLoadout, setVisibilityRule, removeVisibilityRule, getVisibilityRules, checkVisibility } = await import('../../core/loadout/loadout.js');
 
       try {
+        const strict = isStrictTrustPolicy();
+        const actor = strict ? resolveTrustedCallerId() : getRequestPrincipal();
+        const denyStrictLoadout = async (resourceId: string, reason: string): Promise<never> => {
+          await writeTrustAudit({ actorId: actor ?? 'unbound', resourceId, assetType: 'loadout', decision: 'deny', reason: 'strict_write' });
+          throw new TeamAuthorizationError(reason);
+        };
+        if (strict && !actor) return errorResponse('strict_loadout_denied', 'Strict loadout access requires an authenticated principal');
+        if (strict && ['set_visibility', 'remove_visibility', 'check_visibility', 'get_rules'].includes(input.action)) {
+          await denyStrictLoadout(input.assetId ?? 'visibility-policy', 'Strict trust does not accept caller-authored visibility rules; use explicit team memory sharing');
+        }
+        if (strict && ['add_loadout', 'remove_loadout', 'get_loadout'].includes(input.action) && input.agentId !== actor) {
+          await denyStrictLoadout(input.agentId ?? 'missing-agent', 'Strict loadouts are bound to the authenticated principal');
+        }
         switch (input.action) {
           case "add_loadout": {
             if (!input.agentId || !input.assetType || !input.assetId) return errorResponse("missing_param", "agentId, assetType, and assetId are required");
-            const loadout = await addLoadout({
-              agentId: input.agentId,
-              assetType: input.assetType,
-              assetId: input.assetId,
-              priority: input.priority,
-              injectionMode: input.injectionMode,
-            });
+            if (strict) {
+              if (input.assetType !== 'memory') await denyStrictLoadout(input.assetId, 'Strict loadouts currently support only provenance-gated memory assets');
+              const readable = await sdkClient.getById(input.assetId, { userId: actor! });
+              if (!readable) await denyStrictLoadout(input.assetId, 'Memory is not readable by the authenticated principal');
+            }
+            const loadout = strict
+              ? await mutateLoadoutWithAudit(actor!, input.assetId, async (tx) => {
+                const stillReadable = await sdkClient.getById(input.assetId!, { userId: actor! });
+                if (!stillReadable) return { deniedReason: 'source_access_revoked' };
+                return { value: await addLoadout({
+                  agentId: input.agentId!,
+                  assetType: input.assetType!,
+                  assetId: input.assetId!,
+                  priority: input.priority,
+                  injectionMode: input.injectionMode,
+                }, tx), changed: true };
+              })
+              : await addLoadout({
+                agentId: input.agentId,
+                assetType: input.assetType,
+                assetId: input.assetId,
+                priority: input.priority,
+                injectionMode: input.injectionMode,
+              });
             return { content: [{ type: "text", text: JSON.stringify({ ok: true, loadout }, null, 2) }] };
           }
           case "remove_loadout": {
             if (!input.agentId || !input.assetType || !input.assetId) return errorResponse("missing_param", "agentId, assetType, and assetId are required");
-            await removeLoadout(input.agentId, input.assetType, input.assetId);
-            return { content: [{ type: "text", text: JSON.stringify({ ok: true, removed: true }, null, 2) }] };
+            const removed = strict
+              ? await mutateLoadoutWithAudit(actor!, input.assetId, async () => {
+                const value = await removeLoadout(input.agentId!, input.assetType!, input.assetId!);
+                return { value, changed: value };
+              })
+              : await removeLoadout(input.agentId, input.assetType, input.assetId);
+            return { content: [{ type: "text", text: JSON.stringify({ ok: true, removed }, null, 2) }] };
           }
           case "get_loadout": {
             if (!input.agentId) return errorResponse("missing_param", "agentId is required");
-            const loadout = await getAgentLoadout(input.agentId);
+            let loadout = await getAgentLoadout(input.agentId);
+            if (strict) {
+              const visible = await Promise.all(loadout.map(async (entry) => {
+                if (entry.assetType !== 'memory') return null;
+                return await sdkClient.getById(entry.assetId, { userId: actor! }) ? entry : null;
+              }));
+              loadout = visible.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+            }
             return { content: [{ type: "text", text: JSON.stringify({ ok: true, loadout, count: loadout.length }, null, 2) }] };
           }
           case "set_visibility": {
@@ -213,7 +497,7 @@ export function registerTeamTools(ctx: ToolCtx): number {
             return errorResponse("invalid_action", `Unknown action: ${input.action}`);
         }
       } catch (error: any) {
-        return errorResponse("loadout_error", error.message);
+        return errorResponse(error instanceof TeamAuthorizationError ? 'strict_loadout_denied' : "loadout_error", error.message);
       }
     }
   )) count++;
@@ -237,6 +521,15 @@ export function registerTeamTools(ctx: ToolCtx): number {
     async (input: any) => {
       try {
         const { compileTeamMemories, getCompileStats } = await import('../../core/memory/team-compiler.js');
+        const strict = isStrictTrustPolicy();
+        const user = strict ? resolveTrustedCallerId() : getRequestPrincipal() ?? 'team-compiler';
+        let ownerUserId: string | undefined;
+        if (strict) {
+          await requireTeamRole({ actorId: user!, teamId: input.teamId, action: 'compile', roles: ['owner', 'admin'] });
+          const teamAdapter = await import('../../db/team-adapter.js');
+          ownerUserId = await teamAdapter.resolvePersistedUserId(user! ) ?? undefined;
+          if (!ownerUserId) throw new TeamAuthorizationError('Strict compilation requires a persisted caller account');
+        }
 
         if (input.action === "stats") {
           const stats = await getCompileStats({
@@ -244,6 +537,7 @@ export function registerTeamTools(ctx: ToolCtx): number {
             teamId: input.teamId,
             minImportance: input.minImportance,
             minAccessCount: input.minAccessCount,
+            ownerUserId,
           });
           return { content: [{ type: "text", text: JSON.stringify({ ok: true, ...stats }, null, 2) }] };
         }
@@ -254,6 +548,24 @@ export function registerTeamTools(ctx: ToolCtx): number {
           minImportance: input.minImportance,
           minAccessCount: input.minAccessCount,
           batchSize: input.batchSize,
+          user: user ?? undefined,
+          ownerUserId,
+          authorizeCandidate: strict ? async (candidate) => {
+            const teamAdapter = await import('../../db/team-adapter.js');
+            const [ownerId, readable] = await Promise.all([
+              teamAdapter.getMemoryOwnerId(candidate.id),
+              sdkClient.getById(candidate.id, { userId: user! }),
+            ]);
+            if (ownerId !== ownerUserId || !readable || readable.content !== candidate.content ||
+              readable.projectId !== candidate.projectId || readable.type !== candidate.type) return null;
+            return {
+              id: candidate.id,
+              content: readable.content,
+              projectId: readable.projectId ?? null,
+              type: readable.type,
+              metadata: readable.metadata ?? {},
+            };
+          } : undefined,
         });
 
         return {
@@ -269,7 +581,7 @@ export function registerTeamTools(ctx: ToolCtx): number {
           }],
         };
       } catch (error: any) {
-        return errorResponse("compile_error", error.message);
+        return errorResponse(error instanceof TeamAuthorizationError ? 'team_denied' : "compile_error", error.message);
       }
     }
   )) count++;

@@ -5,9 +5,11 @@
  * Usage: squish remember "content" [--type observation] [--place sandbox] [--tags foo,bar] [--project /path]
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
 import { client } from '../program.js';
 import { detectMemorySignals } from '../../core/memory/trigger-detector.js';
+import { detectWriteRouting } from '../../core/memory/write-router.js';
 import { pinMemory, unpinMemory } from '../../core/security/governance.js';
 import { remediationFor } from '../errors.js';
 import { colors } from '../colors.js';
@@ -20,6 +22,10 @@ export function registerRememberCommand(program: Command) {
     .option('-T, --tags <tags>', 'Comma-separated tags')
     .option('-p, --project <project>', 'Project path (global if omitted)')
     .option('-s, --source <source>', 'Source (cli, voice, chat, document)', 'cli')
+    .option('--capture-key <key>', 'Idempotency key for replayed host capture events (SQLite only)')
+    .option('--session-id <id>', 'Source session identifier')
+    .option('--occurred-at <date>', 'Original event time in ISO 8601 format (for delayed imports)')
+    .option('--time-zone <iana-zone>', 'IANA time zone for calendar phrases in the source content')
     .option('-r, --reasoning <reasoning>', 'Why this memory is important')
     .option('-c, --context <context>', 'What triggered this memory')
     .option('-e, --examples <examples>', 'When to apply this knowledge')
@@ -31,10 +37,7 @@ export function registerRememberCommand(program: Command) {
     .option('--learning-type <type>', 'Learning type if routing to learning: success, failure, fix, insight')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (content: string, options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) {
-        process.env.SQUISH_QUIET = '1';
-      }
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const signals = detectMemorySignals(content);
         
@@ -45,23 +48,10 @@ export function registerRememberCommand(program: Command) {
         let routingReason = "";
         
         if (routing === "auto") {
-          const hasLessonPattern = /(\bfailed\s+because\b|\blesson\s+learned\b|\bnext\s+time\b|\broot\s+cause\b|\bsuccess\b.*\bbecause\b|\bi\s+learned\b|\binsight\b)/i.test(content);
-          const hasLearningType = /(\bsuccess\b|\bfailure\b|\bfix\b|\binsight\b)/i.test(content);
-          const hasHackPattern = /(\bHACK\b|\bworkaround\b|\btemporary\s+fix\b|\bFIXME\b|\bXXX\b)/i.test(content);
-          
-          if (hasLessonPattern || hasLearningType || hasHackPattern) {
-            routing = "learning";
-            routingReason = "Auto-detected as learning";
-          } else if (signals.suggestedType === 'task') {
-            routing = "memory";
-            routingReason = "Detected as task";
-          } else if (/\b(note|note\s+that|log)\b/i.test(content)) {
-            routing = "note";
-            routingReason = "Auto-detected as note";
-          } else {
-            routing = "memory";
-            routingReason = "Default to memory";
-          }
+          // One rule set, shared with the MCP write path
+          const detected = detectWriteRouting(content, { suggestedType: signals.suggestedType });
+          routing = detected.routing;
+          routingReason = detected.routingReason;
         }
         
         let result: any;
@@ -95,6 +85,10 @@ export function registerRememberCommand(program: Command) {
               examples: options.examples,
               exceptions: options.exceptions,
             },
+            captureKey: options.captureKey,
+            sessionId: options.sessionId,
+            occurredAt: options.occurredAt,
+            timeZone: options.timeZone,
           });
           
           if (options.pin) {
@@ -170,13 +164,7 @@ export function registerRememberCommand(program: Command) {
         console.error(options.json ? JSON.stringify(payload) : `${colors.red('Error')}: ${error.message}\nHint: ${remediation}`);
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) {
-            delete process.env.SQUISH_QUIET;
-          } else {
-            process.env.SQUISH_QUIET = previousQuiet;
-          }
-        }
+        restoreQuiet();
       }
     });
 }

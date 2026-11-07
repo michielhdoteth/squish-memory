@@ -14,6 +14,3 @@ export * from './skills/skills';
 
 // Agent loadout & visibility (v2.1.0)
 export * from './loadout/loadout';
-
-// Auto-extraction pipeline (v2.1.0)
-export * from './extraction/extraction';

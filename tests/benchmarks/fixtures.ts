@@ -1,11 +1,9 @@
 ﻿/**
  * Memory benchmark fixtures (Batch 9, adversarial suite Task B12-3).
  *
- * Deterministic, synthetic corpus modeling the four MemConflict-style
- * conflict categories, used by scripts/run-memory-bench.ts to measure
- * contradiction handling, temporal reasoning, conditional retrieval and
- * abstention — the axes where hosted memory providers publish their worst
- * numbers (Mem0 BEAM: 32.5% contradiction resolution, 40% abstention).
+ * Deterministic, synthetic corpus modeling four conflict categories for
+ * measuring contradiction handling, temporal reasoning, conditional retrieval,
+ * and appropriate abstention.
  *
  * Section 4b adds the adversarial unanswerable suite: 80 queries across 10
  * trap classes (see TRAP_CLASSES), each carrying an integrityGuard that
@@ -37,6 +35,8 @@ export interface BenchQuery {
   expectTop1?: string[];
   /** benchIds that earn partial credit when present in top-3. */
   expectTop3?: string[];
+  /** Top-1 records that explicitly state the historical answer without being the old version itself. */
+  supportingEvidenceTop1?: string[];
   /** For unanswerable queries: any hit at/above this tier counts as confident-wrong. */
   wrongIfTop1?: string[];
   /**
@@ -154,6 +154,7 @@ interface UpdateSubject {
   v3: string;
   queryCurrent: string;
   queryPast: string;
+  latestVersionAnswersPastQuery?: boolean;
 }
 
 const UPDATE_SUBJECTS: UpdateSubject[] = [
@@ -166,7 +167,7 @@ const UPDATE_SUBJECTS: UpdateSubject[] = [
   { subject: 'grove', domain: 'hosting', v1: 'Grove is hosted on AWS us-east-1.', v2: 'Grove is now hosted on GCP instead of AWS us-east-1.', v3: 'Grove is now hosted on Fly instead of GCP.', queryCurrent: 'Where is Grove hosted?', queryPast: 'Where was Grove hosted before Fly.io?' },
   { subject: 'harbor', domain: 'ci', v1: 'Harbor runs its CI on Jenkins.', v2: 'Harbor now runs its CI on CircleCI instead of Jenkins.', v3: 'Harbor now runs its CI on GitHub Actions instead of CircleCI.', queryCurrent: 'What CI does Harbor run?', queryPast: 'What CI did Harbor run before GitHub Actions?' },
   { subject: 'ignite', domain: 'state management', v1: 'Ignite uses Redux for state management.', v2: 'Ignite now uses Zustand for state management instead of Redux.', v3: 'Ignite now uses Jotai for atomic state instead of Zustand patterns.', queryCurrent: 'What state management does Ignite use?', queryPast: 'What state management did Ignite use before Jotai?' },
-  { subject: 'juno', domain: 'css', v1: 'Juno styles with plain CSS.', v2: 'Juno now styles with Sass instead of plain CSS.', v3: 'Juno now styles with Tailwind instead of custom Sass.', queryCurrent: 'How does Juno handle styling?', queryPast: 'How did Juno handle styling before Tailwind?' },
+  { subject: 'juno', domain: 'css', v1: 'Juno styles with plain CSS.', v2: 'Juno now styles with Sass instead of plain CSS.', v3: 'Juno now styles with Tailwind instead of custom Sass.', queryCurrent: 'How does Juno handle styling?', queryPast: 'How did Juno handle styling before Tailwind?', latestVersionAnswersPastQuery: true },
   { subject: 'krypton', domain: 'queue', v1: 'Krypton processes jobs with RabbitMQ.', v2: 'Krypton now processes jobs with Sidekiq instead of RabbitMQ.', v3: 'Krypton now processes jobs with NATS JetStream instead of Sidekiq.', queryCurrent: 'What queue does Krypton use?', queryPast: 'What queue did Krypton use before NATS?' },
   { subject: 'lumen', domain: 'observability', v1: 'Lumen monitors its stack with Datadog.', v2: 'Lumen now monitors its stack with New Relic instead of Datadog.', v3: 'Lumen now monitors its stack with self-hosted Grafana and Loki instead of New Relic.', queryCurrent: 'What observability stack does Lumen use?', queryPast: 'What observability did Lumen use before Grafana?' },
   { subject: 'mesa', domain: 'orm', v1: 'Mesa accesses data through raw SQL.', v2: 'Mesa now accesses data through Prisma instead of raw SQL.', v3: 'Mesa now accesses data through Drizzle instead of Prisma for edge compatibility.', queryCurrent: 'What ORM does Mesa use?', queryPast: 'What ORM did Mesa use before Drizzle?' },
@@ -203,7 +204,14 @@ export function buildFactUpdateQueries(): BenchQuery[] {
   const queries: BenchQuery[] = [];
   UPDATE_SUBJECTS.forEach((s, idx) => {
     queries.push({ benchId: `fu_${idx}_q_current`, category: 'fact-update', query: s.queryCurrent, expectTop1: [`fu_${idx}_v3`], expectTop3: [`fu_${idx}_v3`, `fu_${idx}_v2`] });
-    queries.push({ benchId: `fu_${idx}_q_past`, category: 'fact-update', query: s.queryPast, expectTop1: [`fu_${idx}_v1`], expectTop3: [`fu_${idx}_v1`, `fu_${idx}_v2`] });
+    queries.push({
+      benchId: `fu_${idx}_q_past`,
+      category: 'fact-update',
+      query: s.queryPast,
+      expectTop1: [`fu_${idx}_v1`],
+      expectTop3: [`fu_${idx}_v1`, `fu_${idx}_v2`],
+      ...(s.latestVersionAnswersPastQuery ? { supportingEvidenceTop1: [`fu_${idx}_v3`] } : {}),
+    });
   });
   return queries;
 }

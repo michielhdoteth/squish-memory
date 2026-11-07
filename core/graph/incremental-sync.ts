@@ -13,6 +13,9 @@ import { addMemoryToGraph } from './graph-builder.js';
 import { deduplicateProjectEntities } from './entity-deduplicator.js';
 import { getOrCreateProject } from '../projects.js';
 import { logger } from '../logger.js';
+import { createKnowledgeEdge } from '../knowledge/knowledge-edges.js';
+import { isStrictTrustPolicy, TrustBoundaryError } from '../acl/trust-policy.js';
+import { denyUnscopedGraphOperation } from './strict-gates.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -92,6 +95,7 @@ export async function onMemoryStored(
   memoryId: string,
   options?: SyncOptions
 ): Promise<SyncResult> {
+  if (isStrictTrustPolicy()) await denyUnscopedGraphOperation('incremental_graph_sync', memoryId);
   const startTime = Date.now();
   const dedupThreshold = options?.dedupThreshold ?? DEFAULT_DEDUP_THRESHOLD;
   const forceDedup = options?.forceDedup ?? false;
@@ -167,16 +171,14 @@ export async function onMemoryStored(
         .from(schema.entities)
         .where(and(eq(schema.entities.projectId, projectId), inArray(schema.entities.name, names)));
       for (const entity of rows) {
-        await (db as any).insert(schema.knowledgeEdges).values({
+        await createKnowledgeEdge({
           fromId: options.knowledgeRecordId,
           fromKind: 'knowledge',
           toId: entity.id,
           toKind: 'entity',
           edgeType: 'references',
-          metadata: (await import('../../config.js')).config.mode === 'team'
-            ? { sourceMemoryId: memoryId, projectId }
-            : JSON.stringify({ sourceMemoryId: memoryId, projectId }),
-        }).onConflictDoNothing();
+          metadata: { sourceMemoryId: memoryId, projectId },
+        });
       }
     }
   }
@@ -245,6 +247,10 @@ export async function onMemoryStored(
 export async function getSyncStats(
   projectPath: string
 ): Promise<SyncStats> {
+  if (isStrictTrustPolicy()) {
+    throw new TrustBoundaryError('Unscoped incremental graph statistics are disabled under strict trust');
+  }
+
   const projectId = await resolveProjectId(projectPath);
   const entitiesSinceLastDedup = projectId
     ? (syncCounters.get(projectId) ?? 0)
@@ -265,6 +271,10 @@ export async function getSyncStats(
  * Useful after manual graph operations.
  */
 export function resetSyncCounter(projectPath: string): void {
+  if (isStrictTrustPolicy()) {
+    throw new TrustBoundaryError('Incremental graph counter reset is disabled under strict trust');
+  }
+
   // We accept a path but store by ID; resolve lazily by clearing all entries
   // that might match, or schedule an async lookup. For simplicity we store
   // by path as a fallback key so callers can reset by path directly.

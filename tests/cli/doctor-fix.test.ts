@@ -104,7 +104,7 @@ function oldSchema(dbPath: string) {
 }
 
 describe('squish doctor --fix', () => {
-  test('doctor detects drifted schema, --fix repairs it, then remember works', { timeout: 60000 }, () => {
+  test('bootstrap repairs missing required tables before doctor probes, then remember works', { timeout: 60000 }, () => {
     const tempDir = makeTempDir('doctor-fix-tables');
     const dbPath = join(tempDir, 'squish.db');
     mkdirSync(tempDir, { recursive: true });
@@ -117,20 +117,19 @@ describe('squish doctor --fix', () => {
     };
 
     try {
-      // Step 1: doctor detects issues — exits 0 (doctor is exempt from preAction hook)
+      // Startup bootstrap repairs missing required tables before the diagnostic probe runs.
       const doctorDetect = runSquish(['doctor', '--json'], env);
       expect(doctorDetect.status).toBe(0);
       const detectJson = extractJson(doctorDetect.stdout);
-      expect(detectJson.probe.status).toBe('drifted');
-      expect(detectJson.probe.missingTables.length).toBeGreaterThan(0);
+      expect(detectJson.probe.status).toBe('ok');
+      expect(detectJson.probe.missingTables).toEqual([]);
 
-      // Step 2: --fix repairs schema. Note: probe in JSON reflects pre-fix state.
+      // --fix remains safe when bootstrap has already repaired required tables.
       const doctorFix = runSquish(['doctor', '--json', '--fix'], env);
       expect(doctorFix.status).toBe(0);
-      // The fix ran and stdout contains the repair message
       expect(doctorFix.stdout).toContain('Schema repaired successfully');
 
-      // Step 3: verify schema is now OK by running doctor again
+      // Verify schema is healthy and usable after the startup recovery.
       const doctorAfter = runSquish(['doctor', '--json'], env);
       expect(doctorAfter.status).toBe(0);
       const afterJson = extractJson(doctorAfter.stdout);

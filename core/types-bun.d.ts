@@ -29,10 +29,43 @@ declare module 'bun:test' {
 }
 
 declare module 'bun:sqlite' {
+  /** Options accepted by the `bun:sqlite` Database constructor. */
+  export interface DatabaseOptions {
+    readonly?: boolean;
+    create?: boolean;
+    readwrite?: boolean;
+    strict?: boolean;
+    safeIntegers?: boolean;
+  }
+
+  /**
+   * A compiled statement, returned by `Database.prepare` (and by `query`,
+   * which is `prepare` with an LRU cache). Binding parameters are typed
+   * loosely because bun:sqlite accepts string, number, bigint, boolean,
+   * null, Uint8Array and Buffer interchangeably.
+   */
+  export class Statement {
+    all(...params: unknown[]): unknown[];
+    get(...params: unknown[]): unknown;
+    run(...params: unknown[]): { changes: number; lastInsertRowid: number };
+    values(...params: unknown[]): unknown[][];
+    finalize(): void;
+  }
+
   export class Database {
-    constructor(path: string);
+    constructor(path: string, options?: DatabaseOptions);
+    prepare(sql: string): Statement;
     query(sql: string): any;
     exec(sql: string): void;
     close(): void;
   }
 }
+
+/**
+ * Minimal ambient handle on the Bun global. Declared without a DOM or
+ * `@types/bun` dependency so files outside `core/**` can feature-detect the
+ * runtime (`typeof Bun !== 'undefined'`) and stay inside this tsconfig program.
+ */
+declare const Bun: {
+  readonly version: string;
+};

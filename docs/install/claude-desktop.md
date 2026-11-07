@@ -2,21 +2,25 @@
 
 Squish integrates with Claude Desktop as an MCP (Model Context Protocol) server that provides persistent memory capabilities for your coding sessions.
 
+> **Release status (2026-10-20): Squish 2.2.0 is an unpublished source candidate.** npm currently
+> resolves to 1.9.0, which has not been validated with this host guide. Do not install that package
+> or run setup commands from this page until a matching release and Claude Desktop compatibility
+> are announced. The configuration notes below are target-version reference material only.
+
 ## Prerequisites
 
 - Claude Desktop latest version
-- Node.js 18.0.0 or later
-- Squish memory server (installed via npm)
+- Node.js 20.0.0 or later for the 2.2.0 source candidate
+- A published Squish release explicitly validated for Claude Desktop
 
 ## Installation
 
 Claude Desktop uses MCP-only integration. You need to manually configure the MCP server.
 
-### Step 1: Install Squish Globally
+### Step 1: Install a validated Squish release
 
-```bash
-npm install -g squish-memory
-```
+No install command is provided while the current source candidate is unpublished. Wait for a
+matching release announcement before continuing with the configuration reference below.
 
 ### Step 2: Configure MCP in Claude Desktop
 
@@ -110,7 +114,7 @@ Once installed, Squish works automatically with Claude Desktop:
 ### Environment Variables
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SQUISH_DATA_DIR` | Data directory for Squish | `~/.squish/claude-desktop` |
+| `SQUISH_DATA_DIR` | Optional override for the shared Squish data directory | `~/.squish` |
 | `SQUISH_COMMAND` | Command to start Squish MCP | `squish-mcp` |
 
 ### Configuration Options
@@ -140,24 +144,17 @@ The MCP server configuration supports:
 
 ## Uninstallation
 
-To remove Squish from Claude Desktop:
-
-```bash
-# Remove MCP server config
-# macOS:
-rm ~/Library/Application\ Support/Claude/claude_desktop_config.json
-
-# Windows:
-# Delete %APPDATA%/Claude/claude_desktop_config.json
-```
+To remove Squish, remove only its MCP entry from Claude Desktop's configuration. Do not delete the
+whole configuration file, because it can contain settings for other tools. A validated uninstaller
+path will be documented with a matching Squish release.
 
 Your Squish data and memories in `~/.squish/` are preserved.
 
 ## Compatibility
 
 - Claude Desktop: Latest version
-- Node.js: 18.0.0+
-- Squish: v1.0.0+
+- Node.js: 20.0.0+
+- Squish: 2.2.0 source candidate (unpublished; host compatibility pending)
 - Operating System: Linux, macOS, Windows
 
 ## See Also

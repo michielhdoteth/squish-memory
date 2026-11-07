@@ -37,6 +37,9 @@ export function registerOpenCodeAdapter(registerAdapter: (adapter: AgentAdapter)
     version: 'latest',
     
     getSessionContext: async (input) => {
+      const { getStrictAdapterSessionContext } = await import('../strict-access.js');
+      const strictContext = await getStrictAdapterSessionContext(input);
+      if (strictContext) return strictContext;
       const { getRecent } = await import('../../memory/memories.js');
       const recent = await getRecent(input.project, 5);
       const memories = recent.map((m, i) => 
@@ -47,6 +50,9 @@ export function registerOpenCodeAdapter(registerAdapter: (adapter: AgentAdapter)
     },
     
     recordObservation: async (input) => {
+      const { captureStrictAdapterObservation } = await import('../strict-access.js');
+      const strictObservation = await captureStrictAdapterObservation(input, 'opencode');
+      if (strictObservation) return strictObservation;
       const { createLearning } = await import('../../ingestion/learnings.js');
       const memory = await createLearning({
         type: 'insight',
@@ -60,6 +66,9 @@ export function registerOpenCodeAdapter(registerAdapter: (adapter: AgentAdapter)
     },
     
     getTimeline: async (query, depth, limit) => {
+      const { getStrictAdapterTimeline } = await import('../strict-access.js');
+      const strictResults = await getStrictAdapterTimeline(query, depth, limit);
+      if (strictResults) return strictResults;
       const { getTimeline } = await import('../timeline.js');
       const result = await getTimeline(query, depth, limit);
       return result.results;

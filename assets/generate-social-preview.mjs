@@ -43,9 +43,11 @@ function starPoints(rOut, rIn) {
 }
 
 // ---- stat chips ------------------------------------------------------------
+// Metrics mirror the committed offline-harness baseline (docs/BENCHMARK.md):
+// golden-set ECE 0.0429; confident-wrong 11 (current gate breach, stated as-is).
 const chips = [
-  { label: "ECE ", value: "0.055" },
-  { label: "CONFIDENT-WRONG ", value: "21 -> 4" },
+  { label: "ECE ", value: "0.0429" },
+  { label: "CONFIDENT-WRONG ", value: "11" },
   { label: "", value: "100% LOCAL" },
 ];
 const CHIP_FS = 20;

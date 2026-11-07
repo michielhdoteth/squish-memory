@@ -1,8 +1,8 @@
 /**
  * GAC Strategy Selector
  *
- * Implements the 3-way consolidation decision from "The Geometry of Consolidation"
- * (NeurIPS 2026). Given a cluster of memory embeddings, this module selects the
+ * Implements a 3-way geometry-aware consolidation decision. Given a cluster
+ * of memory embeddings, this module selects the
  * optimal consolidation strategy based on cluster geometry:
  *
  * - **Centroid**: for tight, dense clusters (rho_C > 0.55 AND d_bar < spread_safe)

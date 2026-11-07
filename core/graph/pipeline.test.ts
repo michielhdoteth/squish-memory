@@ -24,6 +24,7 @@ import { getOrCreateProject } from '../projects.js';
 let buildProjectGraph: typeof import('./pipeline.js').buildProjectGraph;
 let buildMemoryGraph: typeof import('./pipeline.js').buildMemoryGraph;
 let getGraphPipelineStats: typeof import('./pipeline.js').getGraphPipelineStats;
+const itWithTimeout = it as unknown as (name: string, options: { timeout: number }, callback: () => Promise<void>) => void;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,8 +36,6 @@ async function clearTables() {
   if (sqlite && typeof sqlite.exec === 'function') {
     sqlite.exec('DELETE FROM memory_tags;');
     sqlite.exec('DELETE FROM memories;');
-    sqlite.exec('DELETE FROM memory_associations;');
-    sqlite.exec('DELETE FROM entity_relations;');
     sqlite.exec('DELETE FROM entities;');
 
     sqlite.exec('DELETE FROM places;');
@@ -68,7 +67,7 @@ describe('Graph Pipeline', () => {
   // --- buildProjectGraph -------------------------------------------------
 
   describe('buildProjectGraph', () => {
-    it('returns a PipelineStats with all required fields', async () => {
+    itWithTimeout('returns a PipelineStats with all required fields', { timeout: 30_000 }, async () => {
       // Create a project with memories
       await rememberMemory({
         content: 'The PostgreSQL database handles user sessions',

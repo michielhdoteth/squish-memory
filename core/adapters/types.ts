@@ -32,6 +32,8 @@ export interface SessionContextInput {
   project: string;
   mode: 'startup' | 'resume' | 'compact';
   sessionId?: string;
+  user?: string;
+  teamIds?: string[];
 }
 
 export interface SessionContextOutput {

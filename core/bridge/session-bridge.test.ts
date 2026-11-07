@@ -34,8 +34,6 @@ async function clearTables() {
   if (sqlite && typeof sqlite.exec === 'function') {
     sqlite.exec('DELETE FROM memory_tags;');
     sqlite.exec('DELETE FROM memories;');
-    sqlite.exec('DELETE FROM memory_associations;');
-    sqlite.exec('DELETE FROM entity_relations;');
     sqlite.exec('DELETE FROM entities;');
 
     sqlite.exec('DELETE FROM places;');

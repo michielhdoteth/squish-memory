@@ -7,6 +7,7 @@
  *   squish context <topic> --limit 10
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
 import { client } from '../client.js';
 import { remediationFor } from '../errors.js';
@@ -21,8 +22,7 @@ export function registerContextCommand(program: Command) {
     .option('-p, --project <project>', 'Project path')
     .option('--json', 'Emit machine-readable output', false)
     .action(async (topic: string | undefined, options: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options.json);
       try {
         const query = topic || options.file || '';
         if (!query) {
@@ -78,10 +78,7 @@ export function registerContextCommand(program: Command) {
         }
         process.exit(1);
       } finally {
-        if (options.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     });
 }

@@ -26,6 +26,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
+import { createInterface } from 'node:readline';
+import { isWithinDirectoryScope, sqliteDirectoryScope } from './path-scope.js';
 
 // bun:sqlite is bun-only. Load the constructor lazily so this module stays
 // importable under node/tsx; every open site catches and degrades to null.
@@ -40,9 +43,13 @@ try {
 
 import { logger } from '../../logger.js';
 import type { Chunk, ChunkResult, SessionGroup } from '../types.js';
-import type { AgentSessionStore, AgentName } from './types.js';
+import { allowSessionFileSize, consumeSessionSearchBudget, tokenizeSessionSearchQuery, type AgentSessionStore, type AgentName, type SessionSearchBudget } from './types.js';
 import { readSessionCache, statSessionFile, writeSessionCache } from './cache.js';
 import { recordParsedSessionSignals } from '../../session/working-set.js';
+
+function errorType(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
 
 // ---------------------------------------------------------------------------
 // Path discovery
@@ -56,7 +63,7 @@ export function defaultCodexDir(): string {
   if (process.env.SQUISH_CODEX_DISABLED === '1') {
     return path.join(os.homedir(), '.squish', 'codex-disabled-for-tests');
   }
-  return path.join(os.homedir(), '.codex');
+  return process.env.SQUISH_CODEX_DIR?.trim() || path.join(os.homedir(), '.codex');
 }
 
 /**
@@ -83,7 +90,7 @@ interface CachedDb {
   db: Database;
   dbPath: string;
   readonly: boolean;
-  mtimeMs: number;
+  sourceToken: string;
 }
 
 let cached: CachedDb | null = null;
@@ -93,10 +100,19 @@ function getDb(opts: CodexStoreOptions = {}): Database | null {
   if (!fs.existsSync(dbPath)) return null;
 
   const readonly = opts.readonly !== false;
-  const stat = fs.statSync(dbPath);
-  const mtimeMs = stat.mtimeMs;
+  const stat = fs.statSync(dbPath, { bigint: true });
+  // The host may atomically replace state_5.sqlite while preserving its
+  // millisecond mtime. A cached SQLite handle would then keep reading the old
+  // inode even though the configured path points at a new database.
+  const sourceToken = JSON.stringify([
+    stat.mtimeNs.toString(),
+    stat.size.toString(),
+    stat.ctimeNs.toString(),
+    String(stat.dev),
+    String(stat.ino),
+  ]);
 
-  if (cached && cached.dbPath === dbPath && cached.readonly === readonly && cached.mtimeMs === mtimeMs) {
+  if (cached && cached.dbPath === dbPath && cached.readonly === readonly && cached.sourceToken === sourceToken) {
     return cached.db;
   }
 
@@ -106,10 +122,10 @@ function getDb(opts: CodexStoreOptions = {}): Database | null {
       cached = null;
     }
     const db = new (DatabaseCtor as any)(dbPath, readonly ? { readonly: true } : undefined);
-    cached = { db, dbPath, readonly, mtimeMs };
+    cached = { db, dbPath, readonly, sourceToken };
     return db;
   } catch (err) {
-    logger.debug(`[codex-store] failed to open ${dbPath}: ${err}`);
+    logger.debug('[codex-store] failed to open database', { errorType: errorType(err) });
     return null;
   }
 }
@@ -133,6 +149,21 @@ export interface CodexDbStatus {
   message_count: number | null;
   part_count: number | null;
   error?: string;
+}
+
+/** Cheap readiness check for searches; detailed thread counts belong to status calls. */
+export function codexDbAvailability(opts: CodexStoreOptions = {}) {
+  const dbPath = opts.dbPath ?? defaultCodexDbPath();
+  if (!fs.existsSync(dbPath)) return { ok: false as const, path: dbPath, error: 'Codex db not found' };
+  const db = getDb(opts);
+  if (!db) return { ok: false as const, path: dbPath, error: 'failed to open Codex db' };
+  try {
+    const tables = db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'threads'").all() as Array<{ name: string }>;
+    if (tables.length === 0) return { ok: false as const, path: dbPath, error: 'Codex db is missing threads table' };
+    return { ok: true as const, path: dbPath };
+  } catch {
+    return { ok: false as const, path: dbPath, error: 'failed to inspect Codex db schema' };
+  }
 }
 
 export function codexDbStatus(opts: CodexStoreOptions = {}): CodexDbStatus {
@@ -265,16 +296,113 @@ interface RolloutData {
   items?: RolloutItem[];
 }
 
+export interface CodexTranscriptMessage {
+  role: string;
+  content: string;
+  messageIndex: number;
+  sourceFingerprint: string;
+}
+
+export interface CodexTranscriptSnapshot {
+  sessionId: string;
+  projectPath: string;
+  messages: CodexTranscriptMessage[];
+}
+
+/** Read a bounded, uncached transcript snapshot for internal role-aware capture. */
+export function readCodexTranscript(sessionId: string): CodexTranscriptSnapshot | null {
+  if (!sessionId.trim() || sessionId.length > 256) return null;
+  const base = path.resolve(defaultCodexDir());
+  const db = getDb({ readonly: true });
+  if (!db) return null;
+  const row = db.query('SELECT id, rollout_path, cwd FROM threads WHERE id = ?').get(sessionId) as
+    { id: string; rollout_path: string; cwd: string } | null;
+  if (!row || !row.rollout_path) return null;
+  const transcriptPath = path.resolve(base, row.rollout_path);
+  if (!isWithinDirectoryScope(transcriptPath, base)) return null;
+  try {
+    const realBase = fs.realpathSync(base);
+    const realTranscriptPath = fs.realpathSync(transcriptPath);
+    if (!isWithinDirectoryScope(realTranscriptPath, realBase)) return null;
+    const stat = fs.statSync(realTranscriptPath);
+    if (!stat.isFile() || stat.size > 5 * 1024 * 1024) return null;
+    const raw = fs.readFileSync(realTranscriptPath, 'utf8');
+    const rollout = parseRolloutContent(raw);
+    if (!rollout || rollout.session?.id && rollout.session.id !== sessionId || !rollout.items) return null;
+    const messages: CodexTranscriptMessage[] = [];
+    for (const [messageIndex, item] of rollout.items.entries()) {
+      const role = item.role;
+      // Session capture persists user, assistant, and system turns. Tool and
+      // unknown roles are not part of that policy and must never be promoted
+      // into captured memories or analysis jobs.
+      if (role !== 'user' && role !== 'assistant' && role !== 'system') continue;
+      const content = extractText(item.content).trim();
+      if (!role || !content || content.length > 20_000) continue;
+      const sourceFingerprint = createHash('sha256')
+        .update(JSON.stringify(['codex-message-v1', sessionId, messageIndex, role, content]))
+        .digest('hex');
+      messages.push({ role, content, messageIndex, sourceFingerprint });
+      if (messages.length >= 200) break;
+    }
+    return { sessionId, projectPath: row.cwd ?? '', messages };
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Read and parse a rollout JSON file.
+ * Read either a legacy JSON rollout or the current newline-delimited event log.
  */
 function readRolloutFile(filePath: string): RolloutData | null {
   try {
     if (!fs.existsSync(filePath)) return null;
     const content = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(content) as RolloutData;
+    return parseRolloutContent(content);
   } catch (err) {
-    logger.debug(`[codex-store] failed to read rollout ${filePath}: ${err}`);
+    logger.debug('[codex-store] failed to read rollout', { errorType: errorType(err) });
+    return null;
+  }
+}
+
+function parseRolloutContent(content: string): RolloutData | null {
+  try {
+    try {
+      const legacy = JSON.parse(content) as RolloutData;
+      if (Array.isArray(legacy.items)) return legacy;
+    } catch {
+      // Current rollout files contain one JSON record per line.
+    }
+
+    const items: RolloutItem[] = [];
+    let session: RolloutSession | undefined;
+    for (const line of content.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let record: { type?: string; payload?: Record<string, unknown> };
+      try {
+        record = JSON.parse(line) as typeof record;
+      } catch {
+        continue;
+      }
+      const payload = record.payload;
+      if (!payload) continue;
+      if (record.type === 'session_meta') {
+        session = {
+          id: typeof payload.id === 'string' ? payload.id : undefined,
+          timestamp: typeof payload.timestamp === 'string' ? payload.timestamp : undefined,
+        };
+      } else if (record.type === 'response_item' && payload.type === 'message') {
+        const role = typeof payload.role === 'string' ? payload.role : undefined;
+        const blocks = Array.isArray(payload.content)
+          ? payload.content as Array<{ type: string; text?: string }>
+          : undefined;
+        if (role && blocks) items.push({ role, content: blocks });
+      } else if (record.type === 'event_msg' && payload.type === 'user_message') {
+        const message = typeof payload.message === 'string' ? payload.message : undefined;
+        if (message) items.push({ role: 'user', content: message });
+      }
+    }
+    return { session, items };
+  } catch {
     return null;
   }
 }
@@ -294,6 +422,83 @@ function extractText(content: string | Array<{ type: string; text?: string }> | 
     }
   }
   return texts.join('\n');
+}
+
+/** Search a current event-log rollout incrementally so one session cannot be loaded in full. */
+async function findRolloutMatch(filePath: string, terms: string[], metadataText = ''): Promise<{ text: string; sourceRole?: string } | null> {
+  if (!fs.existsSync(filePath)) return null;
+  const input = fs.createReadStream(filePath, { encoding: 'utf8' });
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  const evidenceByTerm = new Map<string, { text: string; sourceRole?: string }>();
+  const addEvidence = (text: string, sourceRole?: string): boolean => {
+    const lower = text.toLowerCase();
+    for (const term of terms) {
+      if (evidenceByTerm.has(term)) continue;
+      const index = lower.indexOf(term);
+      if (index < 0) continue;
+      const start = Math.max(0, index - 160);
+      const end = Math.min(text.length, index + term.length + 160);
+      evidenceByTerm.set(term, { text: text.slice(start, end).trim(), sourceRole });
+    }
+    return evidenceByTerm.size === terms.length;
+  };
+  addEvidence(metadataText);
+  const matchedEvidence = () => {
+    const evidence = [...new Map([...evidenceByTerm.values()].map((item) => [item.text, item])).values()];
+    const roles = new Set(evidence.map((item) => item.sourceRole).filter((role): role is string => Boolean(role)));
+    const hasUnattributedEvidence = evidence.some((item) => !item.sourceRole);
+    const sourceRole = !hasUnattributedEvidence && roles.size === 1 ? [...roles][0] : undefined;
+    return { text: evidence.map((item) => item.text).join(' … '), ...(sourceRole ? { sourceRole } : {}) };
+  };
+  let firstRecord = true;
+  try {
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        firstRecord = false;
+        continue;
+      }
+
+      if (firstRecord) {
+        firstRecord = false;
+        const legacy = parsed as RolloutData;
+        if (legacy && Array.isArray(legacy.items)) {
+          lines.close();
+          input.destroy();
+          for (const item of legacy.items) {
+            if (addEvidence(extractText(item.content), item.role)) return matchedEvidence();
+          }
+          return null;
+        }
+      }
+
+      const record = parsed as { type?: string; payload?: Record<string, unknown> };
+      const payload = record.payload;
+      if (!payload) continue;
+      let item: RolloutItem | null = null;
+      if (record.type === 'response_item' && payload.type === 'message') {
+        const role = typeof payload.role === 'string' ? payload.role : undefined;
+        const blocks = Array.isArray(payload.content)
+          ? payload.content as Array<{ type: string; text?: string }>
+          : undefined;
+        if (role && blocks) item = { role, content: blocks };
+      } else if (record.type === 'event_msg' && payload.type === 'user_message') {
+        const message = typeof payload.message === 'string' ? payload.message : undefined;
+        if (message) item = { role: 'user', content: message };
+      }
+      const text = extractText(item?.content);
+      if (addEvidence(text, item?.role)) return matchedEvidence();
+    }
+  } catch (error) {
+    logger.debug('[codex-store] failed to stream rollout', { errorType: errorType(error) });
+  } finally {
+    lines.close();
+    input.destroy();
+  }
+  return null;
 }
 
 /**
@@ -331,6 +536,7 @@ function rolloutToChunks(
       branch: group.branch,
       agent: 'codex',
       agent_session_id: group.session_id,
+      sourceRole: role,
       timestamp: group.started_at,
     });
     chunkCount++;
@@ -345,6 +551,20 @@ function rolloutToChunks(
 
 function codexBase(opts: CodexStoreOptions = {}): string {
   return opts.codexDir ?? defaultCodexDir();
+}
+
+function resolveCodexRolloutPath(baseDir: string, rolloutPath: string): string | null {
+  try {
+    const base = path.resolve(baseDir);
+    const candidate = path.resolve(base, rolloutPath);
+    if (!isWithinDirectoryScope(candidate, base)) return null;
+    const realBase = fs.realpathSync(base);
+    const realCandidate = fs.realpathSync(candidate);
+    if (!isWithinDirectoryScope(realCandidate, realBase) || !fs.statSync(realCandidate).isFile()) return null;
+    return realCandidate;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -370,8 +590,9 @@ export function listCodexSessions(
   const params: any[] = [];
 
   if (input.directory_glob) {
-    where.push('LOWER(cwd) LIKE ?');
-    params.push(`%${input.directory_glob.toLowerCase()}%`);
+    const scope = sqliteDirectoryScope('cwd', input.directory_glob);
+    where.push(scope.clause);
+    params.push(...scope.params);
   }
 
   const sql = `
@@ -381,7 +602,7 @@ export function listCodexSessions(
            archived, has_user_event, preview
     FROM threads
     WHERE ${where.join(' AND ')}
-    ORDER BY updated_at_ms DESC
+    ORDER BY updated_at_ms DESC, id DESC
     LIMIT ? OFFSET ?
   `;
   params.push(limit, offset);
@@ -390,7 +611,7 @@ export function listCodexSessions(
     const rows = db.query(sql).all(...params) as CodexThreadRow[];
     return rows.map((r) => threadRowToGroup(r));
   } catch (err) {
-    logger.debug(`[codex-store] listCodexSessions error: ${err}`);
+    logger.debug('[codex-store] list sessions failed', { errorType: errorType(err) });
     return [];
   }
 }
@@ -405,12 +626,13 @@ export interface SearchCodexInput {
   depth?: 'text' | 'deep';
   directory_glob?: string;
   per_session_chunks?: number;
+  scanBudget?: SessionSearchBudget;
 }
 
-export function searchCodexSessions(
+export async function searchCodexSessions(
   input: SearchCodexInput,
   opts: CodexStoreOptions = {}
-): ChunkResult[] {
+): Promise<ChunkResult[]> {
   const db = getDb(opts);
   if (!db) return [];
   if (!input.query || input.query.trim().length === 0) return [];
@@ -419,25 +641,22 @@ export function searchCodexSessions(
   const perSession = Math.max(1, Math.min(input.per_session_chunks ?? 2, 5));
 
   // Split query into terms; require ALL terms (AND)
-  const terms = input.query
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length >= 2);
+  const terms = tokenizeSessionSearchQuery(input.query);
   if (terms.length === 0) return [];
 
-  // First, search the threads table by title and first_user_message
-  const whereParts: string[] = ['archived = 0'];
+  // Search project-scoped thread pages from newest to oldest, inspecting
+  // rollout transcripts when indexed title/preview metadata does not match.
+  // Archived threads still point to durable rollout transcripts and are
+  // searchable history. Keep active-only filtering for list/related views.
+  const whereParts: string[] = ['1 = 1'];
   const params: any[] = [];
-  for (const term of terms) {
-    whereParts.push('(LOWER(title) LIKE ? OR LOWER(first_user_message) LIKE ?)');
-    params.push(`%${term}%`, `%${term}%`);
-  }
   if (input.directory_glob) {
-    whereParts.push('LOWER(cwd) LIKE ?');
-    params.push(`%${input.directory_glob.toLowerCase()}%`);
+    const scope = sqliteDirectoryScope('cwd', input.directory_glob);
+    whereParts.push(scope.clause);
+    params.push(...scope.params);
   }
 
-  const fetchLimit = Math.max(limit * 5, 50);
+  const pageSize = Math.max(limit * 50, 500);
   const sql = `
     SELECT id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
            cwd, title, first_user_message, tokens_used, git_sha, git_branch,
@@ -446,78 +665,78 @@ export function searchCodexSessions(
     FROM threads
     WHERE ${whereParts.join(' AND ')}
     ORDER BY updated_at_ms DESC
-    LIMIT ?
+    LIMIT ? OFFSET ?
   `;
-  params.push(fetchLimit);
-
-  let rows: CodexThreadRow[] = [];
-  try {
-    rows = db.query(sql).all(...params) as CodexThreadRow[];
-  } catch (err) {
-    logger.debug(`[codex-store] searchCodexSessions error: ${err}`);
-    return [];
-  }
 
   const out: ChunkResult[] = [];
-  for (const row of rows) {
-    if (out.length >= limit) break;
-
-    const group = threadRowToGroup(row);
-    const title = (row.title || '').toLowerCase();
-    const preview = (row.preview || '').toLowerCase();
-    const firstMsg = (row.first_user_message || '').toLowerCase();
-
-    // Check if title/preview match
-    let matched = false;
-    let matchText = '';
-    for (const term of terms) {
-      if (title.includes(term) || preview.includes(term) || firstMsg.includes(term)) {
-        matched = true;
-        matchText = row.preview || row.first_user_message || row.title;
-        break;
-      }
+  let offset = 0;
+  while (out.length < limit) {
+    let rows: CodexThreadRow[];
+    try {
+      rows = db.query(sql).all(...params, pageSize, offset) as CodexThreadRow[];
+    } catch (err) {
+      logger.debug('[codex-store] search sessions failed', { errorType: errorType(err) });
+      return out;
     }
+    if (rows.length === 0) break;
+    offset += rows.length;
 
-    // If depth is 'deep', also try reading the rollout file
-    if (!matched && input.depth === 'deep' && row.rollout_path) {
-      const rolloutPath = path.join(codexBase(opts), row.rollout_path);
-      const rollout = readRolloutFile(rolloutPath);
-      if (rollout?.items) {
-        for (const item of rollout.items) {
-          const text = extractText(item.content).toLowerCase();
-          const allMatch = terms.every((t) => text.includes(t));
-          if (allMatch) {
-            matched = true;
-            matchText = extractText(item.content);
-            break;
-          }
+    for (const row of rows) {
+      if (out.length >= limit) break;
+      if (!consumeSessionSearchBudget(input.scanBudget)) return out;
+
+      const group = threadRowToGroup(row);
+      const title = (row.title || '').toLowerCase();
+      const preview = (row.preview || '').toLowerCase();
+      const firstMsg = (row.first_user_message || '').toLowerCase();
+
+      const metadataText = `${title} ${preview} ${firstMsg}`;
+      let matched = terms.every((term) => metadataText.includes(term));
+      let matchText = matched ? row.preview || row.first_user_message || row.title : '';
+      let matchRole: string | undefined;
+
+      // Read actual transcript content when the lightweight SQLite fields miss.
+      if (!matched && row.rollout_path) {
+        const rolloutPath = resolveCodexRolloutPath(codexBase(opts), row.rollout_path);
+        if (!rolloutPath) continue;
+        try {
+          if (fs.existsSync(rolloutPath) && !allowSessionFileSize(input.scanBudget, fs.statSync(rolloutPath).size)) continue;
+        } catch {
+          // Let the streaming reader handle missing or inaccessible rollout files.
+        }
+        const found = await findRolloutMatch(rolloutPath, terms, metadataText);
+        if (found) {
+          matched = true;
+          matchText = found.text;
+          matchRole = found.sourceRole;
         }
       }
+
+      if (!matched) continue;
+
+      // Build a chunk from the match
+      const content = matchText.replace(/\s+/g, ' ').trim().slice(0, 500);
+      if (content.length === 0) continue;
+
+      out.push({
+        chunk: {
+          type: 'summary',
+          content,
+          session_id: row.id,
+          session_title: group.title,
+          project: group.project,
+          repo_path: group.repo_path,
+          branch: group.branch,
+          agent: 'codex',
+          agent_session_id: row.id,
+          ...(matchRole ? { sourceRole: matchRole } : {}),
+          timestamp: group.started_at,
+        },
+        score: 1,
+        memory_id: row.id,
+        why: `matched in thread "${group.title}"`,
+      });
     }
-
-    if (!matched) continue;
-
-    // Build a chunk from the match
-    const content = matchText.replace(/\s+/g, ' ').trim().slice(0, 500);
-    if (content.length === 0) continue;
-
-    out.push({
-      chunk: {
-        type: 'summary',
-        content,
-        session_id: row.id,
-        session_title: group.title,
-        project: group.project,
-        repo_path: group.repo_path,
-        branch: group.branch,
-        agent: 'codex',
-        agent_session_id: row.id,
-        timestamp: group.started_at,
-      },
-      score: 1,
-      memory_id: row.id,
-      why: `matched in thread "${group.title}"`,
-    });
   }
 
   out.sort((a, b) => b.score - a.score);
@@ -543,7 +762,7 @@ async function loadRolloutChunksCached(
   group: SessionGroup
 ): Promise<Chunk[] | null> {
   const stat = statSessionFile(rolloutPath);
-  const cached = await readSessionCache('codex', sessionId, stat);
+  const cached = await readSessionCache('codex', sessionId, rolloutPath, stat);
   if (cached && Array.isArray(cached.chunks) && cached.chunks.length > 0) {
     return cached.chunks;
   }
@@ -589,14 +808,16 @@ export async function getCodexSession(
 
   // Try to read the rollout file for full session data (cache-backed)
   if (row.rollout_path) {
-    const rolloutPath = path.join(codexBase(opts), row.rollout_path);
-    const cachedChunks = await loadRolloutChunksCached(sessionId, rolloutPath, group);
-    if (cachedChunks) {
-      chunks = cachedChunks;
-    } else {
-      const rollout = readRolloutFile(rolloutPath);
-      if (rollout) {
-        chunks = rolloutToChunks(rollout, group);
+    const rolloutPath = resolveCodexRolloutPath(codexBase(opts), row.rollout_path);
+    if (rolloutPath) {
+      const cachedChunks = await loadRolloutChunksCached(sessionId, rolloutPath, group);
+      if (cachedChunks) {
+        chunks = cachedChunks;
+      } else {
+        const rollout = readRolloutFile(rolloutPath);
+        if (rollout) {
+          chunks = rolloutToChunks(rollout, group);
+        }
       }
     }
   }
@@ -650,24 +871,23 @@ export function findCodexRelatedSessions(
 
   // Strategy 1: Find sessions with matching cwd
   if (input.repo_path) {
-    const targetNorm = input.repo_path.replace(/\\/g, '/').toLowerCase();
+    const scope = sqliteDirectoryScope('cwd', input.repo_path);
     const sql = `
       SELECT id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
              cwd, title, first_user_message, tokens_used, git_sha, git_branch,
              git_origin_url, model_provider, source, cli_version, model,
              archived, has_user_event, preview
       FROM threads
-      WHERE archived = 0 AND LOWER(cwd) LIKE ?
+      WHERE archived = 0 AND ${scope.clause}
       ORDER BY updated_at_ms DESC
       LIMIT ?
     `;
     try {
-      const rows = db.query(sql).all(`%${targetNorm}%`, limit * 2) as CodexThreadRow[];
+      const rows = db.query(sql).all(...scope.params, limit * 2) as CodexThreadRow[];
       for (const row of rows) {
         if (out.length >= limit) break;
         const group = threadRowToGroup(row);
-        const cwdNorm = (row.cwd || '').replace(/\\/g, '/').toLowerCase();
-        if (cwdNorm.includes(targetNorm) || targetNorm.includes(cwdNorm)) {
+        if (isWithinDirectoryScope(row.cwd || '', input.repo_path)) {
           const reasons: string[] = [`directory match (${deriveProjectName(row.cwd)})`];
           let score = 2;
 
@@ -685,7 +905,7 @@ export function findCodexRelatedSessions(
         }
       }
     } catch (err) {
-      logger.debug(`[codex-store] findCodexRelatedSessions cwd search error: ${err}`);
+      logger.debug('[codex-store] related-session directory search failed', { errorType: errorType(err) });
     }
   }
 
@@ -720,7 +940,7 @@ export function findCodexRelatedSessions(
         }
       }
     } catch (err) {
-      logger.debug(`[codex-store] findCodexRelatedSessions origin search error: ${err}`);
+      logger.debug('[codex-store] related-session origin search failed', { errorType: errorType(err) });
     }
   }
 
@@ -742,25 +962,27 @@ export function findCodexRelatedSessions(
 export class CodexSessionStore implements AgentSessionStore {
   readonly name: AgentName = 'codex';
 
+  private readonly storeOpts: CodexStoreOptions;
+
+  constructor(opts: CodexStoreOptions = {}) {
+    this.storeOpts = opts;
+  }
+
   private optsFor(_input?: { directory_glob?: string }): CodexStoreOptions {
-    return { readonly: true };
+    return { ...this.storeOpts, readonly: true };
   }
 
   async available(): Promise<{ ok: boolean; reason?: string; meta?: Record<string, unknown> }> {
     if (process.env.SQUISH_CODEX_DISABLED === '1') {
       return { ok: false, reason: 'codex disabled via SQUISH_CODEX_DISABLED=1' };
     }
-    const status = codexDbStatus();
-    if (!status.ok) {
-      return { ok: false, reason: status.error ?? 'state_5.sqlite not available' };
+    const availability = codexDbAvailability(this.optsFor());
+    if (!availability.ok) {
+      return { ok: false, reason: availability.error ?? 'state_5.sqlite not available' };
     }
     return {
       ok: true,
-      meta: {
-        path: status.path,
-        session_count: status.session_count,
-        message_count: status.message_count,
-      },
+      meta: { path: availability.path },
     };
   }
 
@@ -783,14 +1005,15 @@ export class CodexSessionStore implements AgentSessionStore {
     );
   }
 
-  async searchSessions(input: { query: string; limit?: number; depth?: 'text' | 'deep'; directory_glob?: string; per_session_chunks?: number }): Promise<Chunk[]> {
-    const results = searchCodexSessions(
+  async searchSessions(input: { query: string; limit?: number; depth?: 'text' | 'deep'; directory_glob?: string; per_session_chunks?: number; scanBudget?: SessionSearchBudget }): Promise<Chunk[]> {
+    const results = await searchCodexSessions(
       {
         query: input.query,
         limit: input.limit,
         depth: input.depth,
         directory_glob: input.directory_glob,
         per_session_chunks: input.per_session_chunks,
+        scanBudget: input.scanBudget,
       },
       this.optsFor(input)
     );

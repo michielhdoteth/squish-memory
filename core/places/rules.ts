@@ -15,6 +15,8 @@ import { getSchema } from '../../db/schema.js';
 import { logger } from '../logger.js';
 import type { PlaceType } from './places.js';
 import { ensureGlobalProject } from './places.js';
+import { isStrictTrustPolicy } from '../acl/trust-policy.js';
+import { denyUnscopedPlaceOperation } from './strict-gates.js';
 
 export interface PlaceCandidate {
   type: PlaceType;
@@ -94,6 +96,7 @@ export const DEFAULT_RULES: Omit<PlaceRuleCreateInput, 'projectId'>[] = [
  * Create a place rule
  */
 export async function createPlaceRule(input: PlaceRuleCreateInput): Promise<PlaceRule> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('create_rule', input.projectId ?? 'global');
   const db = await getDb();
   if (!db) {
     throw new Error('Database unavailable');
@@ -140,6 +143,7 @@ export async function createPlaceRule(input: PlaceRuleCreateInput): Promise<Plac
  * Get rules for a project or global scope
  */
 export async function getProjectRules(projectId?: string): Promise<PlaceRule[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('list_rules', projectId ?? 'global');
   const db = await getDb();
   if (!db) return [];
 
@@ -231,6 +235,7 @@ export async function findMatchingPlaces(
   projectId: string | undefined,
   input: RuleMatchInput
 ): Promise<PlaceCandidate[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('match_rules', projectId ?? 'global');
   let rules = await getProjectRules(projectId);
   
   // Fallback to DEFAULT_RULES if no rules exist in DB
@@ -333,6 +338,7 @@ export function getAdjacentPlaces(place: PlaceType): PlaceType[] {
  * If no projectId provided, uses the global scope.
  */
 export async function initializeDefaultRules(projectId?: string): Promise<PlaceRule[]> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('initialize_rules', projectId ?? 'global');
   const resolvedProjectId = projectId || (await ensureGlobalProject()).id;
   const created: PlaceRule[] = [];
 
@@ -367,6 +373,7 @@ export async function initializeDefaultRules(projectId?: string): Promise<PlaceR
  * Delete a rule
  */
 export async function deletePlaceRule(id: string): Promise<boolean> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('delete_rule', id);
   const db = await getDb();
   if (!db) return false;
 
@@ -386,6 +393,7 @@ export async function updatePlaceRule(
   id: string, 
   updates: Partial<PlaceRuleCreateInput>
 ): Promise<PlaceRule | null> {
+  if (isStrictTrustPolicy()) await denyUnscopedPlaceOperation('update_rule', id);
   const db = await getDb();
   if (!db) return null;
 

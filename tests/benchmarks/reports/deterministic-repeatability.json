@@ -1,0 +1,44 @@
+{
+  "name": "squish-memory-bench-repeatability",
+  "date": "2026-10-16",
+  "sourceGitSha": "203018a6",
+  "sourceGitDirty": true,
+  "sourceFilesSha256": {
+    "tests/benchmarks/reports/baseline.json": "ecd1164e8c4a6a9a3e6259416f139430a9a7c30b9478d78c4e3d4bf74b0fc024",
+    "scripts/run-memory-bench.ts": "bcd7ad125729912520e8509feb4925edb91b3d579cdf9805f8dcac027304b6c9",
+    "tests/benchmarks/fixtures.ts": "b3c3840bcc31da1c717cecc8093a7f4ea40af3c889f6d17ed6b768a1d0407d54"
+  },
+  "runs": [
+    {
+      "count": 215,
+      "macroPenaltyScore": 0.5872,
+      "microPenaltyScore": 0.7953,
+      "wrongTotal": 0,
+      "confidentWrong": 0,
+      "runtimeMs": 51957
+    },
+    {
+      "count": 215,
+      "macroPenaltyScore": 0.5872,
+      "microPenaltyScore": 0.7953,
+      "wrongTotal": 0,
+      "confidentWrong": 0,
+      "runtimeMs": 42401
+    },
+    {
+      "count": 215,
+      "macroPenaltyScore": 0.5872,
+      "microPenaltyScore": 0.7953,
+      "wrongTotal": 0,
+      "confidentWrong": 0,
+      "runtimeMs": 62807
+    }
+  ],
+  "perQueryOutcomeSha256": [
+    "7aa8a76034b9c5185316773109b4c5cad6d76fed0e1ac0b79f5c1722afd9c6ea",
+    "7aa8a76034b9c5185316773109b4c5cad6d76fed0e1ac0b79f5c1722afd9c6ea",
+    "7aa8a76034b9c5185316773109b4c5cad6d76fed0e1ac0b79f5c1722afd9c6ea"
+  ],
+  "identicalPerQueryOutcomes": true,
+  "limitations": "Deterministic local retrieval/oracle repeatability only; not model-backed answer evaluation or held-out evaluation. Source tree was dirty; exact measured benchmark source files are bound above."
+}

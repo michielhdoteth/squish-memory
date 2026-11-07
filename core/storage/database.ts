@@ -1,13 +1,14 @@
-import type { Database } from 'better-sqlite3';
-
 export interface DatabaseClient {
-  $client: Database;
-  $clientType: 'sqlite';
+  $client: unknown;
+  $clientType: 'sqlite' | 'postgres';
   select: (...args: any[]) => any;
   insert: (...args: any[]) => any;
   update: (...args: any[]) => any;
   delete: (...args: any[]) => any;
 }
+
+/** Drizzle operations available on both database handles and transaction executors. */
+export type DrizzleExecutor = Pick<DatabaseClient, 'select' | 'insert' | 'update' | 'delete'>;
 
 async function rawExec(client: any, sql: string): Promise<void> {
   if (typeof client.exec === 'function') {
@@ -80,9 +81,12 @@ export function createDatabaseClient(db: any): DatabaseClient {
     throw new Error('Database client is null or undefined');
   }
   const client = db.$client ?? db;
+  const clientType = typeof client?.query === 'function' && typeof client?.connect === 'function'
+    ? 'postgres'
+    : 'sqlite';
   return {
     $client: client,
-    $clientType: 'sqlite',
+    $clientType: clientType,
     select: (...args: any[]) => db.select(...args),
     insert: (...args: any[]) => db.insert(...args),
     update: (...args: any[]) => db.update(...args),

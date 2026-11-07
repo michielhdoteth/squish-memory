@@ -7,6 +7,7 @@
  *   squish run --resume
  */
 
+import { suppressQuietMode } from '../quiet-mode.js';
 import { Command } from 'commander';
 import { resolveRuntimeLaunch } from '../../bin/runtime-launcher.mjs';
 import { remediationFor } from '../errors.js';
@@ -23,8 +24,7 @@ export function registerRunCommand(program: Command) {
     .option('--resume', 'Resume the last session', false)
     .option('--json', 'Emit machine-readable output', false)
     .action(async (projectPath?: string, options?: any) => {
-      const previousQuiet = process.env.SQUISH_QUIET;
-      if (options?.json) process.env.SQUISH_QUIET = '1';
+      const restoreQuiet = suppressQuietMode(!!options?.json);
       try {
         const agent = options?.agent || 'auto';
         const sessionId = options?.sessionId;
@@ -53,10 +53,7 @@ export function registerRunCommand(program: Command) {
         }
         process.exit(1);
       } finally {
-        if (options?.json) {
-          if (previousQuiet === undefined) delete process.env.SQUISH_QUIET;
-          else process.env.SQUISH_QUIET = previousQuiet;
-        }
+        restoreQuiet();
       }
     });
 }

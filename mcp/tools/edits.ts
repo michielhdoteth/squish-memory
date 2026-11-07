@@ -1,27 +1,15 @@
+import { jsonResult, type ToolCtx } from './shared.js';
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { isStrictTrustPolicy } from "../../core/acl/trust-policy.js";
 import type { SquishRuntime } from "../../core/runtime/squish-runtime.js";
 
-export interface ToolCtx {
-  register: (server: McpServer, name: string, definition: any, handler: any) => boolean;
-  server: McpServer;
-  sdkClient: SquishRuntime;
-  resolveProjectPath: (projectArg?: string) => string | undefined;
-  errorResponse: (code: string, message: string, detail?: string, remediation?: string) => any;
-  SERVER_VERSION: string;
-}
 
-function jsonResult(payload: unknown, version?: string) {
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(version ? { ...(payload as Record<string, unknown>), version } : payload, null, 2),
-    }],
-  };
-}
+
+
 
 export function registerEditsTools(ctx: ToolCtx): number {
-  const { register, server, resolveProjectPath, errorResponse, SERVER_VERSION } = ctx;
+  const { register, server, sdkClient, resolveProjectPath, errorResponse, SERVER_VERSION } = ctx;
   let count = 0;
 
   if (register(
@@ -29,10 +17,10 @@ export function registerEditsTools(ctx: ToolCtx): number {
     "squish_edits",
     {
       description:
-        "Edit proposal workflow for memory corrections. Actions: propose (stage edit), list (query proposals), preview (before/after diff), approve (apply pending), reject (close proposal), correct (apply direct correction with undo snapshot). Approval/correction paths feed reinforcement (confirm).",
+        "Edit workflow for memory correction. Actions: history (read correction snapshots), propose (stage edit), list (query proposals), preview (before/after diff), approve (apply pending), reject (close proposal), correct (apply direct correction with undo snapshot).",
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       inputSchema: z.object({
-        action: z.enum(["propose", "list", "preview", "approve", "reject", "correct"]).describe("Action to perform"),
+        action: z.enum(["history", "propose", "list", "preview", "approve", "reject", "correct"]).describe("Action to perform"),
         memoryId: z.string().optional().describe("Target memory ID"),
         proposalId: z.string().optional().describe("Proposal ID (preview/approve/reject)"),
         proposedContent: z.string().optional().describe("Proposed new content (propose/correct)"),
@@ -44,7 +32,7 @@ export function registerEditsTools(ctx: ToolCtx): number {
       }),
     },
     async (input: {
-      action: "propose" | "list" | "preview" | "approve" | "reject" | "correct";
+      action: "history" | "propose" | "list" | "preview" | "approve" | "reject" | "correct";
       memoryId?: string;
       proposalId?: string;
       proposedContent?: string;
@@ -54,6 +42,13 @@ export function registerEditsTools(ctx: ToolCtx): number {
       limit?: number;
       project?: string;
     }) => {
+      if (isStrictTrustPolicy() && input.action !== "correct" && input.action !== "history") {
+        return errorResponse(
+          "strict_surface_unavailable",
+          "Edit proposals and review actions are withheld under strict trust; only owner-authorized correction and authenticated correction-history reads are supported.",
+        );
+      }
+
       const resolvedProject = resolveProjectPath(input.project);
 
       const {
@@ -67,6 +62,13 @@ export function registerEditsTools(ctx: ToolCtx): number {
       } = await import('../../core/memory/edit-workflow.js');
 
       try {
+        if (input.action === "history") {
+          if (!input.memoryId) {
+            return errorResponse("missing_param", "memoryId is required for history");
+          }
+          const result = await sdkClient.getCorrectionHistory(input.memoryId);
+          return jsonResult(result, SERVER_VERSION);
+        }
         if (input.action === "propose") {
           if (!input.memoryId || !input.proposedContent || !input.reason) {
             return errorResponse("missing_param", "memoryId, proposedContent, and reason are required for propose");

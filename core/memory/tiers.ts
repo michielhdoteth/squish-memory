@@ -10,6 +10,8 @@
 
 import { getDbClient } from '../lib/db-client.js';
 import { logger } from '../logger.js';
+import { isStrictTrustPolicy, resolveTrustedCallerId, TrustBoundaryError } from '../acl/trust-policy.js';
+import { denyStrictSurface, writeTrustAudit } from '../acl/trust-audit.js';
 
 export type MemoryTier = 'sturdy' | 'long-term' | 'working' | 'fleeting';
 
@@ -108,6 +110,10 @@ export function classifyMemoryTier(
 export async function recalculateTiers(
   projectId?: string,
 ): Promise<{ updated: number; tiers: Record<MemoryTier, number> }> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface('tier_recalculation', 'memory', 'Unscoped tier recalculation is disabled under strict trust');
+  }
+
   const result: { updated: number; tiers: Record<MemoryTier, number> } = {
     updated: 0,
     tiers: { sturdy: 0, 'long-term': 0, working: 0, fleeting: 0 },
@@ -180,6 +186,11 @@ export async function recalculateTiers(
  * Sets tier = 'sturdy' AND pins the memory for protection.
  */
 export async function promoteToSturdy(memoryId: string): Promise<boolean> {
+  const { isStrictTrustPolicy, TrustBoundaryError } = await import('../acl/trust-policy.js');
+  if (isStrictTrustPolicy()) {
+    throw new TrustBoundaryError('Memory tier promotion is disabled under strict trust until caller, ACL, and provenance checks cover the mutation');
+  }
+
   try {
     const { raw } = await getDbClient();
     const sqlite = (raw as any)?.$client;
@@ -211,6 +222,10 @@ export async function promoteToSturdy(memoryId: string): Promise<boolean> {
 export async function getTierStats(
   projectId?: string,
 ): Promise<Record<MemoryTier, number>> {
+  if (isStrictTrustPolicy()) {
+    await denyStrictSurface('tier_statistics', 'memory', 'Unscoped tier statistics are disabled under strict trust');
+  }
+
   const stats: Record<MemoryTier, number> = {
     sturdy: 0,
     'long-term': 0,
