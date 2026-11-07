@@ -16,12 +16,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
+      # This job restores no cache: setup-bun only installs the pinned runtime,
+      # and dependencies are installed fresh with --frozen-lockfile.
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2 # zizmor: ignore[cache-poisoning]
         with:
           bun-version: latest
 
@@ -91,7 +94,7 @@ jobs:
 
       - name: Create GitHub Release
         if: contains(github.ref, 'tags/v')
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
           tag_name: ${{ github.ref }}
           name: Squish v${{ steps.version.outputs.version }}
